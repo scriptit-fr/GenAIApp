@@ -381,7 +381,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "gemini"} [advancedParametersObject.model]
+       * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
@@ -396,7 +396,7 @@ const GenAIApp = (function () {
         if (advancedParametersObject) {
           if (advancedParametersObject.model) {
             model = advancedParametersObject.model;
-            if (model == "gemini") {
+            if (model.includes("gemini")) {
               if (!region || !gcpProjectId) {
                 throw Error("Please set your GCP project auth using GenAIApp.setGeminiAuth({project-id: 'YOUR_PROJECT_ID', region: 'REGION'})");
               }
@@ -477,7 +477,7 @@ const GenAIApp = (function () {
         }
 
         if (assistantIdentificator) {
-          if (model == "gemini") {
+          if (model.includes("gemini")) {
             throw Error("To use OpenAI's assitant, please select a different model than Gemini");
           }
           // This function is created only here to adapt the function description to the vector store content
@@ -519,12 +519,6 @@ const GenAIApp = (function () {
           }
         }
 
-        if (vision) {
-            if (model !== "gemini") {
-                fun
-            }
-        }
-
         if (tools.length >> 0) {
           // the user has added functions, enable function calling
           functionCalling = true;
@@ -563,9 +557,9 @@ const GenAIApp = (function () {
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
           let endpointUrl = "https://api.openai.com/v1/chat/completions";
-          if (model == "gemini") {
+          if (model.includes("gemini")) {
             payload = convertPayloadForGemini(payload);
-            endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/gemini-1.5-pro-002:generateContent`;
+            endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
 
           }
           responseMessage = callGenAIApi(endpointUrl, payload);
@@ -590,7 +584,7 @@ const GenAIApp = (function () {
                 if (verbose) {
                   console.log("Conversation stopped because argument return has been enabled - No function has been called");
                 }
-                if (model == "gemini") {
+                if (model.includes("gemini")) {
                   return parseResponse(messages[messages.length - 3].parts[0].functionCall.arguments);
                 }
                 return parseResponse(messages[messages.length - 3].tool_calls[0].function.arguments); // the argument(s) of the last function called
@@ -791,7 +785,7 @@ const GenAIApp = (function () {
         let functionName = responseMessage.tool_calls[tool_call].function.name;
         let functionArgs = responseMessage.tool_calls[tool_call].function.arguments;
 
-        if (model !== "gemini") {
+        if (!model.includes("gemini")) {
           functionArgs = parseResponse(functionArgs);
         }
 
