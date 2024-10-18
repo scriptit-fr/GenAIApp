@@ -467,7 +467,7 @@ const GenAIApp = (function () {
                     throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
                 }
 
-                if (tools.length >> 0) {
+                if (tools.length > 0) {
                     // Check if AI model wanted to call a function
                     if (responseMessage.tool_calls || responseMessage.parts[0].functionCall) {
                         if (model.includes("gemini")) {
@@ -682,8 +682,8 @@ const GenAIApp = (function () {
                 };
 
                 if (advancedParametersObject.function_call) {
-                    payload.tool_config.mode = "ANY",
-                        payload.tool_config.allowed_function_names = advancedParametersObject.function_call
+                    payload.tool_config.mode = "ANY";
+                    payload.tool_config.allowed_function_names = advancedParametersObject.function_call;
                 }
 
                 if (browsing) {
@@ -710,10 +710,10 @@ const GenAIApp = (function () {
                 }
 
                 if (assistantIdentificator) {
-                    throw Error("To use OpenAI's assitant, please select a different model than Gemini");
+                    throw Error("To use OpenAI's assistant, please select a different model than Gemini");
                 }
 
-                if (vision && numberOfAPICalls == 0 && !model.includes("gemini")) {
+                if (vision && numberOfAPICalls == 0) {
                     tools.push({
                         type: "function",
                         function: imageDescriptionFunction
@@ -727,7 +727,7 @@ const GenAIApp = (function () {
                     });
                 }
 
-                if (tools.length >> 0) {
+                if (tools.length > 0) {
                     // the user has added functions, enable function calling
                     let payloadTools = Object.keys(tools).map(t => {
                         let toolFunction = tools[t].function.toJSON();
