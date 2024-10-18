@@ -179,7 +179,8 @@ const GenAIApp = (function () {
      */
     class Chat {
         constructor() {
-            let messages = [];
+            let messages = []; // messages for OpenAI API
+            let contents = []; // contents for Gemini API
             let tools = [];
             let model = "gpt-3.5-turbo"; // default 
             let temperature = 0.5;
@@ -214,6 +215,12 @@ const GenAIApp = (function () {
                     role: role,
                     content: messageContent
                 });
+                contents.push({
+                    role: "user", // Gemini uses 'user' role for both 'user' and 'system' messages
+                    parts: {
+                        text: messageContent
+                    }
+                })
                 return this;
             };
 
@@ -231,6 +238,7 @@ const GenAIApp = (function () {
             };
 
             /**
+             * NOT FOR GEMINI
             * Add an image to the chat. Will automatically include an image with gpt-4-turbo-2024-04-09.
             * @param {string} imageUrl - The URL of the image to add.
             * @returns {Chat} - The current Chat instance.
@@ -428,8 +436,96 @@ const GenAIApp = (function () {
                         role: "system",
                         content: `Information to help with your response (publicly available here: ${knowledgeLink}):\n\n${knowledge}`
                     });
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: `Information to help with your response (publicly available here: ${knowledgeLink}):\n\n${knowledge}`
+                        }
+                    })
                     knowledgeLink = null;
                 }
+
+                let payload;
+                if (model.includes("gemini")) {
+                    payload = this.buildGeminiPayload(advancedParametersObject);
+                }
+                else {
+                    payload = this.buildOpenAIPayload(advancedParametersObject);
+                }
+                console.log(JSON.stringify(payload));
+
+                let responseMessage;
+                if (numberOfAPICalls <= maximumAPICalls) {
+                    let endpointUrl = "https://api.openai.com/v1/chat/completions";
+                    if (model.includes("gemini")) {
+                        endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+
+                    }
+                    responseMessage = callGenAIApi(endpointUrl, payload);
+                    numberOfAPICalls++;
+                } else {
+                    throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
+                }
+
+                if (tools.length >> 0) {
+                    // Check if AI model wanted to call a function
+                    if (responseMessage.tool_calls || responseMessage.parts[0].functionCall) {
+                        if (model.includes("gemini")) {
+                            contents = handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened);
+                            // check if endWithResults or onlyReturnArguments
+                            if (contents[contents.length - 1].role == "model") {
+                                if (contents[contents.length - 1].parts.text == "endWithResult") {
+                                    if (verbose) {
+                                        console.log("Conversation stopped because end function has been called");
+                                    }
+                                    return contents[contents.length - 2].parts.text; // the last chat completion
+                                } else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                                    if (verbose) {
+                                        console.log("Conversation stopped because argument return has been enabled - No function has been called");
+                                    }
+                                    return contents[contents.length - 2].parts[0].functionCall.args; // the argument(s) of the last function called
+                                }
+                            }
+                        }
+                        else {
+                            messages = handleOpenAIToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened);
+                            // check if endWithResults or onlyReturnArguments
+                            if (messages[messages.length - 1].role == "system") {
+                                if (messages[messages.length - 1].content == "endWithResult") {
+                                    if (verbose) {
+                                        console.log("Conversation stopped because end function has been called");
+                                    }
+                                    return messages[messages.length - 2]; // the last chat completion
+                                } else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                                    if (verbose) {
+                                        console.log("Conversation stopped because argument return has been enabled - No function has been called");
+                                    }
+                                    return parseResponse(messages[messages.length - 3].tool_calls[0].function.arguments); // the argument(s) of the last function called
+                                }
+                            }
+                        }
+                        if (advancedParametersObject) {
+                            return this.run(advancedParametersObject);
+                        }
+                        else {
+                            return this.run();
+                        }
+
+
+                    }
+                    else {
+                        // if no function has been found, stop here
+
+                        return responseMessage;
+
+                    }
+                }
+                else {
+                    return responseMessage;
+                }
+            }
+
+            this.buildOpenAIPayload = function (advancedParametersObject) {
                 let payload = {
                     'messages': messages,
                     'model': model,
@@ -437,8 +533,6 @@ const GenAIApp = (function () {
                     'temperature': temperature,
                     'user': Session.getTemporaryActiveUserKey()
                 };
-
-                let functionCalling = false;
 
                 if (browsing) {
                     if (messages[messages.length - 1].role !== "tool") {
@@ -537,7 +631,6 @@ const GenAIApp = (function () {
 
                 if (tools.length >> 0) {
                     // the user has added functions, enable function calling
-                    functionCalling = true;
                     let payloadTools = Object.keys(tools).map(t => ({
                         type: "function",
                         function: {
@@ -570,61 +663,95 @@ const GenAIApp = (function () {
                         payload.tool_choice = 'auto'
                     }
                 }
-                let responseMessage;
-                if (numberOfAPICalls <= maximumAPICalls) {
-                    let endpointUrl = "https://api.openai.com/v1/chat/completions";
-                    if (model.includes("gemini")) {
-                        payload = convertPayloadForGemini(payload);
-                        endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+                return payload;
+            }
 
+            this.buildGeminiPayload = function (advancedParametersObject) {
+                let payload = {
+                    'contents': contents,
+                    'model': model,
+                    'generationConfig': {
+                        maxOutputTokens: max_tokens,
+                        temperature: temperature
+                    },
+                    'tool_config': {
+                        function_calling_config: {
+                            mode: "AUTO"
+                        }
                     }
-                    responseMessage = callGenAIApi(endpointUrl, payload);
+                };
 
-                    numberOfAPICalls++;
-                } else {
-                    throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
+                if (advancedParametersObject.function_call) {
+                    payload.tool_config.mode = "ANY",
+                        payload.tool_config.allowed_function_names = advancedParametersObject.function_call
                 }
 
-                if (functionCalling) {
-                    // Check if GPT wanted to call a function
-                    if (responseMessage.tool_calls) {
-                        messages = handleToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened, model);
-                        // check if endWithResults or onlyReturnArguments
-                        if (messages[messages.length - 1].role == "system") {
-                            if (messages[messages.length - 1].content == "endWithResult") {
-                                if (verbose) {
-                                    console.log("Conversation stopped because end function has been called");
-                                }
-                                return messages[messages.length - 2]; // the last chat completion
-                            } else if (messages[messages.length - 1].content == "onlyReturnArguments") {
-                                if (verbose) {
-                                    console.log("Conversation stopped because argument return has been enabled - No function has been called");
-                                }
-                                if (model.includes("gemini")) {
-                                    return parseResponse(messages[messages.length - 3].parts[0].functionCall.arguments);
-                                }
-                                return parseResponse(messages[messages.length - 3].tool_calls[0].function.arguments); // the argument(s) of the last function called
-                            }
+                if (browsing) {
+                    if (contents[contents.length - 1].role !== "tool") {
+                        tools.push({
+                            type: "function",
+                            function: webSearchFunction
+                        });
+                        let messageContent = `You are able to perform search queries on Google using the function webSearch and read the search results. `;
+                        if (!onlyRetrieveSearchResults) {
+                            messageContent += "Then you can select a search result and read the page content using the function urlFetch. ";
+                            tools.push({
+                                type: "function",
+                                function: urlFetchFunction
+                            });
                         }
-                        if (advancedParametersObject) {
-                            return this.run(advancedParametersObject);
-                        }
-                        else {
-                            return this.run();
-                        }
-
-
-                    }
-                    else {
-                        // if no function has been found, stop here
-
-                        return responseMessage;
-
+                        contents.push({
+                            role: "user",
+                            parts: {
+                                text: messageContent
+                            },
+                        });
                     }
                 }
-                else {
-                    return responseMessage;
+
+                if (assistantIdentificator) {
+                    throw Error("To use OpenAI's assitant, please select a different model than Gemini");
                 }
+
+                if (vision && numberOfAPICalls == 0 && !model.includes("gemini")) {
+                    tools.push({
+                        type: "function",
+                        function: imageDescriptionFunction
+                    });
+                    let messageContent = `You are able to retrieve images description using the getImageDescription function.`;
+                    contents.push({
+                        role: "system",
+                        parts: {
+                            text: messageContent
+                        }
+                    });
+                }
+
+                if (tools.length >> 0) {
+                    // the user has added functions, enable function calling
+                    let payloadTools = Object.keys(tools).map(t => {
+                        let toolFunction = tools[t].function.toJSON();
+
+                        const parameters = toolFunction.parameters;
+                        if (parameters && parameters.type) {
+                            toolFunction.parameters.type = parameters.type.toUpperCase();
+                        }
+
+                        return {
+                            name: toolFunction.name,
+                            description: toolFunction.description,
+                            parameters: toolFunction.parameters
+                        };
+                    });
+
+
+                    payload.tools = [{
+                        functionDeclarations: [
+                            payloadTools
+                        ]
+                    }]
+                }
+                return payload;
             }
         }
     }
@@ -658,16 +785,6 @@ const GenAIApp = (function () {
                 let parsedResponse = JSON.parse(response.getContentText());;
                 if (endpoint.includes("google")) {
                     responseMessage = parsedResponse.candidates[0].content;
-                    if (responseMessage.parts[0].text) {
-                        responseMessage.content = responseMessage.parts[0].text;
-                    } else {
-                        responseMessage.content = null
-                        responseMessage.parts[0].functionCall.arguments = responseMessage.parts[0].functionCall.args;
-                        responseMessage.tool_calls = [{
-                            type: 'function',
-                            function: responseMessage.parts[0].functionCall
-                        }];
-                    }
                     finish_reason = parsedResponse.candidates[0].finish_reason;
                 } else {
                     responseMessage = parsedResponse.choices[0].message;
@@ -712,98 +829,124 @@ const GenAIApp = (function () {
         return responseMessage;
     }
 
-    function convertPayloadForGemini(openAIPayload) {
-        // Initialize the Gemini payload
-        const geminiPayload = {};
+    function handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened) {
+        for (let tool_call in responseMessage.parts) {
+            // Call the function
+            let functionName = responseMessage.parts[tool_call].functionCall.name;
+            let functionArgs = responseMessage.parts[tool_call].functionCall.args;
+            contents.push({
+                role: "model",
+                parts: [{
+                    functionCall: {
+                        "name": functionName,
+                        "args": functionArgs
+                    }
+                }]
+            })
 
-        // Map 'messages' to 'contents'
-        if (openAIPayload.messages) {
-            geminiPayload.contents = openAIPayload.messages.map((message) => {
-                // Map roles from OpenAI to Gemini
-                let role = message.role;
-                if (role === 'assistant') {
-                    role = 'model';
-                } else if (role === 'tool') {
-                    role = 'user';
-                } else if (role === 'user' || role === 'system') {
-                    // Gemini uses 'user' role for both 'user' and 'system' messages
-                    role = 'user';
+            let argsOrder = [];
+            let endWithResult = false;
+            let onlyReturnArguments = false;
+
+            for (let t in tools) {
+                let currentFunction = tools[t].function.toJSON();
+                if (currentFunction.name == functionName) {
+                    argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
+                    endWithResult = currentFunction.endingFunction;
+                    onlyReturnArguments = currentFunction.onlyArgs;
+                    break;
+                }
+            }
+
+            if (endWithResult) {
+                // User defined that if this function has been called, then no more actions should be performed with the chat.
+                let functionResponse = callFunction(functionName, functionArgs, argsOrder);
+                if (typeof functionResponse != "string") {
+                    if (typeof functionResponse == "object") {
+                        functionResponse = JSON.stringify(functionResponse);
+                    }
+                    else {
+                        functionResponse = String(functionResponse);
+                    }
+                }
+                contents.push({
+                    "role": "user",
+                    "parts": {
+                        text: functionResponse
+                    }
+                });
+                contents.push({
+                    "role": "model",
+                    "parts": {
+                        text: "endWithResult"
+                    }
+                });
+                return contents;
+            }
+            else if (onlyReturnArguments) {
+                contents.push({
+                    "role": "model",
+                    "parts": {
+                        text: "onlyReturnArguments"
+                    }
+                });
+                return contents;
+            }
+            else {
+
+                let functionResponse = callFunction(functionName, functionArgs, argsOrder);
+                if (typeof functionResponse != "string") {
+                    if (typeof functionResponse == "object") {
+                        functionResponse = JSON.stringify(functionResponse);
+                    }
+                    else {
+                        functionResponse = String(functionResponse);
+                    }
                 }
 
-                // Each message in Gemini has 'parts'
-                let parts = [];
-
-                // Handle function calls and responses
-                if (message.parts) {
-                    message.parts[0].functionCall.args = message.parts[0].functionCall.arguments;
-                    delete message.parts[0].functionCall.arguments;
-                    parts = message.parts;
-                } else if (message.content) {
-                    parts.push({
-                        text: message.content,
-                    });
+                if (functionName == "webSearch") {
+                    webSearchQueries.push(functionArgs.q);
                 }
-                if (parts.length >= 1) {
-                    return {
-                        role: role,
-                        parts: parts,
-                    };
-                }
-            });
-        }
-
-        // Map 'functions' to 'tools' with 'functionDeclarations'
-        if (openAIPayload.tools) {
-            geminiPayload.tools = [
-                {
-                    functionDeclarations: openAIPayload.tools.map((func) => {
-                        // Adjust the parameter types if necessary
-                        const parameters = func.function.parameters;
-                        if (parameters && parameters.type) {
-                            parameters.type = parameters.type.toUpperCase();
+                else if (functionName == "urlFetch") {
+                    webPagesOpened.push(functionArgs.url);
+                    if (!functionResponse) {
+                        if (verbose) {
+                            console.log("The website didn't respond, going back to search results.");
                         }
+                        let searchResults = JSON.parse(contents[contents.length - 1].parts[0].text);
+                        let updatedSearchResults = searchResults.filter(function (obj) {
+                            return obj.link !== functionArgs.url;
+                        });
+                        contents[contents.length - 1].parts[0].text = JSON.stringify(updatedSearchResults);
+                    }
+                    if (verbose) {
+                        console.log("Web page opened, let model decide what to do next (open another web page or perform another action).");
+                    }
+                }
+                else {
+                    if (verbose) {
+                        console.log(`function ${functionName}() called by genAI.`);
+                    }
+                }
+                contents.push({
+                    "role": "user",
+                    "parts": {
+                        text: functionResponse
+                    }
+                });
+            }
 
-                        return {
-                            name: func.function.name,
-                            description: func.function.description,
-                            parameters: parameters,
-                        };
-                    }),
-                },
-            ];
         }
-
-        // Map 'model' (ensure it's a valid Gemini model name)
-        if (openAIPayload.model) {
-            geminiPayload.model = openAIPayload.model;
-        }
-
-        // Map 'max_tokens' to 'generationConfig.maxOutputTokens'
-        if (openAIPayload.max_tokens !== undefined) {
-            geminiPayload.generationConfig = geminiPayload.generationConfig || {};
-            geminiPayload.generationConfig.maxOutputTokens = openAIPayload.max_tokens;
-        }
-
-        // Map 'temperature' to 'generationConfig.temperature'
-        if (openAIPayload.temperature !== undefined) {
-            geminiPayload.generationConfig = geminiPayload.generationConfig || {};
-            geminiPayload.generationConfig.temperature = openAIPayload.temperature;
-        }
-
-        return geminiPayload;
+        return contents;
     }
 
-    function handleToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened, model) {
+    function handleOpenAIToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened) {
         messages.push(responseMessage);
         for (let tool_call in responseMessage.tool_calls) {
             if (responseMessage.tool_calls[tool_call].type == "function") {
                 // Call the function
                 let functionName = responseMessage.tool_calls[tool_call].function.name;
-                let functionArgs = responseMessage.tool_calls[tool_call].function.arguments;
-
-                if (!model.includes("gemini")) {
-                    functionArgs = parseResponse(functionArgs);
-                }
+                let functionArgs = parseResponse(responseMessage.tool_calls[tool_call].function.arguments);
 
                 let argsOrder = [];
                 let endWithResult = false;
@@ -891,7 +1034,7 @@ const GenAIApp = (function () {
                     }
                     else {
                         if (verbose) {
-                            console.log(`function ${functionName}() called by genAI.`);
+                            console.log(`function ${functionName}() called by OpenAI.`);
                         }
                     }
                     messages.push({
