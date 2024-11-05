@@ -72,10 +72,7 @@ You need to set your API keys before starting any chat:
 
 ```js
 // Set Gemini Auth if using Google Cloud
-GenAIApp.setGeminiAuth({
-  project_id: 'your-gcp-project-id',
-  region: 'your-region'
-});
+GenAIApp.setGeminiAuth('your-gcp-project-id','your-region');
 
 // Set OpenAI API Key if using OpenAI
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
@@ -169,7 +166,9 @@ console.log(response);
 ```
 The library supports the following models: 
 1. Gemini: "gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash"
-2. OpenAI: "gpt-3.5-turbo" | "gpt-4" | "gpt-4-turbo" | "gpt-4o" | "gpt-4o-mini" 
+2. OpenAI: "gpt-3.5-turbo" | "gpt-4" | "gpt-4-turbo" | "gpt-4o" | "gpt-4o-mini"
+
+⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
 
 ## FunctionObject Class
 
