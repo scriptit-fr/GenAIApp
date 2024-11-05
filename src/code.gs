@@ -469,7 +469,7 @@ const GenAIApp = (function () {
                 if (tools.length > 0) {
                     // Check if AI model wanted to call a function
                     if (model.includes("gemini")) {
-                        if (responseMessage.parts[0]?.functionCall) {
+                        if (responseMessage?.parts?.[0]?.functionCall) {
                             contents = _handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened);
                             // check if endWithResults or onlyReturnArguments
                             if (contents[contents.length - 1].role == "model") {
