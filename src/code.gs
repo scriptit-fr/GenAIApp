@@ -452,7 +452,6 @@ const GenAIApp = (function () {
                 else {
                     payload = this.buildOpenAIPayload(advancedParametersObject);
                 }
-                console.log(JSON.stringify(payload));
 
                 let responseMessage;
                 if (numberOfAPICalls <= maximumAPICalls) {
@@ -469,8 +468,8 @@ const GenAIApp = (function () {
 
                 if (tools.length > 0) {
                     // Check if AI model wanted to call a function
-                    if (responseMessage.tool_calls || responseMessage.parts[0].functionCall) {
-                        if (model.includes("gemini")) {
+                    if (model.includes("gemini")) {
+                        if (responseMessage.parts[0].functionCall) {
                             contents = handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened);
                             // check if endWithResults or onlyReturnArguments
                             if (contents[contents.length - 1].role == "model") {
@@ -488,6 +487,12 @@ const GenAIApp = (function () {
                             }
                         }
                         else {
+                            // if no function has been found, stop here
+                            return responseMessage.parts[0].text;
+                        }
+                    }
+                    else {
+                        if (responseMessage.tool_calls) {
                             messages = handleOpenAIToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened);
                             // check if endWithResults or onlyReturnArguments
                             if (messages[messages.length - 1].role == "system") {
@@ -504,24 +509,27 @@ const GenAIApp = (function () {
                                 }
                             }
                         }
-                        if (advancedParametersObject) {
-                            return this.run(advancedParametersObject);
-                        }
                         else {
-                            return this.run();
+                            // if no function has been found, stop here
+                            return responseMessage.content;
                         }
-
-
+                    }
+                    if (advancedParametersObject) {
+                        return this.run(advancedParametersObject);
                     }
                     else {
-                        // if no function has been found, stop here
-
-                        return responseMessage;
-
+                        return this.run();
                     }
+
+
                 }
                 else {
-                    return responseMessage;
+                    if (model.includes("gemini")) {
+                        return responseMessage.parts[0].text;
+                    }
+                    else {
+                        return responseMessage.content;
+                    }
                 }
             }
 
@@ -682,8 +690,9 @@ const GenAIApp = (function () {
                 };
 
                 if (advancedParametersObject.function_call) {
-                    payload.tool_config.mode = "ANY";
-                    payload.tool_config.allowed_function_names = advancedParametersObject.function_call;
+                    payload.tool_config.function_calling_config.mode = "ANY";
+                    payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
+                    delete advancedParametersObject.function_call;
                 }
 
                 if (browsing) {
@@ -925,7 +934,7 @@ const GenAIApp = (function () {
                 }
                 else {
                     if (verbose) {
-                        console.log(`function ${functionName}() called by genAI.`);
+                        console.log(`function ${functionName}() called by Gemini.`);
                     }
                 }
                 contents.push({
