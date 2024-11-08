@@ -39,8 +39,8 @@ The **GenAIApp** library is a JavaScript library designed for creating, managing
 To use the **GenAIApp** library, you will need:
 
 1. An **OpenAI API key** for accessing OpenAI models.
-2. A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
-3. A **Google Cloud Platform (GCP) project** for using Gemini models and document analysis features.
+2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
+3. (Optionnal) A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
 
 ## Installation
 
@@ -56,14 +56,17 @@ You need to set your API keys before starting any chat:
 // Set OpenAI API Key
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
 
-// Set Google Search API Key (optional, for web browsing)
-GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
+// Set Gemini API Key
+GenAIApp.setGeminiAPIKey('your-gemini-api-key');
 
 // Set Gemini Auth if using Google Cloud
 GenAIApp.setGeminiAuth({
   project_id: 'your-gcp-project-id',
   region: 'your-region'
 });
+
+// Set Google Search API Key (optional, for web browsing)
+GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
 ```
 
 ### Creating a New Chat
