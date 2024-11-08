@@ -39,8 +39,8 @@ The **GenAIApp** library is a JavaScript library designed for creating, managing
 To use the **GenAIApp** library, you will need:
 
 1. An **OpenAI API key** for accessing OpenAI models.
-2. A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
-3. A **Google Cloud Platform (GCP) project** for using Gemini models and document analysis features.
+2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
+3. (Optionnal) A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
 
 ## Installation
 
