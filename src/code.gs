@@ -1791,7 +1791,8 @@ const GenAIApp = (function () {
         },
 
         /**
-         * To use Gemini models with an API key
+         * Sets the Gemini API key for authentication with Google's Generative Language API.
+         * This method provides an alternative to GCP project authentication.
          * @param {string} apiKey - Your Gemmini API key.
          */
         setGeminiAPIKey: function (apiKey) {
@@ -1801,6 +1802,7 @@ const GenAIApp = (function () {
         /**
          * To use Gemini models without an API key
          * Requires Vertex AI enabled on a GCP project linked to your Google Apps Script project
+         * This method provides an alternative to API key authentication.
          * @param {string} gcp_project_id - Your GCP project ID
          * @param {string} gcp_project_region - Your GCP project region (ex: us-central1)
          */
