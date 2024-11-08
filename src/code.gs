@@ -21,6 +21,7 @@
 const GenAIApp = (function () {
 
     let openAIKey = "";
+    let geminiKey = "";
     let gcpProjectId = "";
     let region = "";
 
@@ -405,8 +406,8 @@ const GenAIApp = (function () {
                     if (advancedParametersObject.model) {
                         model = advancedParametersObject.model;
                         if (model.includes("gemini")) {
-                            if (!region || !gcpProjectId) {
-                                throw Error("Please set your GCP project auth using GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
+                            if (!geminiKey && (!region || !gcpProjectId)) {
+                                throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
                             }
                         } else {
                             if (!openAIKey) {
@@ -457,8 +458,12 @@ const GenAIApp = (function () {
                 if (numberOfAPICalls <= maximumAPICalls) {
                     let endpointUrl = "https://api.openai.com/v1/chat/completions";
                     if (model.includes("gemini")) {
-                        endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
-
+                        if (geminiKey) {
+                            endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+                        }
+                        else {
+                            endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+                        }
                     }
                     responseMessage = _callGenAIApi(endpointUrl, payload);
                     numberOfAPICalls++;
@@ -1786,7 +1791,16 @@ const GenAIApp = (function () {
         },
 
         /**
-         * Mandatory in order to use Gemini models
+         * To use Gemini models with an API key
+         * @param {string} apiKey - Your Gemmini API key.
+         */
+        setGeminiAPIKey: function (apiKey) {
+            geminiKey = apiKey;
+        },
+
+        /**
+         * To use Gemini models without an API key
+         * Requires Vertex AI enabled on a GCP project linked to your Google Apps Script project
          * @param {string} gcp_project_id - Your GCP project ID
          * @param {string} gcp_project_region - Your GCP project region (ex: us-central1)
          */
