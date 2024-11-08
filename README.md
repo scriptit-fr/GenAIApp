@@ -56,14 +56,17 @@ You need to set your API keys before starting any chat:
 // Set OpenAI API Key
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
 
-// Set Google Search API Key (optional, for web browsing)
-GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
+// Set Gemini API Key
+GenAIApp.setGeminiAPIKey('your-gemini-api-key');
 
 // Set Gemini Auth if using Google Cloud
 GenAIApp.setGeminiAuth({
   project_id: 'your-gcp-project-id',
   region: 'your-region'
 });
+
+// Set Google Search API Key (optional, for web browsing)
+GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
 ```
 
 ### Creating a New Chat
