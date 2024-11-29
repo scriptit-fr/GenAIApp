@@ -58,7 +58,9 @@ Ensure to link your Google Apps Script project to a GCP project with Vertex AI e
   ]
 ```
 
-If you wish to enable browsing capabilities, you will also need to provide your Google Custom Search API key via `setGoogleAPIKey()`.
+1. An **OpenAI API key** for accessing OpenAI models.
+2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
+3. (Optionnal) A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
 
 ## Installation
 
@@ -71,6 +73,9 @@ To start using the library, include the **GenAIApp** code in your Google Apps Sc
 You need to set your API keys before starting any chat:
 
 ```js
+// Set Gemini API Key
+GenAIApp.setGeminiAPIKey('your-gemini-api-key');
+
 // Set Gemini Auth if using Google Cloud
 GenAIApp.setGeminiAuth('your-gcp-project-id','your-region');
 
