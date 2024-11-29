@@ -141,7 +141,7 @@ const GenAIApp = (function () {
                 return this;
             }
 
-            this.toJSON = function () {
+            this._toJSON = function () {
                 return {
                     name: name,
                     description: description,
@@ -369,7 +369,7 @@ const GenAIApp = (function () {
                 maximumAPICalls = maxAPICalls;
             };
 
-            this.toJson = function () {
+            this._toJson = function () {
                 return {
                     messages: messages,
                     tools: tools,
@@ -399,7 +399,7 @@ const GenAIApp = (function () {
             this.run = function (advancedParametersObject) {
 
                 if (browsing && !googleCustomSearchAPIKey) {
-                    throw Error("Please set your Google custom search API key using GenAIApp.setGoogleSearchAPIKey(youAPIKey)");
+                    throw Error("Please set your Google custom search API key using GenAIApp.setGoogleSearchAPIKey(yourAPIKey)");
                 }
 
                 if (advancedParametersObject) {
@@ -415,7 +415,7 @@ const GenAIApp = (function () {
                                     throw Error("Careful to use setOpenAIAPIKey to set your OpenAI API key and not setGoogleSearchAPIKey.");
                                 }
                                 else {
-                                    throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(youAPIKey)");
+                                    throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
                                 }
                             }
                         }
@@ -1791,8 +1791,7 @@ const GenAIApp = (function () {
         },
 
         /**
-         * Sets the Gemini API key for authentication with Google's Generative Language API.
-         * This method provides an alternative to GCP project authentication.
+         * To use Gemini models with an API key
          * @param {string} apiKey - Your Gemmini API key.
          */
         setGeminiAPIKey: function (apiKey) {
@@ -1802,7 +1801,6 @@ const GenAIApp = (function () {
         /**
          * To use Gemini models without an API key
          * Requires Vertex AI enabled on a GCP project linked to your Google Apps Script project
-         * This method provides an alternative to API key authentication.
          * @param {string} gcp_project_id - Your GCP project ID
          * @param {string} gcp_project_region - Your GCP project region (ex: us-central1)
          */
