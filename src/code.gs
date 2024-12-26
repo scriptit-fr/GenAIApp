@@ -556,8 +556,8 @@ const GenAIApp = (function () {
                 if (model.includes("o1")) {
                     // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
                     messages.forEach(message => {
-                        if (message.role == "system") {
-                            message.role == "developer";
+                        if (message.role === "system") {
+                            message.role = "developer";
                         }
                     })
                 }
