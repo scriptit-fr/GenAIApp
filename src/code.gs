@@ -553,15 +553,6 @@ const GenAIApp = (function () {
              */
             this._buildOpenAIPayload = function (advancedParametersObject) {
 
-                if (model.includes("o1")) {
-                    // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
-                    messages.forEach(message => {
-                        if (message.role === "system") {
-                            message.role = "developer";
-                        }
-                    })
-                }
-
                 let payload = {
                     'messages': messages,
                     'model': model,
@@ -569,6 +560,19 @@ const GenAIApp = (function () {
                     'temperature': temperature,
                     'user': Session.getTemporaryActiveUserKey()
                 };
+
+                if (model.includes("o1")) {
+                    // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
+                    messages.forEach(message => {
+                        if (message.role === "system") {
+                            message.role = "developer";
+                        }
+                    })
+                    payload.messages = messages;
+                    delete payload.temperature;
+                }
+
+
 
                 if (browsing) {
                     if (messages[messages.length - 1].role !== "tool") {
