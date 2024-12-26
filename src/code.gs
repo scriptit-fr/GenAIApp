@@ -141,7 +141,7 @@ const GenAIApp = (function () {
                 return this;
             }
 
-            this._toJSON = function () {
+            this._toJson = function () {
                 return {
                     name: name,
                     description: description,
@@ -390,7 +390,7 @@ const GenAIApp = (function () {
              * Will return the last chat answer.
              * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
              * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o"} [advancedParametersObject.model]
+             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini"} [advancedParametersObject.model]
              * @param {number} [advancedParametersObject.temperature]
              * @param {number} [advancedParametersObject.max_tokens]
              * @param {string} [advancedParametersObject.function_call]
@@ -552,10 +552,20 @@ const GenAIApp = (function () {
              * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
              */
             this._buildOpenAIPayload = function (advancedParametersObject) {
+
+                if (model.includes("o1")) {
+                    // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
+                    messages.forEach(message => {
+                        if (message.role == "system") {
+                            message.role == "developer";
+                        }
+                    })
+                }
+
                 let payload = {
                     'messages': messages,
                     'model': model,
-                    'max_tokens': max_tokens,
+                    'max_completion_tokens': max_tokens,
                     'temperature': temperature,
                     'user': Session.getTemporaryActiveUserKey()
                 };
@@ -655,14 +665,14 @@ const GenAIApp = (function () {
                     };
                 }
 
-                if (tools.length >> 0) {
+                if (tools.length > 0) {
                     // the user has added functions, enable function calling
                     let payloadTools = Object.keys(tools).map(t => ({
                         type: "function",
                         function: {
-                            name: tools[t].function.toJSON().name,
-                            description: tools[t].function.toJSON().description,
-                            parameters: tools[t].function.toJSON().parameters
+                            name: tools[t].function._toJson().name,
+                            description: tools[t].function._toJson().description,
+                            parameters: tools[t].function._toJson().parameters
                         }
                     }));
                     payload.tools = payloadTools;
@@ -779,7 +789,7 @@ const GenAIApp = (function () {
                 if (tools.length > 0) {
                     // the user has added functions, enable function calling
                     let payloadTools = Object.keys(tools).map(t => {
-                        let toolFunction = tools[t].function.toJSON();
+                        let toolFunction = tools[t].function._toJson();
 
                         const parameters = toolFunction.parameters;
                         if (parameters && parameters.type) {
@@ -793,12 +803,10 @@ const GenAIApp = (function () {
                         };
                     });
 
-
                     payload.tools = [{
-                        functionDeclarations: [
-                            payloadTools
-                        ]
+                        functionDeclarations: payloadTools
                     }]
+
                 }
                 return payload;
             }
@@ -930,7 +938,7 @@ const GenAIApp = (function () {
             let onlyReturnArguments = false;
 
             for (let t in tools) {
-                let currentFunction = tools[t].function.toJSON();
+                let currentFunction = tools[t].function._toJson();
                 if (currentFunction.name == functionName) {
                     argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
                     endWithResult = currentFunction.endingFunction;
@@ -1047,7 +1055,7 @@ const GenAIApp = (function () {
                 let onlyReturnArguments = false;
 
                 for (let t in tools) {
-                    let currentFunction = tools[t].function.toJSON();
+                    let currentFunction = tools[t].function._toJson();
                     if (currentFunction.name == functionName) {
                         argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
                         endWithResult = currentFunction.endingFunction;
@@ -1825,10 +1833,10 @@ const GenAIApp = (function () {
         debug: function (chat) {
             return {
                 getWebSearchQueries: function () {
-                    return chat.toJson().webSearchQueries
+                    return chat._toJson().webSearchQueries
                 },
                 getWebPagesOpened: function () {
-                    return chat.toJson().webPagesOpened
+                    return chat._toJson().webPagesOpened
                 }
             }
         }
