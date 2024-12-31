@@ -390,7 +390,7 @@ const GenAIApp = (function () {
              * Will return the last chat answer.
              * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
              * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini"} [advancedParametersObject.model]
+             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
              * @param {number} [advancedParametersObject.temperature]
              * @param {number} [advancedParametersObject.max_tokens]
              * @param {string} [advancedParametersObject.function_call]
@@ -561,14 +561,15 @@ const GenAIApp = (function () {
                     'user': Session.getTemporaryActiveUserKey()
                 };
 
-                if (model.includes("o1")) {
+                if (model.includes("o1") && !model.includes("mini")) {
                     // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
-                    messages.forEach(message => {
+                    let o1Messages = messages;
+                    o1Messages.forEach(message => {
                         if (message.role === "system") {
                             message.role = "developer";
                         }
                     })
-                    payload.messages = messages;
+                    payload.messages = o1Messages;
                     delete payload.temperature;
                 }
 
@@ -863,12 +864,12 @@ const GenAIApp = (function () {
                     finish_reason = parsedResponse.choices[0].finish_reason;
                 }
                 if (finish_reason == "length") {
-                    console.warn(`GenAI response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
+                    console.warn(`${payload.model} response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
                 }
                 success = true;
             }
             else if (responseCode === 429) {
-                console.warn(`Rate limit reached when calling genAI API, will automatically retry in a few seconds.`);
+                console.warn(`Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
                 // Rate limit reached, wait before retrying.
                 let delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
                 Utilities.sleep(delay);
@@ -883,28 +884,20 @@ const GenAIApp = (function () {
             }
             else {
                 // The request failed for another reason, log the error and exit the loop.
-                console.error(`Request to genAI failed with response code ${responseCode} - ${response.getContentText()}`);
+                console.error(`Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
                 break;
             }
         }
 
         if (!success) {
-            throw new Error(`Failed to call genAI API after ${retries} retries.`);
+            throw new Error(`Failed to call ${payload.model} after ${retries} retries.`);
         }
 
         if (verbose) {
-            if (endpoint.includes("google")) {
-                Logger.log({
-                    message: `Got response from Gemini API.`,
-                    responseMessage: responseMessage
-                });
-            } else {
-                Logger.log({
-                    message: `Got response from OpenAI API.`,
-                    responseMessage: responseMessage
-                });
-            }
-
+            Logger.log({
+                message: `Got response from ${payload.model}`,
+                responseMessage: responseMessage
+            });
         }
         return responseMessage;
     }
