@@ -390,7 +390,7 @@ const GenAIApp = (function () {
              * Will return the last chat answer.
              * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
              * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
+             * @param {"gemini-2.0-flash-thinking-exp" | "gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
              * @param {number} [advancedParametersObject.temperature]
              * @param {number} [advancedParametersObject.max_tokens]
              * @param {string} [advancedParametersObject.function_call]
@@ -530,6 +530,14 @@ const GenAIApp = (function () {
                 }
                 else {
                     if (model.includes("gemini")) {
+
+                        if (model.includes("thinking") && responseMessage.parts.length > 1) {
+                            return JSON.stringify({
+                                thoughts: responseMessage.parts[0].text,
+                                finalAnswer: responseMessage.parts[1].text
+                            });
+                        }
+
                         return responseMessage.parts[0].text;
                     }
                     else {
