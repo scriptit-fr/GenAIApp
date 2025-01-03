@@ -390,7 +390,7 @@ const GenAIApp = (function () {
              * Will return the last chat answer.
              * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
              * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
+             * @param {"gemini-2.0-flash-thinking-exp" | "gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
              * @param {number} [advancedParametersObject.temperature]
              * @param {number} [advancedParametersObject.max_tokens]
              * @param {string} [advancedParametersObject.function_call]
@@ -530,6 +530,18 @@ const GenAIApp = (function () {
                 }
                 else {
                     if (model.includes("gemini")) {
+
+                        if (model.includes("thinking") && responseMessage.parts.length > 1) {
+
+                            const thoughts = responseMessage.parts.slice(0, -1).map(part => part.text).join("\n\n");
+                            const finalAnswer = responseMessage.parts[responseMessage.parts.length - 1].text;
+
+                            return JSON.stringify({
+                                thoughts: thoughts,
+                                finalAnswer: finalAnswer
+                            });
+                        }
+
                         return responseMessage.parts[0].text;
                     }
                     else {
@@ -792,6 +804,11 @@ const GenAIApp = (function () {
                 }
 
                 if (tools.length > 0) {
+
+                    if (model.includes("thinking")) {
+                        throw new Error("Function Calling is not handled yet with Gemini Thinking models - please select another Gemini model to proceed.")
+                    }
+
                     // the user has added functions, enable function calling
                     let payloadTools = Object.keys(tools).map(t => {
                         let toolFunction = tools[t].function._toJson();
