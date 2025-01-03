@@ -532,9 +532,13 @@ const GenAIApp = (function () {
                     if (model.includes("gemini")) {
 
                         if (model.includes("thinking") && responseMessage.parts.length > 1) {
+
+                            const thoughts = responseMessage.parts.slice(0, -1).map(part => part.text).join("\n\n");
+                            const finalAnswer = responseMessage.parts[responseMessage.parts.length - 1].text;
+
                             return JSON.stringify({
-                                thoughts: responseMessage.parts[0].text,
-                                finalAnswer: responseMessage.parts[1].text
+                                thoughts: thoughts,
+                                finalAnswer: finalAnswer
                             });
                         }
 
@@ -800,6 +804,11 @@ const GenAIApp = (function () {
                 }
 
                 if (tools.length > 0) {
+
+                    if (model.includes("thinking")) {
+                        throw new Error("Function Calling is not handled yet with Gemini Thinking models - please select another Gemini model to proceed.")
+                    }
+
                     // the user has added functions, enable function calling
                     let payloadTools = Object.keys(tools).map(t => {
                         let toolFunction = tools[t].function._toJson();
