@@ -391,8 +391,9 @@ const GenAIApp = (function () {
              * Will return the last chat answer.
              * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
              * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
+             * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o3-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
              * @param {number} [advancedParametersObject.temperature]
+             * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for o3-mini, defaults at low
              * @param {number} [advancedParametersObject.max_tokens]
              * @param {string} [advancedParametersObject.function_call]
              * @returns {object} - the last message of the chat 
@@ -566,7 +567,7 @@ const GenAIApp = (function () {
                 };
 
                 if (model.includes("o1") || model.includes("o3")) {
-                    // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. 
+                    // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 and o3 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. This includes o1, o1-mini, o3-mini, and future versions.
                     let tempMessages = messages;
                     tempMessages.forEach(message => {
                         if (message.role === "system") {
