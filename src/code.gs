@@ -18,7 +18,7 @@
  */
 
 
-const GenAIApp = (function () {
+ const GenAIApp = (function () {
 
     let openAIKey = "";
     let geminiKey = "";
@@ -45,7 +45,7 @@ const GenAIApp = (function () {
             let properties = {};
             let required = [];
             let argumentsInRightOrder = [];
-            let endingFunction = false; 
+            let endingFunction = false;
             let onlyArgs = false;
 
             /**
@@ -195,11 +195,13 @@ const GenAIApp = (function () {
             let vectorStore;
             let attachmentIdentificator;
             let assistantTools;
+            let pdfContent; // Store the PDF content here
+
 
             let webSearchQueries = [];
             let webPagesOpened = [];
 
-            let maximumAPICalls = 30; 
+            let maximumAPICalls = 30;
             let numberOfAPICalls = 0;
 
             /**
@@ -370,6 +372,43 @@ const GenAIApp = (function () {
                 maximumAPICalls = maxAPICalls;
             };
 
+            /**
+             * Includes the content of a pdf in the prompt sent to gemini
+             * @param {string} pdfID - the id of the pdf you want to fetch
+             * @returns {Chat} - The current Chat instance.
+             */
+            this.addPdfForAnalysis = function (pdfID) {
+                this.pdfID = pdfID;
+                pdfContent = _pdfToBase64(pdfID); // Get the PDF content
+                if (pdfContent) {
+                    contents.push({
+                        role: "user",
+                        parts: [
+                            {
+                                text: "Here is the pdf to analyze:"
+                            },
+                            {
+                                inlineData: {
+                                    mimeType: "application/pdf",
+                                    data: pdfContent
+                                }
+                            }
+                        ]
+                    });
+                    messages.push({
+                        role: "system",
+                        content: `You have access to the content of a pdf. Use it to answer the user's questions.`
+                    });
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: `You have access to the content of a pdf. Use it to answer the user's questions.`
+                        }
+                    })
+                }
+                return this;
+            };
+
             this._toJson = function () {
                 return {
                     messages: messages,
@@ -492,7 +531,7 @@ const GenAIApp = (function () {
                                     if (verbose) {
                                         console.log("Conversation stopped because argument return has been enabled - No function has been called");
                                     }
-                                    return contents[contents.length - 2].parts[0].functionCall.args; // the argument(s) of the last function called
+                                    return JSON.parse(contents[contents.length - 2].parts[0].functionCall.args); // the argument(s) of the last function called
                                 }
                             }
                         }
@@ -1343,6 +1382,26 @@ const GenAIApp = (function () {
         return uploadedFileResponse.id;
     }
 
+    //Rename to pdf in base64
+    function _pdfToBase64(fileId) {
+        if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
+            Logger.log("Erreur : Identifiant de fichier invalide.");
+            return null;
+        }
+
+        try {
+            // Récupérer le fichier PDF depuis Google Drive
+            const file = DriveApp.getFileById(fileId);
+            const pdfBlob = file.getBlob();
+            const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+            return pdfBase64;
+        } catch (error) {
+            Logger.log("Erreur lors de l'appel à l'API Gemini : " + error.toString());
+            return null;
+        }
+    }
+
     /**
      * Adds a message to the thread.
      * 
@@ -1845,3 +1904,4 @@ const GenAIApp = (function () {
         }
     }
 })();
+
