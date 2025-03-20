@@ -1385,19 +1385,19 @@
     //Rename to pdf in base64
     function _pdfToBase64(fileId) {
         if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
-            Logger.log("Erreur : Identifiant de fichier invalide.");
+            Logger.log("Error: Invalid file identifier..");
             return null;
         }
 
         try {
-            // Récupérer le fichier PDF depuis Google Drive
+            // Retrieve the PDF file from Google Drive
             const file = DriveApp.getFileById(fileId);
             const pdfBlob = file.getBlob();
             const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
 
             return pdfBase64;
         } catch (error) {
-            Logger.log("Erreur lors de l'appel à l'API Gemini : " + error.toString());
+            Logger.log(" Error during the call to the Gemini API: " + error.toString());
             return null;
         }
     }
