@@ -404,7 +404,18 @@
                         parts: {
                             text: `You have access to the content of a pdf. Use it to answer the user's questions.`
                         }
-                    })
+                    });
+                } else {
+                    if (verbose) {
+                        console.warn(`Failed to process PDF with ID: ${pdfID}`);
+                    }
+                    // Optionally add a message to inform the user about the failure
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: "Failed to process the requested PDF. Please verify the PDF ID and try again."
+                        }
+                    });
                 }
                 return this;
             };
