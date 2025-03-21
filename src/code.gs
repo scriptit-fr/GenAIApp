@@ -376,6 +376,18 @@
              * @returns {Chat} - The current Chat instance.
              */
             this.addFile = function (fileID) {
+                if (!fileID || typeof fileID !== 'string' || fileID.trim() === '') {
+                    if (verbose) {
+                        console.warn('Invalid file ID provided to addFile method');
+                    }
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: "Failed to process the file. Invalid file ID provided."
+                        }
+                    });
+                    return this;
+                }
                 this.fileID = fileID;
                 const fileContent = _fileToBase64(fileID); // Get the file content
                 if (fileContent) {
