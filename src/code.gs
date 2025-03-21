@@ -373,47 +373,37 @@
             };
 
             /**
-             * Includes the content of a pdf in the prompt sent to gemini
-             * @param {string} pdfID - the id of the pdf you want to fetch
+             * Includes the content of a file in the prompt sent to gemini
+             * @param {string} fileID - the id of the file you want to fetch
              * @returns {Chat} - The current Chat instance.
              */
-            this.addPdfForAnalysis = function (pdfID) {
-                this.pdfID = pdfID;
-                pdfContent = _pdfToBase64(pdfID); // Get the PDF content
-                if (pdfContent) {
+            this.addFile = function (fileID) {
+                this.fileID = fileID;
+                const fileContent = _fileToBase64(fileID); // Get the file content
+                if (fileContent) {
                     contents.push({
                         role: "user",
-                        parts: [
-                            {
-                                text: "Here is the pdf to analyze:"
-                            },
-                            {
-                                inlineData: {
-                                    mimeType: "application/pdf",
-                                    data: pdfContent
-                                }
-                            }
-                        ]
+                        parts: fileContent.parts
                     });
                     messages.push({
                         role: "system",
-                        content: `You have access to the content of a pdf. Use it to answer the user's questions.`
+                        content: fileContent.systemMessage
                     });
                     contents.push({
                         role: "user",
                         parts: {
-                            text: `You have access to the content of a pdf. Use it to answer the user's questions.`
+                            text: fileContent.systemMessage
                         }
                     });
                 } else {
                     if (verbose) {
-                        console.warn(`Failed to process PDF with ID: ${pdfID}`);
+                        console.warn(`Failed to process file with ID: ${fileID}`);
                     }
                     // Optionally add a message to inform the user about the failure
                     contents.push({
                         role: "user",
                         parts: {
-                            text: "Failed to process the requested PDF. Please verify the PDF ID and try again."
+                            text: "Failed to process the requested file. Please verify the file ID and try again."
                         }
                     });
                 }
@@ -1393,22 +1383,114 @@
         return uploadedFileResponse.id;
     }
 
-    //Rename to pdf in base64
-    function _pdfToBase64(fileId) {
+    /**
+     * Converts a file to base64 or returns the file content as text.
+     *
+     * @private
+     * @param {string} fileId - The ID of the file to convert.
+     * @returns {object|null} - An object containing the file content and a system message, or null if an error occurs.
+     */
+    function _fileToBase64(fileId) {
         if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
-            Logger.log("Error: Invalid file identifier..");
+            Logger.log("Error: Invalid file identifier.");
             return null;
         }
 
         try {
-            // Retrieve the PDF file from Google Drive
             const file = DriveApp.getFileById(fileId);
-            const pdfBlob = file.getBlob();
-            const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+            const mimeType = file.getMimeType();
+            const fileName = file.getName();
+            let fileContent;
+            let systemMessage;
+            let parts = [];
 
-            return pdfBase64;
+            switch (mimeType) {
+                case "application/pdf":
+                    // Handle PDF files directly
+                    const pdfBlob = file.getBlob();
+                    const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+                    parts.push({
+                        text: `Here is the pdf to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: "application/pdf",
+                            data: pdfBase64
+                        }
+                    });
+                    systemMessage = `You have access to the content of a pdf. Use it to answer the user's questions.`;
+                    break;
+                case "text/plain":
+                    // Handle text files directly
+                    fileContent = file.getBlob().getDataAsString();
+                    parts.push({
+                        text: `Here is the text file to analyze: ${fileName}\n\n${fileContent}`
+                    });
+                    systemMessage = `You have access to the content of a text file. Use it to answer the user's questions.`;
+                    break;
+                case "image/png":
+                case "image/jpeg":
+                case "image/gif":
+                case "image/webp":
+                    // Handle image files directly
+                    const imageBlob = file.getBlob();
+                    const imageBase64 = Utilities.base64Encode(imageBlob.getBytes());
+                    parts.push({
+                        text: `Here is the image to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: mimeType,
+                            data: imageBase64
+                        }
+                    });
+                    systemMessage = `You have access to an image. Use it to answer the user's questions.`;
+                    break;
+                case "application/vnd.google-apps.spreadsheet":
+                case "application/vnd.google-apps.document":
+                case "application/vnd.google-apps.presentation":
+                    // Export Google Docs, Sheets, and Slides to PDF
+                    let fileBlobUrl;
+                    switch (mimeType) {
+                        case "application/vnd.google-apps.spreadsheet":
+                            fileBlobUrl = 'https://docs.google.com/spreadsheets/d/' + fileId + '/export?format=pdf';
+                            break;
+                        case "application/vnd.google-apps.document":
+                            fileBlobUrl = 'https://docs.google.com/document/d/' + fileId + '/export?format=pdf';
+                            break;
+                        case "application/vnd.google-apps.presentation":
+                            fileBlobUrl = 'https://docs.google.com/presentation/d/' + fileId + '/export?format=pdf';
+                            break;
+                    }
+                    var token = ScriptApp.getOAuthToken();
+
+                    // Fetch the file from Google Drive using the generated URL and OAuth token
+                    var response = UrlFetchApp.fetch(fileBlobUrl, {
+                        headers: {
+                            'Authorization': 'Bearer ' + token
+                        }
+                    });
+                    const pdfBlobFromExport = response.getBlob();
+                    const pdfBase64FromExport = Utilities.base64Encode(pdfBlobFromExport.getBytes());
+                    parts.push({
+                        text: `Here is the file to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: "application/pdf",
+                            data: pdfBase64FromExport
+                        }
+                    });
+                    systemMessage = `You have access to the content of a file. Use it to answer the user's questions.`;
+                    break;
+                default:
+                    Logger.log(`Unsupported file type: ${mimeType}`);
+                    return null;
+            }
+
+            return { parts: parts, systemMessage: systemMessage };
         } catch (error) {
-            Logger.log(" Error during the call to the Gemini API: " + error.toString());
+            Logger.log("Error during file processing: " + error.toString());
             return null;
         }
     }
