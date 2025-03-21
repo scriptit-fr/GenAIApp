@@ -195,8 +195,6 @@
             let vectorStore;
             let attachmentIdentificator;
             let assistantTools;
-            let pdfContent; // Store the PDF content here
-
 
             let webSearchQueries = [];
             let webPagesOpened = [];
