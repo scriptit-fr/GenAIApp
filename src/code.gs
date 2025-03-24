@@ -372,7 +372,7 @@
 
             /**
              * Includes the content of a file in the prompt sent to gemini
-             * @param {string} fileID - the id of the file you want to fetch
+             * @param {string} fileID - the google drive id of the file you want to fetch
              * @returns {Chat} - The current Chat instance.
              */
             this.addFile = function (fileID) {
@@ -386,18 +386,13 @@
                             text: "Failed to process the file. Invalid file ID provided."
                         }
                     });
-                    return this;
-                }
-                this.fileID = fileID;
-                const fileContent = _fileToBase64(fileID); // Get the file content
+                return this;
+            }
+            const fileContent = _convertFileToGeminiInput(fileID); // Get the file content
                 if (fileContent) {
                     contents.push({
                         role: "user",
                         parts: fileContent.parts
-                    });
-                    messages.push({
-                        role: "system",
-                        content: fileContent.systemMessage
                     });
                     contents.push({
                         role: "user",
@@ -457,6 +452,9 @@
                 if (advancedParametersObject) {
                     if (advancedParametersObject.model) {
                         model = advancedParametersObject.model;
+                        if (!model.includes("gemini")) {
+                            console.warn("To upload and analyze a file, please use a Gemini model (e.g., gemini-1.5-pro or gemini-1.5-flash).");
+                        }
                         if (model.includes("gemini")) {
                             if (!geminiKey && (!region || !gcpProjectId)) {
                                 throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
@@ -1397,10 +1395,10 @@
      * Converts a file to base64 or returns the file content as text.
      *
      * @private
-     * @param {string} fileId - The ID of the file to convert.
+     * @param {string} fileId - The google drive ID of the file to convert.
      * @returns {object|null} - An object containing the file content and a system message, or null if an error occurs.
      */
-    function _fileToBase64(fileId) {
+    function _convertFileToGeminiInput(fileId) {
         if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
             Logger.log("Error: Invalid file identifier.");
             return null;
@@ -1474,12 +1472,16 @@
                     }
                     var token = ScriptApp.getOAuthToken();
 
-                    // Fetch the file from Google Drive using the generated URL and OAuth token
-                    var response = UrlFetchApp.fetch(fileBlobUrl, {
-                        headers: {
-                            'Authorization': 'Bearer ' + token
-                        }
-                    });
+                    try {
+                        var response = UrlFetchApp.fetch(fileBlobUrl, {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            }
+                        });
+                    } catch (e) {
+                        Logger.log("Error fetching file from Google Drive: " + e.toString());
+                        return null; // ou tout autre traitement d'erreur adapté
+                    }
                     const pdfBlobFromExport = response.getBlob();
                     const pdfBase64FromExport = Utilities.base64Encode(pdfBlobFromExport.getBytes());
                     parts.push({
