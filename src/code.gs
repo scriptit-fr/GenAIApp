@@ -18,7 +18,7 @@
  */
 
 
-const GenAIApp = (function () {
+ const GenAIApp = (function () {
 
     let openAIKey = "";
     let geminiKey = "";
@@ -45,7 +45,7 @@ const GenAIApp = (function () {
             let properties = {};
             let required = [];
             let argumentsInRightOrder = [];
-            let endingFunction = false; 
+            let endingFunction = false;
             let onlyArgs = false;
 
             /**
@@ -199,7 +199,7 @@ const GenAIApp = (function () {
             let webSearchQueries = [];
             let webPagesOpened = [];
 
-            let maximumAPICalls = 30; 
+            let maximumAPICalls = 30;
             let numberOfAPICalls = 0;
 
             /**
@@ -370,6 +370,51 @@ const GenAIApp = (function () {
                 maximumAPICalls = maxAPICalls;
             };
 
+            /**
+             * Includes the content of a file in the prompt sent to gemini
+             * @param {string} fileID - the google drive id of the file you want to fetch
+             * @returns {Chat} - The current Chat instance.
+             */
+            this.addFile = function (fileID) {
+                if (!fileID || typeof fileID !== 'string' || fileID.trim() === '') {
+                    if (verbose) {
+                        console.warn('Invalid file ID provided to addFile method');
+                    }
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: "Failed to process the file. Invalid file ID provided."
+                        }
+                    });
+                return this;
+            }
+            const fileContent = _convertFileToGeminiInput(fileID); // Get the file content
+                if (fileContent) {
+                    contents.push({
+                        role: "user",
+                        parts: fileContent.parts
+                    });
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: fileContent.systemMessage
+                        }
+                    });
+                } else {
+                    if (verbose) {
+                        console.warn(`Failed to process file with ID: ${fileID}`);
+                    }
+                    // Optionally add a message to inform the user about the failure
+                    contents.push({
+                        role: "user",
+                        parts: {
+                            text: "Failed to process the requested file. Please verify the file ID and try again."
+                        }
+                    });
+                }
+                return this;
+            };
+
             this._toJson = function () {
                 return {
                     messages: messages,
@@ -407,6 +452,9 @@ const GenAIApp = (function () {
                 if (advancedParametersObject) {
                     if (advancedParametersObject.model) {
                         model = advancedParametersObject.model;
+                        if (!model.includes("gemini")) {
+                            console.warn("To upload and analyze a file, please use a Gemini model (e.g., gemini-1.5-pro or gemini-1.5-flash).");
+                        }
                         if (model.includes("gemini")) {
                             if (!geminiKey && (!region || !gcpProjectId)) {
                                 throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
@@ -492,7 +540,7 @@ const GenAIApp = (function () {
                                     if (verbose) {
                                         console.log("Conversation stopped because argument return has been enabled - No function has been called");
                                     }
-                                    return contents[contents.length - 2].parts[0].functionCall.args; // the argument(s) of the last function called
+                                    return JSON.parse(contents[contents.length - 2].parts[0].functionCall.args); // the argument(s) of the last function called
                                 }
                             }
                         }
@@ -1344,6 +1392,122 @@ const GenAIApp = (function () {
     }
 
     /**
+     * Converts a file to base64 or returns the file content as text.
+     *
+     * @private
+     * @param {string} fileId - The google drive ID of the file to convert.
+     * @returns {object|null} - An object containing the file content and a system message, or null if an error occurs.
+     */
+    function _convertFileToGeminiInput(fileId) {
+        if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
+            Logger.log("Error: Invalid file identifier.");
+            return null;
+        }
+
+        try {
+            const file = DriveApp.getFileById(fileId);
+            const mimeType = file.getMimeType();
+            const fileName = file.getName();
+            let fileContent;
+            let systemMessage;
+            let parts = [];
+
+            switch (mimeType) {
+                case "application/pdf":
+                    // Handle PDF files directly
+                    const pdfBlob = file.getBlob();
+                    const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+                    parts.push({
+                        text: `Here is the pdf to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: "application/pdf",
+                            data: pdfBase64
+                        }
+                    });
+                    systemMessage = `You have access to the content of a pdf. Use it to answer the user's questions.`;
+                    break;
+                case "text/plain":
+                    // Handle text files directly
+                    fileContent = file.getBlob().getDataAsString();
+                    parts.push({
+                        text: `Here is the text file to analyze: ${fileName}\n\n${fileContent}`
+                    });
+                    systemMessage = `You have access to the content of a text file. Use it to answer the user's questions.`;
+                    break;
+                case "image/png":
+                case "image/jpeg":
+                case "image/gif":
+                case "image/webp":
+                    // Handle image files directly
+                    const imageBlob = file.getBlob();
+                    const imageBase64 = Utilities.base64Encode(imageBlob.getBytes());
+                    parts.push({
+                        text: `Here is the image to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: mimeType,
+                            data: imageBase64
+                        }
+                    });
+                    systemMessage = `You have access to an image. Use it to answer the user's questions.`;
+                    break;
+                case "application/vnd.google-apps.spreadsheet":
+                case "application/vnd.google-apps.document":
+                case "application/vnd.google-apps.presentation":
+                    // Export Google Docs, Sheets, and Slides to PDF
+                    let fileBlobUrl;
+                    switch (mimeType) {
+                        case "application/vnd.google-apps.spreadsheet":
+                            fileBlobUrl = 'https://docs.google.com/spreadsheets/d/' + fileId + '/export?format=pdf';
+                            break;
+                        case "application/vnd.google-apps.document":
+                            fileBlobUrl = 'https://docs.google.com/document/d/' + fileId + '/export?format=pdf';
+                            break;
+                        case "application/vnd.google-apps.presentation":
+                            fileBlobUrl = 'https://docs.google.com/presentation/d/' + fileId + '/export?format=pdf';
+                            break;
+                    }
+                    var token = ScriptApp.getOAuthToken();
+
+                    try {
+                        var response = UrlFetchApp.fetch(fileBlobUrl, {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            }
+                        });
+                    } catch (e) {
+                        Logger.log("Error fetching file from Google Drive: " + e.toString());
+                        return null; // ou tout autre traitement d'erreur adapté
+                    }
+                    const pdfBlobFromExport = response.getBlob();
+                    const pdfBase64FromExport = Utilities.base64Encode(pdfBlobFromExport.getBytes());
+                    parts.push({
+                        text: `Here is the file to analyze: ${fileName}`
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: "application/pdf",
+                            data: pdfBase64FromExport
+                        }
+                    });
+                    systemMessage = `You have access to the content of a file. Use it to answer the user's questions.`;
+                    break;
+                default:
+                    Logger.log(`Unsupported file type: ${mimeType}`);
+                    return null;
+            }
+
+            return { parts: parts, systemMessage: systemMessage };
+        } catch (error) {
+            Logger.log("Error during file processing: " + error.toString());
+            return null;
+        }
+    }
+
+    /**
      * Adds a message to the thread.
      * 
      * @param {string} threadId - The ID of the thread.
@@ -1845,3 +2009,4 @@ const GenAIApp = (function () {
         }
     }
 })();
+
