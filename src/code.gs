@@ -25,13 +25,9 @@ const GenAIApp = (function () {
   let gcpProjectId = "";
   let region = "";
 
-  let googleCustomSearchAPIKey = "";
   let restrictSearch;
 
   let verbose = true;
-
-  const noResultFromWebSearchMessage = `Your search did not match any documents. 
-  Try with different, more general or fewer keywords.`;
 
   /**
    * @class
@@ -160,13 +156,8 @@ const GenAIApp = (function () {
 
   let webSearchFunction = new FunctionObject()
     .setName("webSearch")
-    .setDescription("Perform a web search via the Google Custom Search JSON API. Returns an array of search results (including the URL, title and plain text snippet for each result)")
-    .addParameter("q", "string", "the query for the web search.");
-
-  let urlFetchFunction = new FunctionObject()
-    .setName("urlFetch")
-    .setDescription("Fetch the viewable content of a web page. HTML tags will be stripped, returning a text-only version.")
-    .addParameter("url", "string", "The URL to fetch.");
+    .setDescription("Perform a web search via a LLM that can browse the web.")
+    .addParameter("p", "string", "the prompt for the web search LLM.");
 
   let imageDescriptionFunction = new FunctionObject()
     .setName("getImageDescription")
@@ -183,21 +174,17 @@ const GenAIApp = (function () {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       let tools = [];
-      let model = "gpt-3.5-turbo"; // default 
+      let model = "o1-mini"; // default 
       let temperature = 0.5;
       let max_tokens = 300;
       let browsing = false;
       let vision = false;
-      let onlyRetrieveSearchResults = false;
       let reasoning_effort = "low";
       let knowledgeLink;
       let assistantIdentificator;
       let vectorStore;
       let attachmentIdentificator;
       let assistantTools;
-
-      let webSearchQueries = [];
-      let webPagesOpened = [];
 
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
@@ -292,19 +279,16 @@ const GenAIApp = (function () {
        * OPTIONAL
        * 
        * Allow openAI to browse the web.
-       * @param {true|"only_retrieve_results"} scope - set to true to enable full browsing, or "only_retrieve_results" to search Google without opening web pages. 
-       * @param {string} [urlOrsearchEngineId] - A specific site you want to restrict the search on or a Search engine ID. 
+       * @param {true} scope - set to true to enable full browsing
+       * @param {string} [url] - A specific site you want to restrict the search on . 
        * @returns {Chat} - The current Chat instance.
        */
-      this.enableBrowsing = function (scope, urlOrsearchEngineId) {
+      this.enableBrowsing = function (scope, url) {
         if (scope) {
           browsing = true;
-          if (scope == "only_retrieve_results") {
-            onlyRetrieveSearchResults = true;
-          }
         }
-        if (urlOrsearchEngineId) {
-          restrictSearch = urlOrsearchEngineId;
+        if (url) {
+          restrictSearch = url;
         }
         return this;
       };
@@ -378,8 +362,6 @@ const GenAIApp = (function () {
           temperature: temperature,
           max_tokens: max_tokens,
           browsing: browsing,
-          webSearchQueries: webSearchQueries,
-          webPagesOpened: webPagesOpened,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls
         };
@@ -391,7 +373,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4-1106-preview" | "gpt-4-turbo-preview" | "gpt-4o" | "o1" | "o1-mini" | "o3-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
+       * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4o-search-preview"| "gpt-4o" | "o1" | "o1-mini" | "o3-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for o3-mini, defaults at low
        * @param {number} [advancedParametersObject.max_tokens]
@@ -399,10 +381,6 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
-
-        if (browsing && !googleCustomSearchAPIKey) {
-          throw Error("Please set your Google custom search API key using GenAIApp.setGoogleSearchAPIKey(yourAPIKey)");
-        }
 
         if (advancedParametersObject) {
           if (advancedParametersObject.model) {
@@ -413,12 +391,7 @@ const GenAIApp = (function () {
               }
             } else {
               if (!openAIKey) {
-                if (googleCustomSearchAPIKey) {
-                  throw Error("Careful to use setOpenAIAPIKey to set your OpenAI API key and not setGoogleSearchAPIKey.");
-                }
-                else {
-                  throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
-                }
+                throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
               }
             }
           }
@@ -480,7 +453,7 @@ const GenAIApp = (function () {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
             if (responseMessage?.parts?.[0]?.functionCall) {
-              contents = _handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened);
+              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
               if (contents[contents.length - 1].role == "model") {
                 if (contents[contents.length - 1].parts.text == "endWithResult") {
@@ -503,7 +476,7 @@ const GenAIApp = (function () {
           }
           else {
             if (responseMessage.tool_calls) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened);
+              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
@@ -580,40 +553,27 @@ const GenAIApp = (function () {
           payload.reasoning_effort = reasoning_effort;
         }
 
-
         if (browsing) {
           if (messages[messages.length - 1].role !== "tool") {
             tools.push({
               type: "function",
               function: webSearchFunction
             });
-            let messageContent = `You are able to perform search queries on Google using the function webSearch and read the search results. `;
-            if (!onlyRetrieveSearchResults) {
-              messageContent += "Then you can select a search result and read the page content using the function urlFetch. ";
-              tools.push({
-                type: "function",
-                function: urlFetchFunction
-              });
-            }
+            let messageContent = `You are able to perform search queries on an LLM using the function webSearch and read the search results. `;
             messages.push({
               role: "system",
               content: messageContent
             });
+            if (restrictSearch) {
+              messages.push({
+                role: "user", // upon testing, this instruction has better results with user role instead of system
+                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+              });
+            }
             payload.tool_choice = {
               type: "function",
               function: { name: "webSearch" }
             };
-          }
-          else if (messages[messages.length - 1].role == "tool" &&
-            messages[messages.length - 1].name === "webSearch" &&
-            !onlyRetrieveSearchResults) {
-            if (messages[messages.length - 1].content !== noResultFromWebSearchMessage) {
-              // force genAI to call the function urlFetch after retrieving results for a particular search
-              payload.tool_choice = {
-                type: "function",
-                function: { name: "urlFetch" }
-              };
-            }
           }
         }
 
@@ -693,7 +653,6 @@ const GenAIApp = (function () {
           }
 
           if (advancedParametersObject?.function_call &&
-            payload.tool_choice.function?.name !== "urlFetch" &&
             payload.tool_choice.function?.name !== "webSearch") {
             // the user has set a specific function to call
             let tool_choosing = {
@@ -703,11 +662,6 @@ const GenAIApp = (function () {
               }
             };
             payload.tool_choice = tool_choosing;
-          } else if (messages[messages.length - 1].role == "tool" && messages[messages.length - 1].name == _urlFetch) {
-            // Once we've opened a web page,
-            // let the model decide what to do
-            // eg: model can either be satisfied with the info found in the web page or decide to open another web page
-            payload.tool_choice = 'auto'
           }
         }
         return payload;
@@ -740,9 +694,7 @@ const GenAIApp = (function () {
           }
         };
 
-        if (advancedParametersObject?.function_call
-          && advancedParametersObject.function_call !== "urlFetch"
-          && advancedParametersObject.function_call !== "webSearch") {
+        if (advancedParametersObject?.function_call) {
 
           if (model == "gemini-1.5-pro" || model == "gemini-1.5-flash") {
             payload.tool_config.function_calling_config.mode = "ANY";
@@ -757,26 +709,9 @@ const GenAIApp = (function () {
         }
 
         if (browsing) {
-          if (contents[contents.length - 1].role !== "tool") {
-            tools.push({
-              type: "function",
-              function: webSearchFunction
-            });
-            let messageContent = `You are able to perform search queries on Google using the function webSearch and read the search results. `;
-            if (!onlyRetrieveSearchResults) {
-              messageContent += "Then you can select a search result and read the page content using the function urlFetch. ";
-              tools.push({
-                type: "function",
-                function: urlFetchFunction
-              });
-            }
-            contents.push({
-              role: "user",
-              parts: {
-                text: messageContent
-              },
-            });
-          }
+          // now browsing is not included by default with Gemini
+          // we need to monitor when it's gonna be back so we can implement it here. 
+          console.warn("Browsing with Gemini is not available at the time being. Please consider using OpenAI's model instead.")
         }
 
         if (assistantIdentificator) {
@@ -917,11 +852,9 @@ const GenAIApp = (function () {
    * @param {Object} responseMessage - The response message from Gemini containing tool calls.
    * @param {Array} tools - List of available tools, each with metadata including function names and argument requirements.
    * @param {Array} contents - Array representing the conversational content, updated with each tool call and its result.
-   * @param {Array} webSearchQueries - List to accumulate queries made during web search tool calls.
-   * @param {Array} webPagesOpened - List to accumulate URLs accessed during URL fetch tool calls.
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
-  function _handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened) {
+  function _handleGeminiToolCalls(responseMessage, tools, contents) {
     for (let tool_call in responseMessage.parts) {
       // Call the function
       let functionName = responseMessage.parts[tool_call].functionCall.name;
@@ -995,26 +928,6 @@ const GenAIApp = (function () {
             functionResponse = String(functionResponse);
           }
         }
-
-        if (functionName == "webSearch") {
-          webSearchQueries.push(functionArgs.q);
-        }
-        else if (functionName == "urlFetch") {
-          webPagesOpened.push(functionArgs.url);
-          if (!functionResponse) {
-            if (verbose) {
-              console.log("The website didn't respond, going back to search results.");
-            }
-            let searchResults = JSON.parse(contents[contents.length - 1].parts[0].text);
-            let updatedSearchResults = searchResults.filter(function (obj) {
-              return obj.link !== functionArgs.url;
-            });
-            contents[contents.length - 1].parts[0].text = JSON.stringify(updatedSearchResults);
-          }
-          if (verbose) {
-            console.log("Web page opened, let model decide what to do next (open another web page or perform another action).");
-          }
-        }
         else {
           if (verbose) {
             console.log(`function ${functionName}() called by Gemini.`);
@@ -1041,11 +954,9 @@ const GenAIApp = (function () {
    * @param {Object} responseMessage - The response message from OpenAI, containing details about tool calls.
    * @param {Array} tools - Array of tool objects, each containing metadata about functions, argument orders, and conditions.
    * @param {Array} messages - Array representing the conversation flow, which is updated with tool call results and system messages.
-   * @param {Array} webSearchQueries - Array that accumulates queries made during web search tool calls.
-   * @param {Array} webPagesOpened - Array that tracks URLs accessed during URL fetch tool calls.
    * @returns {Array} - The updated messages array, representing the conversation flow with function calls, results, and system responses.
    */
-  function _handleOpenAIToolCalls(responseMessage, tools, messages, webSearchQueries, webPagesOpened) {
+  function _handleOpenAIToolCalls(responseMessage, tools, messages) {
     messages.push(responseMessage);
     for (let tool_call in responseMessage.tool_calls) {
       if (responseMessage.tool_calls[tool_call].type == "function") {
@@ -1117,26 +1028,6 @@ const GenAIApp = (function () {
               functionResponse = String(functionResponse);
             }
           }
-
-          if (functionName == "webSearch") {
-            webSearchQueries.push(functionArgs.q);
-          }
-          else if (functionName == "urlFetch") {
-            webPagesOpened.push(functionArgs.url);
-            if (!functionResponse) {
-              if (verbose) {
-                console.log("The website didn't respond, going back to search results.");
-              }
-              let searchResults = JSON.parse(messages[messages.length - 1].content);
-              let updatedSearchResults = searchResults.filter(function (obj) {
-                return obj.link !== functionArgs.url;
-              });
-              messages[messages.length - 1].content = JSON.stringify(updatedSearchResults);
-            }
-            if (verbose) {
-              console.log("Web page opened, let model decide what to do next (open another web page or perform another action).");
-            }
-          }
           else {
             if (verbose) {
               console.log(`function ${functionName}() called by OpenAI.`);
@@ -1169,10 +1060,7 @@ const GenAIApp = (function () {
   function _callFunction(functionName, jsonArgs, argsOrder) {
     // Handle internal functions
     if (functionName == "webSearch") {
-      return _webSearch(jsonArgs.q);
-    }
-    if (functionName == "urlFetch") {
-      return _urlFetch(jsonArgs.url);
+      return _webSearch(jsonArgs.p);
     }
     if (functionName == "getImageDescription") {
       if (jsonArgs.fidelity) {
@@ -1524,100 +1412,33 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Performs a web search using Google Custom Search API with optional restrictions, such as a specific
-   * site or a designated search engine. Fetches and formats up to 10 search results, including titles, links, 
-   * and snippets, or returns a predefined message if no results are found.
+   * Performs a web search using gpt-4o-search-preview
    *
    * @private
-   * @param {string} q - The search query string to be used in the web search.
-   * @returns {string} - A JSON string containing an array of search results, each with title, link, and snippet, 
-   *                     or a message indicating no results were found.
+   * @param {string} p - The prompt to be used in the web search LLM.
+   * @returns {string} - A string containing the search results and URLs.
    */
-  function _webSearch(q) {
-    // https://programmablesearchengine.google.com/controlpanel/overview?cx=221c662683d054b63
-    let searchEngineId = "221c662683d054b63";
-    let url = `https://www.googleapis.com/customsearch/v1?key=${googleCustomSearchAPIKey}`;
+  function _webSearch(p) {
+    let payload = {
+      'messages': [{
+        role: "user",
+        content: p
+      }],
+      'model': 'gpt-4o-search-preview',
+      'max_completion_tokens': 1000,
+      'user': Session.getTemporaryActiveUserKey()
+    };
+    let responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
+    let formatedContent = `${responseMessage.content}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
+      .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
+      .map(annotation => annotation.url_citation.url) : []}}}`;
 
-    // If restrictSearch is defined, check wether to restrict to a specific site or use a specific Search Engine
-    if (restrictSearch) {
-      if (restrictSearch.includes('.')) {
-        // Search restricted to specific site
-        if (verbose) {
-          console.log(`Site search on ${restrictSearch}`);
-        }
-        url += `&siteSearch=${encodeURIComponent(restrictSearch)}&siteSearchFilter=i`;
-      }
-      else {
-        // Use the desired Search Engine
-        // https://programmablesearchengine.google.com/controlpanel/all
-        searchEngineId = restrictSearch;
-      }
-    }
-    url += `&cx=${searchEngineId}&q=${encodeURIComponent(q)}&num=10`;
-
-    const urlfetchResp = UrlFetchApp.fetch(url);
-    const resp = JSON.parse(urlfetchResp.getContentText());
-
-    let searchResults;
-    if (!resp.items?.length) {
-      searchResults = noResultFromWebSearchMessage;
-    }
-    else {
-      // https://developers.google.com/custom-search/v1/reference/rest/v1/Search?hl=en#Result
-      searchResults = JSON.stringify(resp.items.slice(0, 10).map(function (item) {
-        return {
-          title: item.title,
-          link: item.link,
-          snippet: item.snippet
-        };
-        // filter to remove undefined values from the results array
-      }).filter(Boolean));
-    }
-
-    const nbOfResults = resp.searchInformation.totalResults;
-    if (verbose) {
-      Logger.log({
-        message: `Web search : "${q}" - ${nbOfResults} results`,
-        searchResults: searchResults
-      });
-    }
-
-    return searchResults;
-  }
-
-  /**
-   * Fetches the content of a specified URL, logging the action if verbose mode is enabled.
-   * Converts HTML content to Markdown format if the response is successful. If an error occurs
-   * during fetching or access is denied, returns an error message.
-   *
-   * @private
-   * @param {string} url - The URL of the webpage to fetch.
-   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
-   *                          or an error message in JSON format if access is denied or an error occurs.
-   */
-  function _urlFetch(url) {
-    if (verbose) {
-      console.log(`Clicked on link : ${url}`);
-    }
-    let response;
-    try {
-      response = UrlFetchApp.fetch(url);
-    }
-    catch (e) {
-
-      console.warn(`Error fetching the URL: ${e.message}`);
-      return JSON.stringify({
-        error: "Failed to fetch the URL : You are not authorized to access this website. Try another one."
-      });
-    }
-    if (response.getResponseCode() == 200) {
-      let pageContent = response.getContentText();
-      pageContent = _convertHtmlToMarkdown(pageContent);
-      return pageContent;
-    }
-    else {
-      return null;
-    }
+    Logger.log({
+      message: "Performed web search with gpt-4o",
+      prompt: p,
+      response: formatedContent
+    });
+    return formatedContent;
   }
 
   /**
@@ -1818,30 +1639,6 @@ const GenAIApp = (function () {
     setGeminiAuth: function (gcp_project_id, gcp_project_region) {
       gcpProjectId = gcp_project_id;
       region = gcp_project_region
-    },
-
-    /**
-     * If you want to enable browsing
-     * @param {string} apiKey - Your Google API key.
-     */
-    setGoogleSearchAPIKey: function (apiKey) {
-      googleCustomSearchAPIKey = apiKey;
-    },
-
-    /**
-     * If you want to acces what occured during the conversation
-     * @param {Chat} chat - your chat instance.
-     * @returns {object} - the web search queries, the web pages opened and an historic of all the messages of the chat
-     */
-    debug: function (chat) {
-      return {
-        getWebSearchQueries: function () {
-          return chat._toJson().webSearchQueries
-        },
-        getWebPagesOpened: function () {
-          return chat._toJson().webPagesOpened
-        }
-      }
     }
   }
 })();
