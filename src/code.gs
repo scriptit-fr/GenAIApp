@@ -852,8 +852,6 @@ const GenAIApp = (function () {
    * @param {Object} responseMessage - The response message from Gemini containing tool calls.
    * @param {Array} tools - List of available tools, each with metadata including function names and argument requirements.
    * @param {Array} contents - Array representing the conversational content, updated with each tool call and its result.
-   * @param {Array} webSearchQueries - List to accumulate queries made during web search tool calls.
-   * @param {Array} webPagesOpened - List to accumulate URLs accessed during URL fetch tool calls.
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
