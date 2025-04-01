@@ -870,7 +870,7 @@ const GenAIApp = (function () {
    * @param {Array} webPagesOpened - List to accumulate URLs accessed during URL fetch tool calls.
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
-  function _handleGeminiToolCalls(responseMessage, tools, contents, webSearchQueries, webPagesOpened) {
+  function _handleGeminiToolCalls(responseMessage, tools, contents) {
     for (let tool_call in responseMessage.parts) {
       // Call the function
       let functionName = responseMessage.parts[tool_call].functionCall.name;
@@ -1432,8 +1432,7 @@ const GenAIApp = (function () {
    *
    * @private
    * @param {string} p - The prompt to be used in the web search LLM.
-   * @returns {string} - A JSON string containing an array of search results, each with title, link, and snippet, 
-   *                     or a message indicating no results were found.
+   * @returns {string} - A string containing the search results and URLs.
    */
   function _webSearch(p) {
     let payload = {
@@ -1446,9 +1445,9 @@ const GenAIApp = (function () {
       'user': Session.getTemporaryActiveUserKey()
     };
     let responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
-    let formatedContent = `${responseMessage.content}\n\n{{urls: ${responseMessage.annotations
+    let formatedContent = `${responseMessage.content}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
       .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
-      .map(annotation => annotation.url_citation.url)}}}`;
+      .map(annotation => annotation.url_citation.url) : []}}}`;
 
     Logger.log({
       message: "performed web search with gpt-4o",
