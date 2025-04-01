@@ -25,13 +25,9 @@ const GenAIApp = (function () {
   let gcpProjectId = "";
   let region = "";
 
-  let googleCustomSearchAPIKey = "";
   let restrictSearch;
 
   let verbose = true;
-
-  const noResultFromWebSearchMessage = `Your search did not match any documents. 
-  Try with different, more general or fewer keywords.`;
 
   /**
    * @class
@@ -183,7 +179,6 @@ const GenAIApp = (function () {
       let max_tokens = 300;
       let browsing = false;
       let vision = false;
-      let onlyRetrieveSearchResults = false;
       let reasoning_effort = "low";
       let knowledgeLink;
       let assistantIdentificator;
@@ -285,15 +280,15 @@ const GenAIApp = (function () {
        * 
        * Allow openAI to browse the web.
        * @param {true} scope - set to true to enable full browsing
-       * @param {string} [urlOrsearchEngineId] - A specific site you want to restrict the search on or a Search engine ID. 
+       * @param {string} [url] - A specific site you want to restrict the search on . 
        * @returns {Chat} - The current Chat instance.
        */
-      this.enableBrowsing = function (scope, urlOrsearchEngineId) {
+      this.enableBrowsing = function (scope, url) {
         if (scope) {
           browsing = true;
         }
-        if (urlOrsearchEngineId) {
-          restrictSearch = urlOrsearchEngineId;
+        if (url) {
+          restrictSearch = url;
         }
         return this;
       };
@@ -367,8 +362,6 @@ const GenAIApp = (function () {
           temperature: temperature,
           max_tokens: max_tokens,
           browsing: browsing,
-          webSearchQueries: webSearchQueries,
-          webPagesOpened: webPagesOpened,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls
         };
@@ -389,14 +382,6 @@ const GenAIApp = (function () {
        */
       this.run = function (advancedParametersObject) {
 
-        if (browsing) {
-          if (model.includes("gemini")) {
-            if (!googleCustomSearchAPIKey) {
-              console.warn("Browsing enabled by default with Gemini : To enale browsing with custom search, please set your Google custom search API key using GenAIApp.setGoogleSearchAPIKey(yourAPIKey)");
-            }
-          }
-        }
-
         if (advancedParametersObject) {
           if (advancedParametersObject.model) {
             model = advancedParametersObject.model;
@@ -406,12 +391,7 @@ const GenAIApp = (function () {
               }
             } else {
               if (!openAIKey) {
-                if (googleCustomSearchAPIKey) {
-                  throw Error("Careful to use setOpenAIAPIKey to set your OpenAI API key and not setGoogleSearchAPIKey.");
-                }
-                else {
-                  throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
-                }
+                throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
               }
             }
           }
@@ -584,6 +564,12 @@ const GenAIApp = (function () {
               role: "system",
               content: messageContent
             });
+            if (restrictSearch) {
+              messages.push({
+                role: "user", // upon testing, this instruction has better results with user role instead of system
+                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+              });
+            }
             payload.tool_choice = {
               type: "function",
               function: { name: "webSearch" }
@@ -1450,7 +1436,7 @@ const GenAIApp = (function () {
       .map(annotation => annotation.url_citation.url) : []}}}`;
 
     Logger.log({
-      message: "performed web search with gpt-4o",
+      message: "Performed web search with gpt-4o",
       prompt: p,
       response: formatedContent
     });
@@ -1655,14 +1641,6 @@ const GenAIApp = (function () {
     setGeminiAuth: function (gcp_project_id, gcp_project_region) {
       gcpProjectId = gcp_project_id;
       region = gcp_project_region
-    },
-
-    /**
-     * If you want to enable browsing
-     * @param {string} apiKey - Your Google API key.
-     */
-    setGoogleSearchAPIKey: function (apiKey) {
-      googleCustomSearchAPIKey = apiKey;
     }
   }
 })();
