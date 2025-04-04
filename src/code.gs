@@ -17,7 +17,6 @@
  limitations under the License.
  */
 
-
 const GenAIApp = (function () {
 
   let openAIKey = "";
@@ -1439,6 +1438,41 @@ const GenAIApp = (function () {
       response: formatedContent
     });
     return formatedContent;
+  }
+
+  /**
+ * Fetches the content of a specified URL, logging the action if verbose mode is enabled.
+ * Converts HTML content to Markdown format if the response is successful. If an error occurs
+ * during fetching or access is denied, returns an error message.
+ *
+ * @private
+ * @param {string} url - The URL of the webpage to fetch.
+ * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
+ *                          or an error message in JSON format if access is denied or an error occurs.
+ */
+  function _urlFetch(url) {
+    if (verbose) {
+      console.log(`Clicked on link : ${url}`);
+    }
+    let response;
+    try {
+      response = UrlFetchApp.fetch(url);
+    }
+    catch (e) {
+
+      console.warn(`Error fetching the URL: ${e.message}`);
+      return JSON.stringify({
+        error: "Failed to fetch the URL : You are not authorized to access this website. Try another one."
+      });
+    }
+    if (response.getResponseCode() == 200) {
+      let pageContent = response.getContentText();
+      pageContent = _convertHtmlToMarkdown(pageContent);
+      return pageContent;
+    }
+    else {
+      return null;
+    }
   }
 
   /**
