@@ -1536,6 +1536,12 @@ const GenAIApp = (function () {
       const file = DriveApp.getFileById(fileId);
       const mimeType = file.getMimeType();
       const fileName = file.getName();
+      // Gemini has a 20MB limit for API requests
+      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
+      if (fileSize > MAX_FILE_SIZE) {
+        Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+        return null;
+      }
       let fileContent;
       let systemMessage;
       let parts = [];
