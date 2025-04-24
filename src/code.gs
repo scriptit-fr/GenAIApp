@@ -398,7 +398,7 @@ const GenAIApp = (function () {
         return this;
       };
 
-      
+
 
       this._toJson = function () {
         return {
