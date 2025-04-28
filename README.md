@@ -156,11 +156,8 @@ To enable the chat model to describe images, use the `enableVision()` method
 chat.enableVision(true);
 ```
 
-### Add File to Gemini (optional)
-
-This feature is supported by multimodal Gemini models, such as `gemini-1.5-pro`, `gemini-1.5-flash`, and the Gemini 2.0 family (e.g., `gemini-2.0-flash`).
-
-If you want to add a file from Google Drive as context to the Gemini chat, use the `addFile()` method. For example, using the Drive file ID:
+   - [Enable Vision (Optional)](#enable-vision-optional)
+   - [Add File to Gemini (optional)](#add-file-to-gemini-optional)
 
 ```javascript
 // Add a Google Drive file to the Gemini chat context using its Drive file ID
