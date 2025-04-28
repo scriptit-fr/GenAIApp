@@ -15,6 +15,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
   - [Enable Vision (Optional)](#enable-vision-optional)
+  - [Add File to Gemini (optional)](#add-file-to-gemini-optional)
   - [Running the Chat](#running-the-chat)
 - [FunctionObject Class](#functionobject-class)
   - [Creating a Function](#creating-a-function)
@@ -156,9 +157,7 @@ To enable the chat model to describe images, use the `enableVision()` method
 chat.enableVision(true);
 ```
 
-   - [Enable Vision (Optional)](#enable-vision-optional)
-   - [Add File to Gemini (optional)](#add-file-to-gemini-optional)
-
+### Add File to Gemini (optional)
 ```javascript
 // Add a Google Drive file to the Gemini chat context using its Drive file ID
 chat.addFile('your-google-drive-file-id');
