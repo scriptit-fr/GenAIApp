@@ -155,6 +155,7 @@ To enable the chat model to describe images, use the `enableVision()` method
 ```javascript
 chat.enableVision(true);
 ```
+
 ### Add File to Gemini (optional)
 
 This feature is supported by multimodal Gemini models, such as `gemini-1.5-pro`, `gemini-1.5-flash`, and the Gemini 2.0 family (e.g., `gemini-2.0-flash`).
