@@ -27,6 +27,196 @@ const GenAIApp = (function () {
   let restrictSearch;
 
   let verbose = true;
+  
+  let response_id;
+
+  /**
+   * @class
+   * Class representing an Open AI Vector Store.
+   */
+  class VectorStoreObject {
+    constructor() {
+      let name = "";
+      let description = "";
+      let id = null;
+      let retrievedChunks = [];
+      let userDomain = "";
+
+      /**
+       * Sets the vector store's name
+       * @param {string} newName - The name to assign to the vector store.
+       * @returns {VectorStore}
+       */
+      this.setName = function (newName) {
+        name = newName;
+        return this;
+      };
+
+      /**
+       * Sets the description of the vector store.
+       * @param {string} newDesc - The description to assign to the vector store.
+       * @returns {VectorStore}
+       */
+      this.setDescription = function (newDesc) {
+        description = newDesc;
+        return this;
+      };
+
+      /**
+       * Creates the Open AI vector store. A name must be assigned before calling this function.
+       * @returns {VectorStore}
+       */
+      this.createVectorStore = function () {
+        if (!name) throw new Error("VectorStore must have a name before being created.");
+        try {
+          id = _createOpenAiVectorStore(vectorStoreName);
+        } catch (e) {
+          Logger.log({
+            message: `Error creating the vector store : ${e}`
+          });
+        }
+        return this;
+      };
+
+      /**
+       * Initializes a new vector store object from an existing Open AI vector store id. This allows a user to interact with an existing vector store.
+       * 
+       * @param {string} vectorStoreId - The Open AI API vector store id. 
+       */
+      this.initializeVectorStoreFromId = function (vectorStoreId) {
+        try {
+          const vectorStoreName = _retrieveVectorStoreInformation(vectorStoreId);
+          name = vectorStoreName;
+          id = vectorStoreId;
+          return this;
+        }
+        catch (e) {
+          Logger.log(`Could not initialize vector store object from id : ${e}`);
+          return 0;
+        }
+      }
+
+      /**
+       * Returns the vector store id.
+       * @returns {string} - The id of the vector store.
+       */
+      this.getId = function () {
+        return id;
+      };
+
+      /**
+       * Uploads a file to Open AI storage and attaches it to the vector store.
+       * @param {Blob} blob - File to upload.
+       * @param {Object} attributes - The JSON object containing the attributes to attach to the vector store. Per Open AI's documentation, must contain a max of 16 key-value pairs (both strings, up to 64 characters for keys, and up to 500 characters for values).
+       * @returns {object} - The raw JSON chunks returned by the vector store.
+       */
+      this.uploadAndAttachFile = function (blob, attributes = {}) {
+        if (!id) throw new Error("VectorStore must be created before attaching files.");
+        try {
+          const uploadedFileId = _uploadFileToOpenAIStorage(blob);
+          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes = {})
+          return attachedFileId;
+        }
+        catch (e) {
+          Logger.log({
+            message: `Unable to upload and attach the file to the vector store : ${e}`,
+            fileBlob: blob
+          });
+        }
+      };
+
+      /**
+       * Lists the files attached to the vector store.
+       * @returns {Object} - A JSON object containing the ids of the files attached to the vector store.
+       */
+      this.listFiles = function () {
+        if (!id) throw new Error("VectorStore must be created before listing files.");
+        try {
+          const listedFileIds = _listFilesInVectorStore(id);
+          return listedFileIds;
+        }
+        catch (e) {
+          Logger.log({
+            message: `An error occured when trying to list files from vector store : ${e}`,
+            vectorStoreId: id
+          });
+        }
+      };
+
+      /**
+       * Deletes a file from the vector store.
+       * @param {string} fileId - The ID of the file to delete.
+       */
+      this.deleteFile = function (fileId) {
+        if (!id) throw new Error("VectorStore must be created before deleting files.");
+        try {
+          const deleteId = _deleteFileInVectorStore(id, fileId);
+          return deleteId;
+        }
+        catch (e) {
+          Logger.log({
+            message: `An error occured when trying to delete the file from the vector store : ${e}`,
+            vectorStoreId: id,
+            fileId: fileId
+          });
+        }
+
+      };
+
+      /**
+       * Searches for a specific number of relevant chunks inside the vector store based on a query.
+       * @param {string} query - The query to search for in the vector store.
+       * @param {number} maxResults - The max number of chunks to return (typically between 5 and 20).
+       * @returns {Array<Object>} - The list of retrieved chunks.
+       */
+      this.search = function (query, maxResults = 10) {
+        if (!id) throw new Error("VectorStore must be created before searching.");
+        try {
+          const results = _searchVectorStore(id, query, maxResults);
+          retrievedChunks = results.data || [];
+          return retrievedChunks;
+        }
+        catch (e) {
+          Logger.log({
+            message: `An error occured when trying to search the vector store : ${e}`,
+            vectorStoreId: id,
+            query: query
+          });
+        }
+      };
+
+      /**
+       * Deletes the vector store from Open AI.
+       * @returns {string} - The delete ID.
+       */
+      this.deleteVectorStore = function () {
+        if (!id) throw new Error("VectorStore must be created before being deleted.");
+        try {
+          const deletedId = _deleteVectorStore(id);
+          id = null;
+          return deleteId;
+        }
+        catch (e) {
+          Logger.log({
+            message: `An error occured when trying to delete the vector store : ${e}`,
+            vectorStoreId: id
+          });
+        }
+      };
+
+      /**
+       * Returns the JSON objecct with name, description, and ID.
+       * @returns {Object}
+       */
+      this._toJson = function () {
+        return {
+          name: name,
+          description: description,
+          id: id
+        };
+      };
+    }
+  }
 
   /**
    * @class
@@ -153,27 +343,24 @@ const GenAIApp = (function () {
     }
   }
 
-  let webSearchFunction = new FunctionObject()
-    .setName("webSearch")
-    .setDescription("Perform a web search via a LLM that can browse the web.")
-    .addParameter("p", "string", "the prompt for the web search LLM.");
-
   let imageDescriptionFunction = new FunctionObject()
     .setName("getImageDescription")
     .setDescription("To retrieve the description of an image.")
     .addParameter("imageUrl", "string", "The URL of the image.")
     .addParameter("highFidelity", "boolean", `Default: false. To improve the image quality, not needed in most cases.`, isOptional = true);
 
+  
   /**
    * @class
    * Class representing a chat.
    */
   class Chat {
     constructor() {
+      let instructions = "";
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       let tools = [];
-      let model = "o1-mini"; // default 
+      let model = "gpt-4.1"; // default 
       let temperature = 0.5;
       let max_tokens = 300;
       let browsing = false;
@@ -181,12 +368,21 @@ const GenAIApp = (function () {
       let reasoning_effort = "low";
       let knowledgeLink;
       let assistantIdentificator;
-      let vectorStore;
+      let vectorStoresIds = [];
       let attachmentIdentificator;
-      let assistantTools;
+      let previous_response_id;
 
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
+      
+      /**
+       * Sets the instructions (the system prompt) for the chat.
+       * @param {string} instructions - The system prompt.
+       */
+      this.addInstruction = function (messageInstructions) {
+        instructions = messageInstructions;
+        return this;
+      }
 
       /**
        * Add a message to the chat.
@@ -197,7 +393,8 @@ const GenAIApp = (function () {
       this.addMessage = function (messageContent, system) {
         let role = "user";
         if (system) {
-          role = "system";
+          this.addInstruction(messageContent);
+          return this;
         }
         messages.push({
           role: role,
@@ -227,18 +424,18 @@ const GenAIApp = (function () {
 
       /**
        * NOT FOR GEMINI
-      * Add an image to the chat. Will automatically include an image with gpt-4-turbo-2024-04-09.
-      * @param {string} imageUrl - The URL of the image to add.
-      * @returns {Chat} - The current Chat instance.
-      */
+       * Add an image to the chat. Will automatically include an image with gpt-4-turbo-2024-04-09.
+       * @param {string} imageUrl - The URL of the image to add.
+       * @returns {Chat} - The current Chat instance.
+       */
       this.addImage = function (imageUrl) {
         messages.push(
           {
             role: "user",
             content: [
               {
-                type: "image_url",
-                image_url: { url: imageUrl }
+                type: "input_image",
+                image_url: imageUrl
               }
             ]
           }
@@ -305,35 +502,7 @@ const GenAIApp = (function () {
         }
         return this;
       };
-
-      /**
-       * OPTIONAL
-       * 
-       * Enable a thread run with an genAI assistant.
-       * @param {string} assistantId - your assistant id
-       * @param {string} vectorStoreDescription - a small description of the available knowledge from this assistant
-       * @returns {Chat} - The current Chat instance.
-       */
-      this.retrieveKnowledgeFromAssistant = function (assistantId, vectorStoreDescription) {
-        assistantIdentificator = assistantId;
-        vectorStore = vectorStoreDescription;
-        return this;
-      }
-
-      /**
-       * OPTIONAL
-       * 
-       * Enable a thread run with an genAI assistant.
-       * @param {string} assistantId - your assistant id
-       * @param {string} attachmentId - the Drive ID of the document you want to attach
-       * @returns {Chat} - The current Chat instance.
-       */
-      this.analyzeDocumentWithAssistant = function (assistantId, attachmentId) {
-        assistantIdentificator = assistantId;
-        attachmentIdentificator = attachmentId;
-        return this;
-      }
-
+      
       /**
        * Includes the content of a web page in the prompt sent to openAI
        * @param {string} url - the url of the webpage you want to fetch
@@ -372,16 +541,27 @@ const GenAIApp = (function () {
           return this;
         }
 
-        const fileContent = _convertFileToGeminiInput(fileID); // Get the file content
-        if (fileContent) {
+        const fileContentGemini = _convertFileToGeminiInput(fileID); // Get the file content
+        const fileContentOpenAi = _convertFileToOpenAiInput(fileID);
+
+        if (fileContentOpenAi){
+          messages.push({
+            role: "user",
+            content : [
+              fileContentOpenAi
+            ]
+          });
+        }
+        
+        if (fileContentGemini) {
           contents.push({
             role: 'user',
-            parts: fileContent.parts
+            parts: fileContentGemini.parts
           });
           contents.push({
             role: 'user',
             parts: {
-              text: fileContent.systemMessage
+              text: fileContentGemini.systemMessage
             }
           });
         } else {
@@ -395,6 +575,31 @@ const GenAIApp = (function () {
             }
           });
         }
+        return this;
+      };
+
+      /**
+       * Returns the response Id currently set for the class.
+       */
+      this.retrieveLastResponseId = function () {
+        return response_id;
+      };
+      
+      /**
+       * Sets the previous response Id attribute for the chat (used by Open AI to keep track of conversations)
+       * @param {string} previousResponseId - The id of the previous Chat GPT response.
+       */
+      this.setPreviousResponseId = function (previousResponseId) {
+        previous_response_id = previousResponseId;
+        return this;
+      };
+
+      /**
+       * Uses the provided vector store ids (up to two) with th file search tool for simple RAG.
+       * @param {Array} vectorStoreIdsArray - An array of strings containing one or two vector ids. 
+       */
+      this.addVectorStores = function (vectorStoreIdsArray) {
+        vectorStoresIds = vectorStoreIdsArray;
         return this;
       };
 
@@ -478,7 +683,7 @@ const GenAIApp = (function () {
 
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = "https://api.openai.com/v1/chat/completions";
+          let endpointUrl = "https://api.openai.com/v1/responses";
           if (model.includes("gemini")) {
             if (geminiKey) {
               endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
@@ -488,6 +693,16 @@ const GenAIApp = (function () {
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
+          console.log(responseMessage);
+          
+          
+          //filter out the web search calls from open ai
+          if (!model.includes("gemini")){
+            responseMessage = responseMessage.filter(item => item.type !== 'web_search_call');
+            responseMessage = responseMessage.filter(item => item.type !== 'file_search_call');
+            responseMessage = responseMessage.filter(item => item.type !== 'reasoning');
+          }
+          
           numberOfAPICalls++;
         } else {
           throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
@@ -519,7 +734,8 @@ const GenAIApp = (function () {
             }
           }
           else {
-            if (responseMessage.tool_calls) {
+            let functionCalls = responseMessage.filter(item => item.type === "function_call");
+            if (functionCalls.length > 0) {
               messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
@@ -538,7 +754,7 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              return responseMessage.content;
+              return responseMessage[0].content[0].text;
             }
           }
           if (advancedParametersObject) {
@@ -555,7 +771,8 @@ const GenAIApp = (function () {
             return responseMessage.parts[0].text;
           }
           else {
-            return responseMessage.content;
+            console.log(responseMessage);
+            return responseMessage[0].content[0].text;
           }
         }
       }
@@ -576,11 +793,11 @@ const GenAIApp = (function () {
       this._buildOpenAIPayload = function (advancedParametersObject) {
 
         let payload = {
-          'messages': messages,
-          'model': model,
-          'max_completion_tokens': max_tokens,
-          'temperature': temperature,
-          'user': Session.getTemporaryActiveUserKey()
+          model: model,
+          instructions: instructions,
+          input: messages,
+          max_output_tokens: max_tokens,
+          previous_response_id: previous_response_id
         };
 
         if (model.includes("o1") || model.includes("o3")) {
@@ -597,100 +814,17 @@ const GenAIApp = (function () {
           payload.reasoning_effort = reasoning_effort;
         }
 
-        if (browsing) {
-          if (messages[messages.length - 1].role !== "tool") {
-            tools.push({
-              type: "function",
-              function: webSearchFunction
-            });
-            let messageContent = `You are able to perform search queries on an LLM using the function webSearch and read the search results. `;
-            messages.push({
-              role: "system",
-              content: messageContent
-            });
-            if (restrictSearch) {
-              messages.push({
-                role: "user", // upon testing, this instruction has better results with user role instead of system
-                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-              });
-            }
-            payload.tool_choice = {
-              type: "function",
-              function: { name: "webSearch" }
-            };
-          }
-        }
-
-        if (assistantIdentificator) {
-          if (model.includes("gemini")) {
-            throw Error("To use OpenAI's assitant, please select a different model than Gemini");
-          }
-          // This function is created only here to adapt the function description to the vector store content
-          let runOpenAIAssistantFunction = new FunctionObject()
-            .setName("runOpenAIAssistant")
-            .setDescription(`To retrieve information from : ${vectorStore}`)
-            .addParameter("assistantId", "string", "The ID of the assistant")
-            .addParameter("prompt", "string", "The question you want to ask the assistant")
-            .endWithResult(true);
-
-          if (attachmentIdentificator) {
-            runOpenAIAssistantFunction.setDescription("To analyze a file with code interpreter")
-            runOpenAIAssistantFunction.addParameter("attachmentId", "string", "the Id of the file attached");
-          }
-
-          if (numberOfAPICalls == 0) {
-
-            tools.push({
-              type: "function",
-              function: runOpenAIAssistantFunction
-            });
-
-            if (attachmentIdentificator) {
-              messages.push({
-                role: "system",
-                content: `You can use the assistant ${assistantIdentificator} to analyze this file: "${attachmentIdentificator}"`
-              });
-            } else {
-              messages.push({
-                role: "system",
-                content: `You can use the assistant ${assistantIdentificator} to retrieve information from : ${vectorStore}`
-              });
-            }
-
-            payload.tool_choice = {
-              type: "function",
-              function: { name: "runOpenAIAssistant" }
-            };
-          }
-        }
-
-        if (vision && numberOfAPICalls == 0 && !model.includes("gemini")) {
-          tools.push({
-            type: "function",
-            function: imageDescriptionFunction
-          });
-          let messageContent = `You are able to retrieve images description using the getImageDescription function.`;
-          messages.push({
-            role: "system",
-            content: messageContent
-          });
-          payload.tool_choice = {
-            type: "function",
-            function: { name: "getImageDescription" }
-          };
-        }
-
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          let payloadTools = Object.keys(tools).map(t => ({
+          console.log(tools);
+          let toolsPayload = Object.keys(tools).map(t => ({
             type: "function",
-            function: {
-              name: tools[t].function._toJson().name,
-              description: tools[t].function._toJson().description,
-              parameters: tools[t].function._toJson().parameters
-            }
+            name: tools[t].function._toJson().name,
+            description: tools[t].function._toJson().description,
+            parameters: tools[t].function._toJson().parameters,
           }));
-          payload.tools = payloadTools;
+          payload.tools = toolsPayload;
+          console.log(payload.tools)
 
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
@@ -708,6 +842,45 @@ const GenAIApp = (function () {
             payload.tool_choice = tool_choosing;
           }
         }
+        
+        if (browsing) {
+          if (payload.tools) {
+            payload.tools.push({
+              type: "web_search_preview"
+            });
+
+            if (restrictSearch) {
+              messages.push({
+                role: "user", // upon testing, this instruction has better results with user role instead of system
+                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+              });
+            }
+            payload.tool_choice = {
+              type: "function",
+              function: { name: "webSearch" }
+            };
+          }
+          else {
+            payload.tools = [{
+              type: "web_search_preview"
+            }];
+          }
+        }
+        if (vectorStoresIds.length > 0) {
+          if (payload.tools) {
+            payload.tools.push({
+              type: "file_search",
+              vector_store_ids: vectorStoresIds 
+            })
+          } 
+          else {
+            payload.tools = [{
+              type: "file_search",
+              vector_store_ids: vectorStoresIds
+            }]
+          }
+        }
+        
         return payload;
       }
 
@@ -804,16 +977,16 @@ const GenAIApp = (function () {
   }
 
   /**
-  * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
-  * and handles authentication, retries on rate limits and server errors, and response parsing.
-  * This function is designed for internal use and includes exponential backoff for retries.
-  *
-  * @private
-  * @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
-  * @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
-  * @returns {object} - The response message from the GenAI API.
-  * @throws {Error} If the API call fails after the maximum number of retries.
-  */
+   * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
+   * and handles authentication, retries on rate limits and server errors, and response parsing.
+   * This function is designed for internal use and includes exponential backoff for retries.
+   *
+   * @private
+   * @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
+   * @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
+   * @returns {object} - The response message from the GenAI API.
+   * @throws {Error} If the API call fails after the maximum number of retries.
+   */
   function _callGenAIApi(endpoint, payload) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
@@ -845,8 +1018,12 @@ const GenAIApp = (function () {
           responseMessage = parsedResponse.candidates[0].content;
           finish_reason = parsedResponse.candidates[0].finish_reason;
         } else {
-          responseMessage = parsedResponse.choices[0].message;
-          finish_reason = parsedResponse.choices[0].finish_reason;
+          responseMessage = parsedResponse.output;
+          response_id = parsedResponse.id;
+
+          if (parsedResponse.status == 'incomplete') {
+            console.warn(`Received message with incomplete status from Open AI. Incomplete details : ${parsedResponse.incomplete_details.reason}.`);
+          }
         }
         if (finish_reason == "length") {
           console.warn(`${payload.model} response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
@@ -995,18 +1172,18 @@ const GenAIApp = (function () {
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
-   * @param {Object} responseMessage - The response message from OpenAI, containing details about tool calls.
+   * @param {Object} responseMessageTools - The response message from OpenAI, containing details about tool calls.
    * @param {Array} tools - Array of tool objects, each containing metadata about functions, argument orders, and conditions.
    * @param {Array} messages - Array representing the conversation flow, which is updated with tool call results and system messages.
    * @returns {Array} - The updated messages array, representing the conversation flow with function calls, results, and system responses.
    */
-  function _handleOpenAIToolCalls(responseMessage, tools, messages) {
-    messages.push(responseMessage);
-    for (let tool_call in responseMessage.tool_calls) {
-      if (responseMessage.tool_calls[tool_call].type == "function") {
+  function _handleOpenAIToolCalls(responseMessageTools, tools, messages) {
+    responseMessageTools.forEach(item => messages.push(item));
+    for (let tool_call of responseMessageTools) {
+      if (tool_call.type == "function_call") {
         // Call the function
-        let functionName = responseMessage.tool_calls[tool_call].function.name;
-        let functionArgs = _parseResponse(responseMessage.tool_calls[tool_call].function.arguments);
+        let functionName = tool_call.name;
+        let functionArgs = _parseResponse(tool_call.arguments);
 
         let argsOrder = [];
         let endWithResult = false;
@@ -1078,10 +1255,9 @@ const GenAIApp = (function () {
             }
           }
           messages.push({
-            "tool_call_id": responseMessage.tool_calls[tool_call].id,
-            "role": "tool",
-            "name": functionName,
-            "content": functionResponse,
+            "type": "function_call_output",
+            "call_id": tool_call.call_id,
+            "output": functionResponse
           });
         }
       }
@@ -1197,27 +1373,6 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Creates a new thread and returns the thread ID.
-   * 
-   * @returns {string} The thread ID.
-   */
-  function _createThread() {
-    var url = 'https://api.openai.com/v1/threads';
-    var options = {
-      'method': 'post',
-      'contentType': 'application/json',
-      'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      'payload': '{}'
-    };
-
-    var response = UrlFetchApp.fetch(url, options);
-    return JSON.parse(response.getContentText()).id;
-  }
-
-  /**
    * Uploads a file to OpenAI and returns the file ID.
    * 
    * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
@@ -1276,186 +1431,6 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Adds a message to the thread.
-   * 
-   * @param {string} threadId - The ID of the thread.
-   * @param {string} prompt - The prompt to send to the assistant.
-   * @param {string} [optionalAttachment] - The optional attachment ID from Google Drive.
-   */
-  function _addMessageToThread(threadId, prompt, optionalAttachment) {
-    let messagePayload = {
-      "role": "user",
-      "content": prompt
-    };
-
-    if (optionalAttachment) {
-      try {
-        var openAiFileId = _uploadFileToOpenAI(optionalAttachment);
-        messagePayload.attachments = [
-          {
-            "file_id": openAiFileId,
-            "tools": [{ "type": "code_interpreter" }]
-          }
-        ];
-      } catch (e) {
-        Logger.log('Error retrieving the file : ' + e.message);
-      }
-    }
-
-    var url = `https://api.openai.com/v1/threads/${threadId}/messages`;
-    var options = {
-      'method': 'post',
-      'contentType': 'application/json',
-      'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      'payload': JSON.stringify(messagePayload)
-    };
-
-    UrlFetchApp.fetch(url, options);
-  }
-
-  /**
-   * Runs the assistant and returns the run ID.
-   * 
-   * @param {string} threadId - The ID of the thread.
-   * @param {string} assistantId - The ID of the OpenAI assistant to run.
-   * @returns {string} The run ID.
-   */
-  function _runAssistant(threadId, assistantId) {
-    var url = `https://api.openai.com/v1/threads/${threadId}/runs`;
-    var assistantPayload = {
-      "assistant_id": assistantId
-    };
-    var options = {
-      'method': 'post',
-      'contentType': 'application/json',
-      'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      'payload': JSON.stringify(assistantPayload)
-    };
-
-    var response = UrlFetchApp.fetch(url, options);
-    return JSON.parse(response.getContentText()).id;
-  }
-
-  /**
-   * Monitors the run status until completion.
-   * 
-   * @param {string} threadId - The ID of the thread.
-   * @param {string} runId - The run ID.
-   */
-  function _monitorRunStatus(threadId, runId) {
-    var url = `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`;
-    var status = "queued";
-    const sleepTime = 30000; // 30 seconds
-
-    while (status === "queued") {
-      Utilities.sleep(sleepTime);
-
-      var statusOptions = {
-        'method': 'get',
-        'headers': {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + openAIKey,
-          'OpenAI-Beta': 'assistants=v2'
-        }
-      };
-
-      var response = UrlFetchApp.fetch(url, statusOptions);
-      let runStatus = JSON.parse(response.getContentText());
-      status = runStatus.status;
-    }
-
-    if (status !== "completed") {
-      Logger.log('Run did not complete in time.');
-      throw new Error('Run did not complete in time.');
-    }
-  }
-
-  /**
-   * Retrieves the assistant's response and references.
-   * 
-   * @param {string} threadId - The ID of the thread.
-   * @param {string} assistantId - The ID of the OpenAI assistant.
-   * @returns {string} The assistant's response and references in JSON format.
-   */
-  function _getAssistantResponse(threadId, assistantId) {
-    var url = 'https://api.openai.com/v1/threads/' + threadId + '/messages';
-    var options = {
-      'method': 'get',
-      'headers': {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
-      }
-    };
-
-    try {
-      var response = UrlFetchApp.fetch(url, options);
-      var json = response.getContentText();
-      var data = JSON.parse(json).data[0].content[0].text;
-
-      let references = [];
-      JSON.parse(JSON.stringify(data.annotations)).forEach(element => {
-        const fileId = element.file_citation.file_id;
-        var fileEndpoint = 'https://api.openai.com/v1/files/' + fileId;
-
-        var fileOptions = {
-          'method': 'get',
-          'headers': {
-            'Authorization': 'Bearer ' + openAIKey
-          }
-        };
-
-        var response = UrlFetchApp.fetch(fileEndpoint, fileOptions);
-        var json = JSON.parse(response.getContentText());
-
-        references.push(json.filename);
-      });
-
-      Logger.log({
-        message: `Got response from Assistant : ${assistantId}`,
-        response: JSON.stringify(data.value),
-        references: references
-      });
-
-      return JSON.stringify({
-        response: JSON.stringify(data.value),
-        references: references
-      });
-
-    } catch (e) {
-      Logger.log('Error retrieving assistant response: ' + e.message);
-      return 'Execution failure of the documentation retrieval.';
-    }
-  }
-
-  /**
-   * Runs an OpenAI assistant with the provided prompt and optional attachment.
-   * 
-   * @param {string} assistantId - The ID of the OpenAI assistant to run.
-   * @param {string} prompt - The prompt to send to the assistant.
-   * @param {string} [optionalAttachment] - The optional attachment ID from Google Drive.
-   * @returns {string} The assistant's response and references in JSON format.
-   */
-  function _runOpenAIAssistant(assistantId, prompt, optionalAttachment) {
-    try {
-      var threadId = _createThread();
-      _addMessageToThread(threadId, prompt, optionalAttachment);
-      var runId = _runAssistant(threadId, assistantId);
-      _monitorRunStatus(threadId, runId);
-      return _getAssistantResponse(threadId, assistantId);
-    } catch (e) {
-      Logger.log('Error in runOpenAIAssistant: ' + e.message);
-      return 'Execution failure.';
-    }
-  }
-
-  /**
    * Performs a web search using gpt-4o-search-preview
    *
    * @private
@@ -1486,15 +1461,15 @@ const GenAIApp = (function () {
   }
 
   /**
- * Fetches the content of a specified URL, logging the action if verbose mode is enabled.
- * Converts HTML content to Markdown format if the response is successful. If an error occurs
- * during fetching or access is denied, returns an error message.
- *
- * @private
- * @param {string} url - The URL of the webpage to fetch.
- * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
- *                          or an error message in JSON format if access is denied or an error occurs.
- */
+   * Fetches the content of a specified URL, logging the action if verbose mode is enabled.
+   * Converts HTML content to Markdown format if the response is successful. If an error occurs
+   * during fetching or access is denied, returns an error message.
+   *
+   * @private
+   * @param {string} url - The URL of the webpage to fetch.
+   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
+   *                          or an error message in JSON format if access is denied or an error occurs.
+   */
   function _urlFetch(url) {
     if (verbose) {
       console.log(`Clicked on link : ${url}`);
@@ -1631,6 +1606,96 @@ const GenAIApp = (function () {
           return null;
       }
       return { parts: parts, systemMessage: systemMessage };
+    } catch (error) {
+      Logger.log('Error during file processing: ' + error.toString());
+      return null;
+    }
+  }
+
+  /**
+   * Converts a PDF file to base64.
+   *
+   * @private
+   * @param {string} fileId - The Google Drive ID of the file to convert.
+   * @returns {object|null} - An object containing the base64 encoded pdf file. The object follows Open AI's API schema and can be added directly to the input attribute of the reauest.
+   */
+  function _convertFileToOpenAiInput(fileId) {
+    if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
+      Logger.log('Error: Invalid file identifier.');
+      return null;
+    }
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const mimeType = file.getMimeType();
+      const fileName = file.getName();
+      const fileSize = file.getSize();
+      // Gemini has a 20MB limit for API requests
+      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
+      if (fileSize > MAX_FILE_SIZE) {
+        Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+        return null;
+      }
+      let fileContent;
+      let systemMessage;
+      let parts = [];
+
+      switch (mimeType) {
+        // ===== PDF =====
+        case 'application/pdf':
+          const pdfBlob = file.getBlob();
+          const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+          parts = {
+            type: 'input_file',
+            filename: fileName,
+            file_data: pdfBase64
+          };
+          break;
+
+        // ===== Google Docs / Sheets / Slides (export to PDF) =====
+        case 'application/vnd.google-apps.spreadsheet':
+        case 'application/vnd.google-apps.document':
+        case 'application/vnd.google-apps.presentation':
+          let fileBlobUrl;
+          switch (mimeType) {
+            case 'application/vnd.google-apps.spreadsheet':
+              fileBlobUrl =
+                'https://docs.google.com/spreadsheets/d/' +
+                fileId +
+                '/export?format=pdf';
+              break;
+            case 'application/vnd.google-apps.document':
+              fileBlobUrl =
+                'https://docs.google.com/document/d/' +
+                fileId +
+                '/export?format=pdf';
+              break;
+            case 'application/vnd.google-apps.presentation':
+              fileBlobUrl =
+                'https://docs.google.com/presentation/d/' +
+                fileId +
+                '/export?format=pdf';
+              break;
+          }
+          const token = ScriptApp.getOAuthToken();
+          const response = UrlFetchApp.fetch(fileBlobUrl, {
+            headers: { Authorization: 'Bearer ' + token }
+          });
+          const pdfBlobFromExport = response.getBlob();
+          const pdfBase64FromExport = Utilities.base64Encode(
+            pdfBlobFromExport.getBytes()
+          );
+          parts = {
+            type: 'input_file',
+            filename: fileName,
+            file_data: pdfBase64FromExport
+          };
+          break;
+
+        default:
+          Logger.log(`Unsupported file type: ${mimeType}`);
+          return null;
+      }
+      return parts;
     } catch (error) {
       Logger.log('Error during file processing: ' + error.toString());
       return null;
