@@ -29,6 +29,7 @@ const GenAIApp = (function () {
   let verbose = true;
   
   let response_id;
+  let openai_base_url = "https://api.openai.com";
 
   /**
    * @class
@@ -40,7 +41,9 @@ const GenAIApp = (function () {
       let description = "";
       let id = null;
       let retrievedChunks = [];
-      let userDomain = "";
+      let numRetrievedChunks = 10;
+      let onlyChunks = false;
+      let retrievedAttributes = [];
 
       /**
        * Sets the vector store's name
@@ -63,13 +66,22 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Sets the limit for how many chunks should be returned by the vector store.
+       * @param {int} maxChunks - The number of chunks to return.
+       */
+      this.setMaxChunks = function (maxChunks) {
+        numRetrievedChunks = maxChunks;
+        return this;
+      }
+
+      /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
        * @returns {VectorStore}
        */
       this.createVectorStore = function () {
         if (!name) throw new Error("VectorStore must have a name before being created.");
         try {
-          id = _createOpenAiVectorStore(vectorStoreName);
+          id = _createOpenAiVectorStore(name);
         } catch (e) {
           Logger.log({
             message: `Error creating the vector store : ${e}`
@@ -88,12 +100,11 @@ const GenAIApp = (function () {
           const vectorStoreName = _retrieveVectorStoreInformation(vectorStoreId);
           name = vectorStoreName;
           id = vectorStoreId;
-          return this;
         }
         catch (e) {
           Logger.log(`Could not initialize vector store object from id : ${e}`);
-          return 0;
         }
+        return this;
       }
 
       /**
@@ -103,7 +114,29 @@ const GenAIApp = (function () {
       this.getId = function () {
         return id;
       };
+      
+      /**
+       * Returns the retrieveAttributes list, containing all of the attributes from the chunks that were retrieved through the search() method.
+       * @returns {list} - The list of the attributes from the chunks that were retrieved.
+       */
+      this.getAttributes = function () {
+        return retrievedAttributes;
+      }
 
+      /**
+       * Defines wether the vector store search should return the raw chunks or send them to the chat.
+       * @param {boolean} bool - A boolean to set or not the flag.
+       */
+      this.returnOnlyChunks = function (bool) {
+        if (bool) {
+          onlyChunks = true;
+        }
+        else {
+          onlyChunks = false;
+        }
+        return this;
+      }
+      
       /**
        * Uploads a file to Open AI storage and attaches it to the vector store.
        * @param {Blob} blob - File to upload.
@@ -114,7 +147,7 @@ const GenAIApp = (function () {
         if (!id) throw new Error("VectorStore must be created before attaching files.");
         try {
           const uploadedFileId = _uploadFileToOpenAIStorage(blob);
-          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes = {})
+          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes)
           return attachedFileId;
         }
         catch (e) {
@@ -166,14 +199,16 @@ const GenAIApp = (function () {
       /**
        * Searches for a specific number of relevant chunks inside the vector store based on a query.
        * @param {string} query - The query to search for in the vector store.
-       * @param {number} maxResults - The max number of chunks to return (typically between 5 and 20).
        * @returns {Array<Object>} - The list of retrieved chunks.
        */
-      this.search = function (query, maxResults = 10) {
+      this.search = function (query) {
         if (!id) throw new Error("VectorStore must be created before searching.");
         try {
-          const results = _searchVectorStore(id, query, maxResults);
+          const results = _searchVectorStore(id, query, numRetrievedChunks);
           retrievedChunks = results.data || [];
+          for (let chunk of retrievedChunks) {
+            retrievedAttributes.push(chunk.attributes);
+          }
           return retrievedChunks;
         }
         catch (e) {
@@ -192,7 +227,7 @@ const GenAIApp = (function () {
       this.deleteVectorStore = function () {
         if (!id) throw new Error("VectorStore must be created before being deleted.");
         try {
-          const deletedId = _deleteVectorStore(id);
+          const deleteId = _deleteVectorStore(id);
           id = null;
           return deleteId;
         }
@@ -212,7 +247,8 @@ const GenAIApp = (function () {
         return {
           name: name,
           description: description,
-          id: id
+          id: id,
+          onlyChunks: onlyChunks
         };
       };
     }
@@ -349,6 +385,10 @@ const GenAIApp = (function () {
     .addParameter("imageUrl", "string", "The URL of the image.")
     .addParameter("highFidelity", "boolean", `Default: false. To improve the image quality, not needed in most cases.`, isOptional = true);
 
+  let webSearchFunction = new FunctionObject()
+    .setName("_webSearch")
+    .setDescription("Perform a web search via a LLM that can browse the web.")
+    .addParameter("p", "string", "the prompt for the web search LLM.");
   
   /**
    * @class
@@ -362,27 +402,18 @@ const GenAIApp = (function () {
       let tools = [];
       let model = "gpt-4.1"; // default 
       let temperature = 0.5;
-      let max_tokens = 300;
+      let max_tokens = 5000;
       let browsing = false;
       let vision = false;
       let reasoning_effort = "low";
       let knowledgeLink;
       let assistantIdentificator;
-      let vectorStoresIds = [];
-      let attachmentIdentificator;
+      let functionNameToStore = {};
       let previous_response_id;
+      let hasWebSearchBeenAdded;
 
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
-      
-      /**
-       * Sets the instructions (the system prompt) for the chat.
-       * @param {string} instructions - The system prompt.
-       */
-      this.addInstruction = function (messageInstructions) {
-        instructions = messageInstructions;
-        return this;
-      }
 
       /**
        * Add a message to the chat.
@@ -393,7 +424,7 @@ const GenAIApp = (function () {
       this.addMessage = function (messageContent, system) {
         let role = "user";
         if (system) {
-          this.addInstruction(messageContent);
+          instructions = messageContent;
           return this;
         }
         messages.push({
@@ -595,11 +626,37 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Uses the provided vector store ids (up to two) with th file search tool for simple RAG.
-       * @param {Array} vectorStoreIdsArray - An array of strings containing one or two vector ids. 
+       * Uses the provided vector store ids (up to two) with the file search tool for simple RAG.
+       * @param {Object} vectorStoreObject - A vector store object. 
        */
-      this.addVectorStores = function (vectorStoreIdsArray) {
-        vectorStoresIds = vectorStoreIdsArray;
+      this.addVectorStores = function (vectorStoreObject) {
+        if (Object.keys(functionNameToStore).length < 5) {
+          const vectorStoreJSON = vectorStoreObject._toJson();
+          const vectorStoreName = vectorStoreJSON.name;
+          const vectorStoreDescription = vectorStoreJSON.description;
+
+          if (!vectorStoreName) {
+            console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
+            return this;
+          }
+          
+          const fnName = `vectorStore${vectorStoreName}Search`;
+          const fnDescription = `This tool will search the ${vectorStoreDescription} vector store for relevant information based on a single query.`;
+
+          const fnObject = new FunctionObject()
+          .setName(fnName)
+          .setDescription(fnDescription)
+          .addParameter("query", "string", "The search query to run against the vector store.")
+          .endWithResult(vectorStoreJSON.onlyChunks);
+
+          this.addFunction(fnObject);
+
+          functionNameToStore[fnName] = vectorStoreObject;
+
+        }
+        else {
+          console.warn(`The number of vector stores passed to the chat is currently limited to 5. This can be changed in the .addVectorStores method if needed. There are currently ${Object.keys(functionNameToStore).length} vector stores assigned to this chat instance.`);
+        }
         return this;
       };
 
@@ -655,6 +712,11 @@ const GenAIApp = (function () {
           }
         }
 
+        if ((model.includes("o3") || model.includes("o4") || model.includes("o1")) && browsing && !(hasWebSearchBeenAdded)) {
+          this.addFunction(webSearchFunction);
+          hasWebSearchBeenAdded = true;
+        }
+
         if (knowledgeLink) {
           let knowledge = _urlFetch(knowledgeLink);
           if (!knowledge) {
@@ -693,15 +755,6 @@ const GenAIApp = (function () {
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
-          console.log(responseMessage);
-          
-          
-          //filter out the web search calls from open ai
-          if (!model.includes("gemini")){
-            responseMessage = responseMessage.filter(item => item.type !== 'web_search_call');
-            responseMessage = responseMessage.filter(item => item.type !== 'file_search_call');
-            responseMessage = responseMessage.filter(item => item.type !== 'reasoning');
-          }
           
           numberOfAPICalls++;
         } else {
@@ -736,25 +789,25 @@ const GenAIApp = (function () {
           else {
             let functionCalls = responseMessage.filter(item => item.type === "function_call");
             if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
+              messages = _handleOpenAIToolCalls(responseMessage, tools, messages, functionNameToStore);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
                   if (verbose) {
                     console.log("Conversation stopped because end function has been called");
                   }
-                  return messages[messages.length - 2]; // the last chat completion
+                  return messages[messages.length - 2].content; // the last chat completion
                 } else if (messages[messages.length - 1].content == "onlyReturnArguments") {
                   if (verbose) {
                     console.log("Conversation stopped because argument return has been enabled - No function has been called");
                   }
-                  return _parseResponse(messages[messages.length - 3].tool_calls[0].function.arguments); // the argument(s) of the last function called
+                  return messages[messages.length - 3].arguments; // the argument(s) of the last function called
                 }
               }
             }
             else {
               // if no function has been found, stop here
-              return responseMessage[0].content[0].text;
+              return responseMessage.find(item => item.type === "message").content[0].text;
             }
           }
           if (advancedParametersObject) {
@@ -771,8 +824,7 @@ const GenAIApp = (function () {
             return responseMessage.parts[0].text;
           }
           else {
-            console.log(responseMessage);
-            return responseMessage[0].content[0].text;
+            return responseMessage.find(item => item.type === "message").content[0].text;
           }
         }
       }
@@ -791,7 +843,7 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
       this._buildOpenAIPayload = function (advancedParametersObject) {
-
+        
         let payload = {
           model: model,
           instructions: instructions,
@@ -800,23 +852,8 @@ const GenAIApp = (function () {
           previous_response_id: previous_response_id
         };
 
-        if (model.includes("o1") || model.includes("o3")) {
-          // Developer messages are the new system messages: Starting with o1-2024-12-17, o1 and o3 models support developer messages rather than system messages, to align with the chain of command behavior described in the model spec. This includes o1, o1-mini, o3-mini, and future versions.
-          let tempMessages = messages;
-          tempMessages.forEach(message => {
-            if (message.role === "system") {
-              message.role = "developer";
-            }
-          })
-          payload.messages = tempMessages;
-          delete payload.temperature;
-
-          payload.reasoning_effort = reasoning_effort;
-        }
-
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          console.log(tools);
           let toolsPayload = Object.keys(tools).map(t => ({
             type: "function",
             name: tools[t].function._toJson().name,
@@ -824,30 +861,36 @@ const GenAIApp = (function () {
             parameters: tools[t].function._toJson().parameters,
           }));
           payload.tools = toolsPayload;
-          console.log(payload.tools)
 
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
           }
 
           if (advancedParametersObject?.function_call &&
-            payload.tool_choice.function?.name !== "webSearch") {
+            payload.tool_choice.name !== "_webSearch" && numberOfAPICalls < 1) {
             // the user has set a specific function to call
             let tool_choosing = {
               type: "function",
-              function: {
-                name: advancedParametersObject.function_call
-              }
-            };
+              name: advancedParametersObject.function_call
+              };
             payload.tool_choice = tool_choosing;
           }
+        }
+
+        if (advancedParametersObject.reasoning_effort) {
+          payload.reasoning=  {"effort": reasoning_effort}
         }
         
         if (browsing) {
           if (payload.tools) {
-            payload.tools.push({
+            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
+              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
+            }
+            else {
+              payload.tools.push({
               type: "web_search_preview"
             });
+            }
 
             if (restrictSearch) {
               messages.push({
@@ -855,29 +898,22 @@ const GenAIApp = (function () {
                 content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
               });
             }
-            payload.tool_choice = {
+            if (numberOfAPICalls < 1) {
+              payload.tool_choice = {
               type: "function",
-              function: { name: "webSearch" }
+              name: "_webSearch"
             };
+            }
           }
           else {
-            payload.tools = [{
+            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
+              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
+            }
+            else {
+              payload.tools = [{
               type: "web_search_preview"
             }];
-          }
-        }
-        if (vectorStoresIds.length > 0) {
-          if (payload.tools) {
-            payload.tools.push({
-              type: "file_search",
-              vector_store_ids: vectorStoresIds 
-            })
-          } 
-          else {
-            payload.tools = [{
-              type: "file_search",
-              vector_store_ids: vectorStoresIds
-            }]
+            }
           }
         }
         
@@ -1177,7 +1213,7 @@ const GenAIApp = (function () {
    * @param {Array} messages - Array representing the conversation flow, which is updated with tool call results and system messages.
    * @returns {Array} - The updated messages array, representing the conversation flow with function calls, results, and system responses.
    */
-  function _handleOpenAIToolCalls(responseMessageTools, tools, messages) {
+  function _handleOpenAIToolCalls(responseMessageTools, tools, messages, functionNameToStore) {
     responseMessageTools.forEach(item => messages.push(item));
     for (let tool_call of responseMessageTools) {
       if (tool_call.type == "function_call") {
@@ -1189,6 +1225,10 @@ const GenAIApp = (function () {
         let endWithResult = false;
         let onlyReturnArguments = false;
 
+        if (functionName.startsWith("vectorStore")) {
+          argsOrder = tool_call.arguments;
+        }
+
         for (let t in tools) {
           let currentFunction = tools[t].function._toJson();
           if (currentFunction.name == functionName) {
@@ -1198,10 +1238,10 @@ const GenAIApp = (function () {
             break;
           }
         }
-
+        
         if (endWithResult) {
           // User defined that if this function has been called, then no more actions should be performed with the chat.
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1211,7 +1251,7 @@ const GenAIApp = (function () {
             }
           }
           messages.push({
-            "tool_call_id": responseMessage.tool_calls[tool_call].id,
+            "tool_call_id": tool_call.id,
             "role": "tool",
             "name": functionName,
             "content": functionResponse,
@@ -1228,7 +1268,7 @@ const GenAIApp = (function () {
         }
         else if (onlyReturnArguments) {
           messages.push({
-            "tool_call_id": responseMessage.tool_calls[tool_call].id,
+            "tool_call_id": tool_call.id,
             "role": "tool",
             "name": functionName,
             "content": "",
@@ -1240,7 +1280,7 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1277,9 +1317,27 @@ const GenAIApp = (function () {
    * @returns {*} - The result of the function call, or a success message if the function executes without a return.
    * @throws {Error} If the specified function is not found or is not a function.
    */
-  function _callFunction(functionName, jsonArgs, argsOrder) {
+  function _callFunction(functionName, jsonArgs, argsOrder, functionNameToStore) {
     // Handle internal functions
-    if (functionName == "webSearch") {
+    if (functionName.startsWith("vectorStore") && functionName.endsWith("Search")) {
+          const vs = functionNameToStore[functionName];
+          if (!vs) {
+            throw new Error(`No vectorStoreObject found for function ${functionName}`);
+          }
+          const onlyReturnChunks = vs._toJson().onlyChunks;
+          const queryText = jsonArgs.query;
+          const results = vs.search(queryText);
+
+          if (onlyReturnChunks) {
+            return results;
+          }
+          const stringResults = results.map((vsFile) => {
+            return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
+          })
+          return stringResults;
+    }
+
+    if (functionName == "_webSearch") {
       return _webSearch(jsonArgs.p);
     }
     if (functionName == "getImageDescription") {
@@ -1287,13 +1345,6 @@ const GenAIApp = (function () {
         return _getImageDescription(jsonArgs.imageUrl, jsonArgs.fidelity);
       } else {
         return _getImageDescription(jsonArgs.imageUrl);
-      }
-    }
-    if (functionName == "runOpenAIAssistant") {
-      if (jsonArgs.attachmentId) {
-        return _runOpenAIAssistant(jsonArgs.assistantId, jsonArgs.prompt, jsonArgs.attachmentId);
-      } else {
-        return _runOpenAIAssistant(jsonArgs.assistantId, jsonArgs.prompt);
       }
     }
     // Parse JSON arguments
@@ -1439,19 +1490,20 @@ const GenAIApp = (function () {
    */
   function _webSearch(p) {
     let payload = {
-      'messages': [{
+      model: "gpt-4.1",
+      input: [{
         role: "user",
         content: p
       }],
-      'model': 'gpt-4o-search-preview',
-      'max_completion_tokens': 1000,
-      'user': Session.getTemporaryActiveUserKey()
+      max_output_tokens: 1000
     };
-    let responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
-    let formatedContent = `${responseMessage.content}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
+    let responseMessage = _callGenAIApi("https://api.openai.com/v1/responses", payload);
+    responseMessage = responseMessage.find(item => item.type === "message").content[0]
+    
+    let formatedContent = `${responseMessage.text}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
       .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
       .map(annotation => annotation.url_citation.url) : []}}}`;
-
+    
     Logger.log({
       message: "Performed web search with gpt-4o",
       prompt: p,
@@ -1858,6 +1910,330 @@ const GenAIApp = (function () {
     return htmlString;
   }
 
+  /**
+   * Makes the API call to Open AI to create a new vector store.
+   * 
+   * @param {string} vectorStoreName - The vectorStoreName to help build the vector store's name.
+   * @returns {string} id - The id of the vector store that was just created.
+   */
+  function _createOpenAiVectorStore(vectorStoreName) {
+    const url = openai_base_url + "/v1/vector_stores";
+
+    const payload = {
+      name: `VectorStore for ${vectorStoreName}`,
+    };
+
+    const options = {
+      method: 'post',
+      headers: {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    try {
+      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+      const result = JSON.parse(response.getContentText());
+
+      if (result && result.id) {
+        Logger.log({
+          message: `Vector store successfully created.`,
+          id: result.id
+        });
+
+        const id = result.id;
+        return id;
+      }
+      else {
+        Logger.log(`Failed to create vector store. Response: ${response.getContentText()}`);
+        throw new Error("Fail to create vector store");
+      }
+    }
+    catch (e) {
+      Logger.log(`Error creating vector store: ${e.message} - Full response: ${e.response.getContentText()}`);
+      throw new Error("Fail to create vector store");
+    }
+  }
+
+  /**
+   * Retrieves information avout a specific Vector Store from Open AI's API.
+   * 
+   * @param {string} vectorStoreId - The Open AI API vector store Id.  
+   */
+  function _retrieveVectorStoreInformation(vectorStoreId) {
+    const url = openai_base_url + '/v1/vector_stores/' + vectorStoreId;
+    const options = {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2'
+      }
+    };
+    try {
+      const response = UrlFetchApp.fetch(url, options);
+      const result = JSON.parse(response.getContentText());
+      Logger.log(`Succesfully retrieved Vector Store information from Open AI : ${result}`);
+      if (result.status == "completed") {
+        return result.name;
+      }
+    }
+    catch (e) {
+      Logger.log({
+        message: `Failed to retrieve Vector Store information. ${e}`,
+        vectorStoreId: vectorStoreId,
+        errorMessage: e
+      });
+      throw new Error(`Failed to retrieve Vector Store information : ${e}`);
+    }
+  }
+
+  /**
+   * Uploads a file to the Open AI storage.
+   * 
+   * @param {blob} blob - The file blob.
+   * @returns {string} id - The id of the uploaded file.
+   */
+  function _uploadFileToOpenAIStorage(blob) {
+    const url = openai_base_url + "/v1/files";
+    const headers = {
+      'Authorization': 'Bearer ' + OPEN_AI_API_KEY
+    };
+
+    const form = {
+      'purpose': "user_data",
+      'file': blob
+    };
+
+    const options = {
+      'method': "post",
+      'headers': headers,
+      'payload': form
+    };
+
+    try {
+      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+
+      if (response.getResponseCode() == 200) {
+        const json = JSON.parse(response.getContentText());
+        Logger.log({
+          message: `File successfully uploaded to OpenAI`,
+          id: json.id
+        });
+        const fileId = json.id;
+        return fileId;
+      } else {
+        console.error(`Unexpected error: ${response.getContentText()} (Status Code: ${response.getResponseCode()})`);
+        throw new Error(`Failed to upload file. Status Code: ${response.getResponseCode()}`);
+      }
+    } catch (error) {
+      // Handle network errors or unexpected exceptions
+      console.error(`An error occurred while uploading the file to OpenAI: ${error.message}`);
+      // Optionally, rethrow the error to be handled by the caller
+      throw error;
+    }
+  }
+
+  /**
+   * Attaches a file to a specified vector store in OpenAI.
+   *
+   * @param {string} fileId - The unique identifier of the file to attach.
+   * @param {string} vectorStoreId - The unique identifier of the vector store.
+   * @param {Object} attributes - JSON object with the attributes of the file (set of up to 16 key-value pairs).
+   * @returns {object} A vector store file object (JSON object).
+   * @throws {Error} Throws an error if the attachment fails or if a network error occurs.
+   */
+  function _attachFileToVectorStore(fileId, vectorStoreId, attributes) {
+    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/files`;
+    const payload = {
+      "file_id": fileId,
+      "attributes": attributes,
+      "chunking_strategy": {
+        "type": "static",
+        "static": {
+          "max_chunk_size_tokens": 100,
+          "chunk_overlap_tokens": 10
+        }
+      }
+    };
+
+    const options = {
+      method: 'post',
+      'contentType': 'application/json',
+      'headers': {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'OpenAI-Beta': 'assistants=v2'
+      },
+      'payload': JSON.stringify(payload)
+    };
+    const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+    const data = JSON.parse(response.getContentText());
+    return data;
+  }
+
+  /**
+   * Retrieves all file IDs from a specified vector store in OpenAI.
+   *
+   * This function fetches file IDs in batches of 100 using pagination. It continues to
+   * request additional batches until all file IDs have been retrieved. The file IDs are
+   * stored as keys in an object with their values set to `true`.
+   *
+   * @param {string} vectorStoreId - The unique identifier of the vector store from which to list files.
+   * @returns {Object} An object where each key is a file ID from the vector store.
+   * @throws {Error} Throws an error if there is an issue fetching the file IDs.
+   */
+  function _listFilesInVectorStore(vectorStoreId) {
+    const baseUrl = openai_base_url + '/v1/vector_stores';
+    const fileIds = {};
+    let hasMoreFiles = true;
+    let after;
+
+    while (hasMoreFiles) {
+      try {
+        // Get file IDs from the source vector store
+        let url = `${baseUrl}/${vectorStoreId}/files?limit=100`;
+        if (after) {
+          url += `&after=${after}`;
+        }
+
+        const options = {
+          'method': 'get',
+          'headers': {
+            'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+            'OpenAI-Beta': 'assistants=v2'
+          },
+        };
+
+        const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+        const storageData = JSON.parse(response.getContentText());
+
+        if (storageData && storageData.data) {
+          storageData.data.forEach(file => {
+            fileIds[file.id] = true;
+          });
+
+          Logger.log(`Fetched ${storageData.data.length} files`);
+
+          if (storageData.data.length < 100) {
+            hasMoreFiles = false;
+          } else {
+            after = storageData.data[storageData.data.length - 1].id;
+          }
+        } else {
+          Logger.log('No file IDs found in the vector store storage');
+          hasMoreFiles = false;
+        }
+      } catch (e) {
+        Logger.log(`Error fetching files IDs: ${e.message}`);
+        hasMoreFiles = false;
+      }
+    }
+
+    return fileIds;
+  }
+
+  /**
+   * Deletes a file from a specified vector store in OpenAI.
+   *
+   * This function sends a DELETE request to the OpenAI API to remove a file from the specified vector store.
+   * If an error occurs during the request, it is logged to the console.
+   *
+   * @param {string} vectorStoreId - The unique identifier of the vector store.
+   * @param {string} fileId - The unique identifier of the file to delete.
+   */
+  function _deleteFileInVectorStore(vectorStoreId, fileId) {
+    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/files/${fileId}`;
+
+    const options = {
+      'method': 'delete',
+      'headers': {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'OpenAI-Beta': 'assistants=v2'
+      },
+    };
+
+    try {
+      // Delete the file from the vector store
+      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+    } catch (error) {
+      console.error(`Failed to delete file with ID: ${fileId}`, error);
+    }
+  }
+
+  /**
+   * Searches a vector store for relevant chunks based on a query and file attributes filter.
+   * 
+   * @param {string} vectorStoreId - The unique identifier of the vector store from which to search for relevant chunks.
+   * @param {string} query - The query string for a search
+   * @param {int} max_num_results - The maximum number of results to return (defaults to 10).
+   * @returns {list of Objects} A list of the file objects that are closest to the query. 
+   */
+  function _searchVectorStore(vectorStoreId, query, max_num_results) {
+    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/search`;
+    const payload = {
+      "query": query,
+      "max_num_results": max_num_results
+    }
+    const options = {
+      method: 'post',
+      'contentType': 'application/json',
+      'headers': {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY
+      },
+      'payload': JSON.stringify(payload)
+    };
+
+    const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+    const data = JSON.parse(response.getContentText());
+    return data;
+  }
+
+  /**
+   * Deletes a specific vector store from OpenAI by its ID.
+   *
+   * Sends a DELETE request to the OpenAI API to remove a specific vector store.
+   *
+   * @param {string} vectorStoreId - The unique identifier of the vector store to delete.
+   * @returns {string} The unique identifier of the deleted vector store.
+   * @throws {Error} Throws an error if the deletion fails or if there is an issue with the API request.
+   */
+  function _deleteVectorStore(vectorStoreId) {
+    const url = openai_base_url + '/v1/vector_stores/' + vectorStoreId;
+
+    const options = {
+      method: 'delete',
+      headers: {
+        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'OpenAI-Beta': 'assistants=v2'
+      },
+      muteHttpExceptions: true
+    };
+
+    try {
+      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+      const result = JSON.parse(response.getContentText());
+
+      if (result && result.id) {
+        Logger.log({
+          message: `Vector store successfully deleted.`,
+          id: result.id
+        });
+        return result.id;
+      }
+      else {
+        console.error(`Failed to delete Vector store. Response: ${response.getContentText()}`);
+        throw new Error("Fail to delete Vector store");
+      }
+    }
+    catch (e) {
+      console.error(`Error deleting Vector store: ${e.message}`);
+      throw new Error("Fail to deleting Vector store");
+    }
+  }
+
   return {
     /**
      * Create a new chat.
@@ -1873,6 +2249,14 @@ const GenAIApp = (function () {
      */
     newFunction: function () {
       return new FunctionObject();
+    },
+
+    /**
+     * Create a new Vector Store.
+     * @returns {VectorStoreObject} - A new Vector Store instance.
+     */
+    newVectorStore: function () {
+      return new VectorStoreObject();
     },
 
     /**
