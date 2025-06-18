@@ -30,6 +30,7 @@ const GenAIApp = (function () {
   
   let response_id;
   let openai_base_url = "https://api.openai.com";
+  let helpScoutConversationId;
 
   /**
    * @class
@@ -41,7 +42,7 @@ const GenAIApp = (function () {
       let description = "";
       let id = null;
       let retrievedChunks = [];
-      let numRetrievedChunks = 10;
+      let maxNumOfChunks = 10;
       let onlyChunks = false;
       let retrievedAttributes = [];
 
@@ -70,7 +71,7 @@ const GenAIApp = (function () {
        * @param {int} maxChunks - The number of chunks to return.
        */
       this.setMaxChunks = function (maxChunks) {
-        numRetrievedChunks = maxChunks;
+        maxNumOfChunks = maxChunks;
         return this;
       }
 
@@ -79,7 +80,7 @@ const GenAIApp = (function () {
        * @returns {VectorStore}
        */
       this.createVectorStore = function () {
-        if (!name) throw new Error("VectorStore must have a name before being created.");
+        if (!name) throw new Error("Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
         try {
           id = _createOpenAiVectorStore(name);
         } catch (e) {
@@ -95,7 +96,7 @@ const GenAIApp = (function () {
        * 
        * @param {string} vectorStoreId - The Open AI API vector store id. 
        */
-      this.initializeVectorStoreFromId = function (vectorStoreId) {
+      this.initializeFromId = function (vectorStoreId) {
         try {
           const vectorStoreName = _retrieveVectorStoreInformation(vectorStoreId);
           name = vectorStoreName;
@@ -131,9 +132,6 @@ const GenAIApp = (function () {
         if (bool) {
           onlyChunks = true;
         }
-        else {
-          onlyChunks = false;
-        }
         return this;
       }
       
@@ -144,7 +142,7 @@ const GenAIApp = (function () {
        * @returns {object} - The raw JSON chunks returned by the vector store.
        */
       this.uploadAndAttachFile = function (blob, attributes = {}) {
-        if (!id) throw new Error("VectorStore must be created before attaching files.");
+        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
         try {
           const uploadedFileId = _uploadFileToOpenAIStorage(blob);
           const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes)
@@ -204,7 +202,7 @@ const GenAIApp = (function () {
       this.search = function (query) {
         if (!id) throw new Error("VectorStore must be created before searching.");
         try {
-          const results = _searchVectorStore(id, query, numRetrievedChunks);
+          const results = _searchVectorStore(id, query, maxNumOfChunks);
           retrievedChunks = results.data || [];
           for (let chunk of retrievedChunks) {
             retrievedAttributes.push(chunk.attributes);
@@ -405,12 +403,13 @@ const GenAIApp = (function () {
       let max_tokens = 5000;
       let browsing = false;
       let vision = false;
-      let reasoning_effort = "low";
+      let reasoning_effort = "high";
       let knowledgeLink;
       let assistantIdentificator;
       let functionNameToStore = {};
       let previous_response_id;
       let hasWebSearchBeenAdded;
+      let metadata = {};
 
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
@@ -474,6 +473,17 @@ const GenAIApp = (function () {
         vision = true;
         return this;
       };
+
+      /**
+       * Adds an item (key/value pair) to the metadata that will be passed to the OpenAI API.
+       * 
+       * @param {string} key - The key of the object that should be added.
+       * @param {string} value - The value of the object that should be added.
+       */
+      this.addMetadata = function (key, value=null) {
+        metadata[key] = value;
+        return this;
+      }
 
       /**
        * Get the messages of the chat.
@@ -843,13 +853,16 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
       this._buildOpenAIPayload = function (advancedParametersObject) {
-        
+        if (helpScoutConversationId) {
+          metadata["helpScoutConversationId"] = helpScoutConversationId;
+        }
         let payload = {
           model: model,
           instructions: instructions,
           input: messages,
           max_output_tokens: max_tokens,
-          previous_response_id: previous_response_id
+          previous_response_id: previous_response_id,
+          metadata: metadata
         };
 
         if (tools.length > 0) {
@@ -916,7 +929,7 @@ const GenAIApp = (function () {
             }
           }
         }
-        
+        console.log(payload);
         return payload;
       }
 
@@ -1495,7 +1508,8 @@ const GenAIApp = (function () {
         role: "user",
         content: p
       }],
-      max_output_tokens: 1000
+      max_output_tokens: 1000,
+      tools: [{"type": "web_search_preview"}],
     };
     let responseMessage = _callGenAIApi("https://api.openai.com/v1/responses", payload);
     responseMessage = responseMessage.find(item => item.type === "message").content[0]
@@ -1736,10 +1750,12 @@ const GenAIApp = (function () {
           const pdfBase64FromExport = Utilities.base64Encode(
             pdfBlobFromExport.getBytes()
           );
+          const prefixString = "data:application/pdf;base64,"
+          const completeFileDataString = prefixString + pdfBase64FromExport
           parts = {
             type: 'input_file',
             filename: fileName,
-            file_data: pdfBase64FromExport
+            file_data: completeFileDataString
           };
           break;
 
@@ -2283,7 +2299,25 @@ const GenAIApp = (function () {
      */
     setGeminiAuth: function (gcp_project_id, gcp_project_region) {
       gcpProjectId = gcp_project_id;
-      region = gcp_project_region
+      region = gcp_project_region;
+    },
+
+    /**
+     * To set the Helpscout conversation ID that will be passed in the conversations.
+     * @param {string} conversationId - The id of the Helpscout conversation.
+     */
+    setConversationId: function (conversationId) {
+      helpScoutConversationId = conversationId;
+    },
+
+    /**
+     * To set the Open AI log ID.
+     * @param {string} logId - The id of the Open AI log.
+     */
+    setOpenAiLogId: function (logId) {
+      openAiLogId = logId;
     }
+
+
   }
 })();
