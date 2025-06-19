@@ -30,7 +30,7 @@ const GenAIApp = (function () {
   
   let response_id;
   let openai_base_url = "https://api.openai.com";
-  let helpScoutConversationId;
+  let globalMetadata = {};
 
   /**
    * @class
@@ -853,8 +853,8 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
       this._buildOpenAIPayload = function (advancedParametersObject) {
-        if (helpScoutConversationId) {
-          metadata["helpScoutConversationId"] = helpScoutConversationId;
+        if (globalMetadata) {
+          Object.assign(metadata, globalMetadata);
         }
         let payload = {
           model: model,
@@ -2303,11 +2303,12 @@ const GenAIApp = (function () {
     },
 
     /**
-     * To set the Helpscout conversation ID that will be passed in the conversations.
-     * @param {string} conversationId - The id of the Helpscout conversation.
+     * To set a global metadata key/value pair that will be passed along every message to the API.
+     * @param {string} globalMetadataKey - The key of the key/value pair.
+     * @param {string} globalMetadataValue - The value of the key/value pair.
      */
-    setConversationId: function (conversationId) {
-      helpScoutConversationId = conversationId;
+    setGlobalMetadata: function (globalMetadataKey, globalMetadataValue) {
+       globalMetadata[globalMetadataKey] = globalMetadataValue;
     },
 
     /**
