@@ -29,7 +29,10 @@ const GenAIApp = (function () {
   let verbose = true;
   
   let response_id;
-  let openai_base_url = "https://api.openai.com";
+
+  let apiBaseUrl = "https://api.openai.com";
+  let vsBaseUrl = "https://api.openai.com"
+
   let globalMetadata = {};
 
   /**
@@ -755,7 +758,10 @@ const GenAIApp = (function () {
 
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = "https://api.openai.com/v1/responses";
+          let endpointUrl = apiBaseUrl + "/v1/responses";
+          if (endpointUrl.includes("azure")) {
+            endpointUrl += "?api-version=preview";
+          }
           if (model.includes("gemini")) {
             if (geminiKey) {
               endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
@@ -890,7 +896,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if (advancedParametersObject.reasoning_effort) {
+        if (advancedParametersObject?.reasoning_effort) {
           payload.reasoning=  {"effort": reasoning_effort}
         }
         
@@ -1933,7 +1939,7 @@ const GenAIApp = (function () {
    * @returns {string} id - The id of the vector store that was just created.
    */
   function _createOpenAiVectorStore(vectorStoreName) {
-    const url = openai_base_url + "/v1/vector_stores";
+    const url = vsBaseUrl + "/v1/vector_stores";
 
     const payload = {
       name: `VectorStore for ${vectorStoreName}`,
@@ -1980,7 +1986,7 @@ const GenAIApp = (function () {
    * @param {string} vectorStoreId - The Open AI API vector store Id.  
    */
   function _retrieveVectorStoreInformation(vectorStoreId) {
-    const url = openai_base_url + '/v1/vector_stores/' + vectorStoreId;
+    const url = vsBaseUrl + '/v1/vector_stores/' + vectorStoreId;
     const options = {
       method: 'get',
       headers: {
@@ -2014,7 +2020,7 @@ const GenAIApp = (function () {
    * @returns {string} id - The id of the uploaded file.
    */
   function _uploadFileToOpenAIStorage(blob) {
-    const url = openai_base_url + "/v1/files";
+    const url = vsBaseUrl + "/v1/files";
     const headers = {
       'Authorization': 'Bearer ' + OPEN_AI_API_KEY
     };
@@ -2063,7 +2069,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if the attachment fails or if a network error occurs.
    */
   function _attachFileToVectorStore(fileId, vectorStoreId, attributes) {
-    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/files`;
+    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/files`;
     const payload = {
       "file_id": fileId,
       "attributes": attributes,
@@ -2102,7 +2108,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if there is an issue fetching the file IDs.
    */
   function _listFilesInVectorStore(vectorStoreId) {
-    const baseUrl = openai_base_url + '/v1/vector_stores';
+    const baseUrl = vsBaseUrl + '/v1/vector_stores';
     const fileIds = {};
     let hasMoreFiles = true;
     let after;
@@ -2161,7 +2167,7 @@ const GenAIApp = (function () {
    * @param {string} fileId - The unique identifier of the file to delete.
    */
   function _deleteFileInVectorStore(vectorStoreId, fileId) {
-    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/files/${fileId}`;
+    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/files/${fileId}`;
 
     const options = {
       'method': 'delete',
@@ -2188,7 +2194,7 @@ const GenAIApp = (function () {
    * @returns {list of Objects} A list of the file objects that are closest to the query. 
    */
   function _searchVectorStore(vectorStoreId, query, max_num_results) {
-    const url = openai_base_url + `/v1/vector_stores/${vectorStoreId}/search`;
+    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/search`;
     const payload = {
       "query": query,
       "max_num_results": max_num_results
@@ -2217,7 +2223,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if the deletion fails or if there is an issue with the API request.
    */
   function _deleteVectorStore(vectorStoreId) {
-    const url = openai_base_url + '/v1/vector_stores/' + vectorStoreId;
+    const url = vsBaseUrl + '/v1/vector_stores/' + vectorStoreId;
 
     const options = {
       method: 'delete',
@@ -2317,6 +2323,14 @@ const GenAIApp = (function () {
      */
     setOpenAiLogId: function (logId) {
       openAiLogId = logId;
+    },
+
+    /**
+     * To set a specific API URL like Azure or Google Cloud for using Open AI models.
+     * @param {string} baseUrl - The base url to be used for the API calls.
+     */
+    setApiBaseUrl: function (baseUrl) {
+      apiBaseUrl = baseUrl;
     }
 
 
