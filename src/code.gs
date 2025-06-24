@@ -1948,7 +1948,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'post',
       headers: {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Authorization': 'Bearer ' + openAIKey,
         'Content-Type': 'application/json',
         'OpenAI-Beta': 'assistants=v2'
       },
@@ -1990,7 +1990,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'get',
       headers: {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Authorization': 'Bearer ' + openAIKey,
         'Content-Type': 'application/json',
         'OpenAI-Beta': 'assistants=v2'
       }
@@ -2022,7 +2022,7 @@ const GenAIApp = (function () {
   function _uploadFileToOpenAIStorage(blob) {
     const url = vsBaseUrl + "/v1/files";
     const headers = {
-      'Authorization': 'Bearer ' + OPEN_AI_API_KEY
+      'Authorization': 'Bearer ' + openAIKey
     };
 
     const form = {
@@ -2086,7 +2086,7 @@ const GenAIApp = (function () {
       method: 'post',
       'contentType': 'application/json',
       'headers': {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Authorization': 'Bearer ' + openAIKey,
         'OpenAI-Beta': 'assistants=v2'
       },
       'payload': JSON.stringify(payload)
@@ -2124,7 +2124,7 @@ const GenAIApp = (function () {
         const options = {
           'method': 'get',
           'headers': {
-            'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+            'Authorization': 'Bearer ' + openAIKey,
             'OpenAI-Beta': 'assistants=v2'
           },
         };
@@ -2172,7 +2172,7 @@ const GenAIApp = (function () {
     const options = {
       'method': 'delete',
       'headers': {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Authorization': 'Bearer ' + openAIKey,
         'OpenAI-Beta': 'assistants=v2'
       },
     };
@@ -2203,7 +2203,7 @@ const GenAIApp = (function () {
       method: 'post',
       'contentType': 'application/json',
       'headers': {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY
+        'Authorization': 'Bearer ' + openAIKey
       },
       'payload': JSON.stringify(payload)
     };
@@ -2228,7 +2228,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'delete',
       headers: {
-        'Authorization': 'Bearer ' + OPEN_AI_API_KEY,
+        'Authorization': 'Bearer ' + openAIKey,
         'OpenAI-Beta': 'assistants=v2'
       },
       muteHttpExceptions: true
