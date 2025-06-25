@@ -31,7 +31,7 @@ const GenAIApp = (function () {
   let response_id;
 
   let apiBaseUrl = "https://api.openai.com";
-  let vsBaseUrl = "https://api.openai.com"
+  let privateInstanceBaseUrl = "";
 
   let globalMetadata = {};
 
@@ -131,7 +131,7 @@ const GenAIApp = (function () {
        * Defines wether the vector store search should return the raw chunks or send them to the chat.
        * @param {boolean} bool - A boolean to set or not the flag.
        */
-      this.returnOnlyChunks = function (bool) {
+      this.onlyReturnChunks = function (bool) {
         if (bool) {
           onlyChunks = true;
         }
@@ -164,7 +164,7 @@ const GenAIApp = (function () {
        * @returns {Object} - A JSON object containing the ids of the files attached to the vector store.
        */
       this.listFiles = function () {
-        if (!id) throw new Error("VectorStore must be created before listing files.");
+        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
         try {
           const listedFileIds = _listFilesInVectorStore(id);
           return listedFileIds;
@@ -182,7 +182,8 @@ const GenAIApp = (function () {
        * @param {string} fileId - The ID of the file to delete.
        */
       this.deleteFile = function (fileId) {
-        if (!id) throw new Error("VectorStore must be created before deleting files.");
+        if (!fileId) throw new Error("Please pass an Open AI storage file ID to the deleteFile(fileId) function. You can retrieve the file ID through the Open AI Files API or directly through the platform.");
+        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before deleting files.");
         try {
           const deleteId = _deleteFileInVectorStore(id, fileId);
           return deleteId;
@@ -202,11 +203,12 @@ const GenAIApp = (function () {
        * @param {string} query - The query to search for in the vector store.
        * @returns {Array<Object>} - The list of retrieved chunks.
        */
-      this.search = function (query) {
-        if (!id) throw new Error("VectorStore must be created before searching.");
+      this._search = function (query) {
+        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before searching.");
         try {
           const results = _searchVectorStore(id, query, maxNumOfChunks);
           retrievedChunks = results.data || [];
+          retrievedAttributes = [];
           for (let chunk of retrievedChunks) {
             retrievedAttributes.push(chunk.attributes);
           }
@@ -226,7 +228,7 @@ const GenAIApp = (function () {
        * @returns {string} - The delete ID.
        */
       this.deleteVectorStore = function () {
-        if (!id) throw new Error("VectorStore must be created before being deleted.");
+        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before being deleted.");
         try {
           const deleteId = _deleteVectorStore(id);
           id = null;
@@ -241,7 +243,7 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Returns the JSON objecct with name, description, and ID.
+       * Returns the JSON object with name, description, and ID.
        * @returns {Object}
        */
       this._toJson = function () {
@@ -397,13 +399,12 @@ const GenAIApp = (function () {
    */
   class Chat {
     constructor() {
-      let instructions = "";
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       let tools = [];
       let model = "gpt-4.1"; // default 
       let temperature = 0.5;
-      let max_tokens = 5000;
+      let max_tokens = 1000;
       let browsing = false;
       let vision = false;
       let reasoning_effort = "high";
@@ -426,8 +427,7 @@ const GenAIApp = (function () {
       this.addMessage = function (messageContent, system) {
         let role = "user";
         if (system) {
-          instructions = messageContent;
-          return this;
+          role = "system";
         }
         messages.push({
           role: role,
@@ -758,7 +758,13 @@ const GenAIApp = (function () {
 
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = apiBaseUrl + "/v1/responses";
+          let endpointUrl = "";
+          if (privateInstanceBaseUrl) {
+            endpointUrl = privateInstanceBaseUrl;
+          } else {
+            endpointUrl = apiBaseUrl 
+          }
+          endpointUrl += "/v1/responses";
           if (endpointUrl.includes("azure")) {
             endpointUrl += "?api-version=preview";
           }
@@ -862,10 +868,21 @@ const GenAIApp = (function () {
         if (globalMetadata) {
           Object.assign(metadata, globalMetadata);
         }
+        let systemInstructions = "";
+        let userMessages = [];
+
+        for (const message of messages) {
+          if (message.role === "system") {
+            systemInstructions += message.content + "\n";
+          } else {
+            userMessages.push(message);
+          }
+        }
+
         let payload = {
           model: model,
-          instructions: instructions,
-          input: messages,
+          instructions: systemInstructions,
+          input: userMessages,
           max_output_tokens: max_tokens,
           previous_response_id: previous_response_id,
           metadata: metadata
@@ -1343,11 +1360,11 @@ const GenAIApp = (function () {
           if (!vs) {
             throw new Error(`No vectorStoreObject found for function ${functionName}`);
           }
-          const onlyReturnChunks = vs._toJson().onlyChunks;
+          const returnOnlyChunks = vs._toJson().onlyChunks;
           const queryText = jsonArgs.query;
-          const results = vs.search(queryText);
+          const results = vs._search(queryText);
 
-          if (onlyReturnChunks) {
+          if (returnOnlyChunks) {
             return results;
           }
           const stringResults = results.map((vsFile) => {
@@ -1939,7 +1956,7 @@ const GenAIApp = (function () {
    * @returns {string} id - The id of the vector store that was just created.
    */
   function _createOpenAiVectorStore(vectorStoreName) {
-    const url = vsBaseUrl + "/v1/vector_stores";
+    const url = apiBaseUrl + "/v1/vector_stores";
 
     const payload = {
       name: `VectorStore for ${vectorStoreName}`,
@@ -1986,7 +2003,7 @@ const GenAIApp = (function () {
    * @param {string} vectorStoreId - The Open AI API vector store Id.  
    */
   function _retrieveVectorStoreInformation(vectorStoreId) {
-    const url = vsBaseUrl + '/v1/vector_stores/' + vectorStoreId;
+    const url = apiBaseUrl + '/v1/vector_stores/' + vectorStoreId;
     const options = {
       method: 'get',
       headers: {
@@ -2020,7 +2037,7 @@ const GenAIApp = (function () {
    * @returns {string} id - The id of the uploaded file.
    */
   function _uploadFileToOpenAIStorage(blob) {
-    const url = vsBaseUrl + "/v1/files";
+    const url = apiBaseUrl + "/v1/files";
     const headers = {
       'Authorization': 'Bearer ' + openAIKey
     };
@@ -2069,7 +2086,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if the attachment fails or if a network error occurs.
    */
   function _attachFileToVectorStore(fileId, vectorStoreId, attributes) {
-    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/files`;
+    const url = apiBaseUrl + `/v1/vector_stores/${vectorStoreId}/files`;
     const payload = {
       "file_id": fileId,
       "attributes": attributes,
@@ -2108,7 +2125,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if there is an issue fetching the file IDs.
    */
   function _listFilesInVectorStore(vectorStoreId) {
-    const baseUrl = vsBaseUrl + '/v1/vector_stores';
+    const baseUrl = apiBaseUrl + '/v1/vector_stores';
     const fileIds = {};
     let hasMoreFiles = true;
     let after;
@@ -2167,7 +2184,7 @@ const GenAIApp = (function () {
    * @param {string} fileId - The unique identifier of the file to delete.
    */
   function _deleteFileInVectorStore(vectorStoreId, fileId) {
-    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/files/${fileId}`;
+    const url = apiBaseUrl + `/v1/vector_stores/${vectorStoreId}/files/${fileId}`;
 
     const options = {
       'method': 'delete',
@@ -2194,7 +2211,7 @@ const GenAIApp = (function () {
    * @returns {list of Objects} A list of the file objects that are closest to the query. 
    */
   function _searchVectorStore(vectorStoreId, query, max_num_results) {
-    const url = vsBaseUrl + `/v1/vector_stores/${vectorStoreId}/search`;
+    const url = apiBaseUrl + `/v1/vector_stores/${vectorStoreId}/search`;
     const payload = {
       "query": query,
       "max_num_results": max_num_results
@@ -2223,7 +2240,7 @@ const GenAIApp = (function () {
    * @throws {Error} Throws an error if the deletion fails or if there is an issue with the API request.
    */
   function _deleteVectorStore(vectorStoreId) {
-    const url = vsBaseUrl + '/v1/vector_stores/' + vectorStoreId;
+    const url = apiBaseUrl + '/v1/vector_stores/' + vectorStoreId;
 
     const options = {
       method: 'delete',
@@ -2329,8 +2346,8 @@ const GenAIApp = (function () {
      * To set a specific API URL like Azure or Google Cloud for using Open AI models.
      * @param {string} baseUrl - The base url to be used for the API calls.
      */
-    setApiBaseUrl: function (baseUrl) {
-      apiBaseUrl = baseUrl;
+    setPrivateInstanceBaseUrl: function (baseUrl) {
+      privateInstanceBaseUrl = baseUrl;
     }
 
 
