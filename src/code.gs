@@ -18,7 +18,6 @@
  */
 
 const GenAIApp = (function () {
-
   let openAIKey = "";
   let geminiKey = "";
   let gcpProjectId = "";
@@ -27,7 +26,7 @@ const GenAIApp = (function () {
   let restrictSearch;
 
   let verbose = true;
-  
+
   let response_id;
 
   let apiBaseUrl = "https://api.openai.com";
@@ -86,7 +85,8 @@ const GenAIApp = (function () {
         if (!name) throw new Error("Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
         try {
           id = _createOpenAiVectorStore(name);
-        } catch (e) {
+        }
+        catch (e) {
           Logger.log({
             message: `Error creating the vector store : ${e}`
           });
@@ -118,7 +118,7 @@ const GenAIApp = (function () {
       this.getId = function () {
         return id;
       };
-      
+
       /**
        * Returns the retrieveAttributes list, containing all of the attributes from the chunks that were retrieved through the search() method.
        * @returns {list} - The list of the attributes from the chunks that were retrieved.
@@ -137,7 +137,7 @@ const GenAIApp = (function () {
         }
         return this;
       }
-      
+
       /**
        * Uploads a file to Open AI storage and attaches it to the vector store.
        * @param {Blob} blob - File to upload.
@@ -392,7 +392,7 @@ const GenAIApp = (function () {
     .setName("_webSearch")
     .setDescription("Perform a web search via a LLM that can browse the web.")
     .addParameter("p", "string", "the prompt for the web search LLM.");
-  
+
   /**
    * @class
    * Class representing a chat.
@@ -403,18 +403,16 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       let tools = [];
       let model = "gpt-4.1"; // default 
-      let temperature = 0.5;
+      //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
+      let temperature = 1;
       let max_tokens = 1000;
       let browsing = false;
       let vision = false;
       let reasoning_effort = "high";
       let knowledgeLink;
-      let assistantIdentificator;
       let functionNameToStore = {};
       let previous_response_id;
-      let hasWebSearchBeenAdded;
       let metadata = {};
-
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
@@ -462,17 +460,13 @@ const GenAIApp = (function () {
        * @returns {Chat} - The current Chat instance.
        */
       this.addImage = function (imageUrl) {
-        messages.push(
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_image",
-                image_url: imageUrl
-              }
-            ]
-          }
-        );
+        messages.push({
+          role: "user",
+          content: [{
+            type: "input_image",
+            image_url: imageUrl
+          }]
+        });
         vision = true;
         return this;
       };
@@ -483,7 +477,7 @@ const GenAIApp = (function () {
        * @param {string} key - The key of the object that should be added.
        * @param {string} value - The value of the object that should be added.
        */
-      this.addMetadata = function (key, value=null) {
+      this.addMetadata = function (key, value = null) {
         metadata[key] = value;
         return this;
       }
@@ -546,7 +540,7 @@ const GenAIApp = (function () {
         }
         return this;
       };
-      
+
       /**
        * Includes the content of a web page in the prompt sent to openAI
        * @param {string} url - the url of the webpage you want to fetch
@@ -588,15 +582,15 @@ const GenAIApp = (function () {
         const fileContentGemini = _convertFileToGeminiInput(fileID); // Get the file content
         const fileContentOpenAi = _convertFileToOpenAiInput(fileID);
 
-        if (fileContentOpenAi){
+        if (fileContentOpenAi) {
           messages.push({
             role: "user",
-            content : [
+            content: [
               fileContentOpenAi
             ]
           });
         }
-        
+
         if (fileContentGemini) {
           contents.push({
             role: 'user',
@@ -608,7 +602,8 @@ const GenAIApp = (function () {
               text: fileContentGemini.systemMessage
             }
           });
-        } else {
+        }
+        else {
           if (verbose) {
             console.warn(`Failed to process file with ID: ${fileID}`);
           }
@@ -628,7 +623,7 @@ const GenAIApp = (function () {
       this.retrieveLastResponseId = function () {
         return response_id;
       };
-      
+
       /**
        * Sets the previous response Id attribute for the chat (used by Open AI to keep track of conversations)
        * @param {string} previousResponseId - The id of the previous Chat GPT response.
@@ -652,17 +647,17 @@ const GenAIApp = (function () {
             console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
             return this;
           }
-          
+
           const fnName = `vectorStore${vectorStoreName}Search`;
           const fnDescription = `This tool will search the ${vectorStoreDescription} vector store for relevant information based on a single query.`;
 
           const fnObject = new FunctionObject()
-          .setName(fnName)
-          .setDescription(fnDescription)
-          .addParameter("query", "string", "The search query to run against the vector store.")
-          .endWithResult(vectorStoreJSON.onlyChunks);
+            .setName(fnName)
+            .setDescription(fnDescription)
+            .addParameter("query", "string", "The search query to run against the vector store.")
+            .endWithResult(vectorStoreJSON.onlyChunks);
 
-          this.addFunction(fnObject);
+          this.addfunction (fnObject);
 
           functionNameToStore[fnName] = vectorStoreObject;
 
@@ -692,9 +687,9 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash" | "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" | "gpt-4" | "gpt-4-32k" | "gpt-4o-search-preview"| "gpt-4o" | "o1" | "o1-mini" | "o3-mini" | "o1-2024-12-17"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
-       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for o3-mini, defaults at low
+       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to high
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat 
@@ -708,7 +703,8 @@ const GenAIApp = (function () {
               if (!geminiKey && (!region || !gcpProjectId)) {
                 throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
               }
-            } else {
+            }
+            else {
               if (!openAIKey) {
                 throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
               }
@@ -723,11 +719,6 @@ const GenAIApp = (function () {
           if (advancedParametersObject.reasoning_effort) {
             reasoning_effort = advancedParametersObject.reasoning_effort;
           }
-        }
-
-        if ((model.includes("o3") || model.includes("o4") || model.includes("o1")) && browsing && !(hasWebSearchBeenAdded)) {
-          this.addFunction(webSearchFunction);
-          hasWebSearchBeenAdded = true;
         }
 
         if (knowledgeLink) {
@@ -761,8 +752,9 @@ const GenAIApp = (function () {
           let endpointUrl = "";
           if (privateInstanceBaseUrl) {
             endpointUrl = privateInstanceBaseUrl;
-          } else {
-            endpointUrl = apiBaseUrl 
+          }
+          else {
+            endpointUrl = apiBaseUrl
           }
           endpointUrl += "/v1/responses";
           if (endpointUrl.includes("azure")) {
@@ -777,9 +769,9 @@ const GenAIApp = (function () {
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
-          
           numberOfAPICalls++;
-        } else {
+        }
+        else {
           throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
         }
 
@@ -795,7 +787,8 @@ const GenAIApp = (function () {
                     console.log("Conversation stopped because end function has been called");
                   }
                   return contents[contents.length - 2].parts.text; // the last chat completion
-                } else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                }
+                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
                   if (verbose) {
                     console.log("Conversation stopped because argument return has been enabled - No function has been called");
                   }
@@ -819,7 +812,8 @@ const GenAIApp = (function () {
                     console.log("Conversation stopped because end function has been called");
                   }
                   return messages[messages.length - 2].content; // the last chat completion
-                } else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                }
+                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
                   if (verbose) {
                     console.log("Conversation stopped because argument return has been enabled - No function has been called");
                   }
@@ -838,8 +832,6 @@ const GenAIApp = (function () {
           else {
             return this.run();
           }
-
-
         }
         else {
           if (model.includes("gemini")) {
@@ -874,7 +866,8 @@ const GenAIApp = (function () {
         for (const message of messages) {
           if (message.role === "system") {
             systemInstructions += message.content + "\n";
-          } else {
+          }
+          else {
             userMessages.push(message);
           }
         }
@@ -885,7 +878,8 @@ const GenAIApp = (function () {
           input: userMessages,
           max_output_tokens: max_tokens,
           previous_response_id: previous_response_id,
-          metadata: metadata
+          metadata: metadata,
+          tools: []
         };
 
         if (tools.length > 0) {
@@ -908,51 +902,35 @@ const GenAIApp = (function () {
             let tool_choosing = {
               type: "function",
               name: advancedParametersObject.function_call
-              };
+            };
             payload.tool_choice = tool_choosing;
           }
         }
 
-        if (advancedParametersObject?.reasoning_effort) {
-          payload.reasoning=  {"effort": reasoning_effort}
+        if (model.startsWith('o')) {
+          payload.reasoning = {
+            "effort": reasoning_effort
+          }
         }
-        
-        if (browsing) {
-          if (payload.tools) {
-            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
-              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
-            }
-            else {
-              payload.tools.push({
-              type: "web_search_preview"
-            });
-            }
 
-            if (restrictSearch) {
-              messages.push({
-                role: "user", // upon testing, this instruction has better results with user role instead of system
-                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-              });
-            }
-            if (numberOfAPICalls < 1) {
-              payload.tool_choice = {
+        if (browsing) {
+          payload.tools.push({
+            type: "web_search_preview"
+          });
+
+          if (restrictSearch) {
+            messages.push({
+              role: "user", // upon testing, this instruction has better results with user role instead of system
+              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+            });
+          }
+          if (numberOfAPICalls < 1) {
+            payload.tool_choice = {
               type: "function",
               name: "_webSearch"
             };
-            }
-          }
-          else {
-            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
-              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
-            }
-            else {
-              payload.tools = [{
-              type: "web_search_preview"
-            }];
-            }
           }
         }
-        console.log(payload);
         return payload;
       }
 
@@ -980,31 +958,14 @@ const GenAIApp = (function () {
             function_calling_config: {
               mode: "AUTO"
             }
-          }
+          },
+          tools: []
         };
 
         if (advancedParametersObject?.function_call) {
-
-          if (model == "gemini-1.5-pro" || model == "gemini-1.5-flash") {
-            payload.tool_config.function_calling_config.mode = "ANY";
-            payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
-            delete advancedParametersObject.function_call;
-          }
-          else {
-            // https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/function-calling
-            console.warn(`Unable to force Gemini call to ${advancedParametersObject.function_call} : "function calling with controlled generation" or "forced function calling" is  available with only the Gemini 1.5 Pro and Gemini 1.5 Flash models.`);
-          }
-
-        }
-
-        if (browsing) {
-          // now browsing is not included by default with Gemini
-          // we need to monitor when it's gonna be back so we can implement it here. 
-          console.warn("Browsing with Gemini is not available at the time being. Please consider using OpenAI's model instead.")
-        }
-
-        if (assistantIdentificator) {
-          throw Error("To use OpenAI's assistant, please select a different model than Gemini");
+          payload.tool_config.function_calling_config.mode = "ANY";
+          payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
+          delete advancedParametersObject.function_call;
         }
 
         if (vision && numberOfAPICalls == 0) {
@@ -1040,9 +1001,21 @@ const GenAIApp = (function () {
 
           payload.tools = [{
             functionDeclarations: payloadTools
-          }]
-
+          }];
         }
+
+        if (browsing) {
+          tools.push({
+            google_search: "",
+          });
+          payload.tools.push({
+            url_context: {}
+          });
+          payload.tools.push({
+            google_search: {}
+          });
+        }
+
         return payload;
       }
     }
@@ -1062,7 +1035,13 @@ const GenAIApp = (function () {
   function _callGenAIApi(endpoint, payload) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
-      authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
+      if (geminiKey) {
+        // API key directly appended to endpoint url
+        authMethod = null;
+      }
+      else {
+        authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
+      }
     }
     let maxRetries = 5;
     let retries = 0;
@@ -1070,14 +1049,17 @@ const GenAIApp = (function () {
 
     let responseMessage, finish_reason;
     while (retries < maxRetries && !success) {
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (authMethod) {
+        headers['Authorization'] = authMethod;
+      }
       let options = {
-        'method': 'post',
-        'headers': {
-          'Content-Type': 'application/json',
-          'Authorization': authMethod
-        },
-        'payload': JSON.stringify(payload),
-        'muteHttpExceptions': true
+        method: 'post',
+        headers: headers,
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
       };
 
       let response = UrlFetchApp.fetch(endpoint, options);
@@ -1089,7 +1071,8 @@ const GenAIApp = (function () {
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse.candidates[0].content;
           finish_reason = parsedResponse.candidates[0].finish_reason;
-        } else {
+        }
+        else {
           responseMessage = parsedResponse.output;
           response_id = parsedResponse.id;
 
@@ -1274,7 +1257,7 @@ const GenAIApp = (function () {
             break;
           }
         }
-        
+
         if (endWithResult) {
           // User defined that if this function has been called, then no more actions should be performed with the chat.
           let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
@@ -1356,21 +1339,21 @@ const GenAIApp = (function () {
   function _callFunction(functionName, jsonArgs, argsOrder, functionNameToStore) {
     // Handle internal functions
     if (functionName.startsWith("vectorStore") && functionName.endsWith("Search")) {
-          const vs = functionNameToStore[functionName];
-          if (!vs) {
-            throw new Error(`No vectorStoreObject found for function ${functionName}`);
-          }
-          const returnOnlyChunks = vs._toJson().onlyChunks;
-          const queryText = jsonArgs.query;
-          const results = vs._search(queryText);
+      const vs = functionNameToStore[functionName];
+      if (!vs) {
+        throw new Error(`No vectorStoreObject found for function ${functionName}`);
+      }
+      const returnOnlyChunks = vs._toJson().onlyChunks;
+      const queryText = jsonArgs.query;
+      const results = vs._search(queryText);
 
-          if (returnOnlyChunks) {
-            return results;
-          }
-          const stringResults = results.map((vsFile) => {
-            return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
-          })
-          return stringResults;
+      if (returnOnlyChunks) {
+        return results;
+      }
+      const stringResults = results.map((vsFile) => {
+        return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
+      })
+      return stringResults;
     }
 
     if (functionName == "_webSearch") {
@@ -1379,7 +1362,8 @@ const GenAIApp = (function () {
     if (functionName == "getImageDescription") {
       if (jsonArgs.fidelity) {
         return _getImageDescription(jsonArgs.imageUrl, jsonArgs.fidelity);
-      } else {
+      }
+      else {
         return _getImageDescription(jsonArgs.imageUrl);
       }
     }
@@ -1532,15 +1516,17 @@ const GenAIApp = (function () {
         content: p
       }],
       max_output_tokens: 1000,
-      tools: [{"type": "web_search_preview"}],
+      tools: [{
+        "type": "web_search_preview"
+      }],
     };
     let responseMessage = _callGenAIApi("https://api.openai.com/v1/responses", payload);
     responseMessage = responseMessage.find(item => item.type === "message").content[0]
-    
+
     let formatedContent = `${responseMessage.text}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
-      .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
-      .map(annotation => annotation.url_citation.url) : []}}}`;
-    
+            .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
+            .map(annotation => annotation.url_citation.url) : []}}}`;
+
     Logger.log({
       message: "Performed web search with gpt-4o",
       prompt: p,
@@ -1568,7 +1554,6 @@ const GenAIApp = (function () {
       response = UrlFetchApp.fetch(url);
     }
     catch (e) {
-
       console.warn(`Error fetching the URL: ${e.message}`);
       return JSON.stringify({
         error: "Failed to fetch the URL : You are not authorized to access this website. Try another one."
@@ -1616,15 +1601,20 @@ const GenAIApp = (function () {
         case 'application/pdf':
           const pdfBlob = file.getBlob();
           const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
-          parts.push({ text: `Here is the pdf to analyze: ${fileName}` });
           parts.push({
-            inlineData: { mimeType: 'application/pdf', data: pdfBase64 }
+            text: `Here is the pdf to analyze: ${fileName}`
+          });
+          parts.push({
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: pdfBase64
+            }
           });
           systemMessage =
             'You have access to the content of a pdf. Use it to answer the user\'s questions.';
           break;
 
-        // ===== Plain-text =====
+          // ===== Plain-text =====
         case 'text/plain':
           fileContent = file.getBlob().getDataAsString();
           parts.push({
@@ -1634,22 +1624,27 @@ const GenAIApp = (function () {
             'You have access to the content of a text file. Use it to answer the user\'s questions.';
           break;
 
-        // ===== Images =====
+          // ===== Images =====
         case 'image/png':
         case 'image/jpeg':
         case 'image/gif':
         case 'image/webp':
           const imageBlob = file.getBlob();
           const imageBase64 = Utilities.base64Encode(imageBlob.getBytes());
-          parts.push({ text: `Here is the image to analyze: ${fileName}` });
           parts.push({
-            inlineData: { mimeType: mimeType, data: imageBase64 }
+            text: `Here is the image to analyze: ${fileName}`
+          });
+          parts.push({
+            inlineData: {
+              mimeType: mimeType,
+              data: imageBase64
+            }
           });
           systemMessage =
             'You have access to an image. Use it to answer the user\'s questions.';
           break;
 
-        // ===== Google Docs / Sheets / Slides (export to PDF) =====
+          // ===== Google Docs / Sheets / Slides (export to PDF) =====
         case 'application/vnd.google-apps.spreadsheet':
         case 'application/vnd.google-apps.document':
         case 'application/vnd.google-apps.presentation':
@@ -1676,15 +1671,22 @@ const GenAIApp = (function () {
           }
           const token = ScriptApp.getOAuthToken();
           const response = UrlFetchApp.fetch(fileBlobUrl, {
-            headers: { Authorization: 'Bearer ' + token }
+            headers: {
+              Authorization: 'Bearer ' + token
+            }
           });
           const pdfBlobFromExport = response.getBlob();
           const pdfBase64FromExport = Utilities.base64Encode(
             pdfBlobFromExport.getBytes()
           );
-          parts.push({ text: `Here is the file to analyze: ${fileName}` });
           parts.push({
-            inlineData: { mimeType: 'application/pdf', data: pdfBase64FromExport }
+            text: `Here is the file to analyze: ${fileName}`
+          });
+          parts.push({
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: pdfBase64FromExport
+            }
           });
           systemMessage =
             'You have access to the content of a file. Use it to answer the user\'s questions.';
@@ -1694,8 +1696,12 @@ const GenAIApp = (function () {
           Logger.log(`Unsupported file type: ${mimeType}`);
           return null;
       }
-      return { parts: parts, systemMessage: systemMessage };
-    } catch (error) {
+      return {
+        parts: parts,
+        systemMessage: systemMessage
+      };
+    }
+    catch (error) {
       Logger.log('Error during file processing: ' + error.toString());
       return null;
     }
@@ -1740,7 +1746,7 @@ const GenAIApp = (function () {
           };
           break;
 
-        // ===== Google Docs / Sheets / Slides (export to PDF) =====
+          // ===== Google Docs / Sheets / Slides (export to PDF) =====
         case 'application/vnd.google-apps.spreadsheet':
         case 'application/vnd.google-apps.document':
         case 'application/vnd.google-apps.presentation':
@@ -1767,7 +1773,9 @@ const GenAIApp = (function () {
           }
           const token = ScriptApp.getOAuthToken();
           const response = UrlFetchApp.fetch(fileBlobUrl, {
-            headers: { Authorization: 'Bearer ' + token }
+            headers: {
+              Authorization: 'Bearer ' + token
+            }
           });
           const pdfBlobFromExport = response.getBlob();
           const pdfBase64FromExport = Utilities.base64Encode(
@@ -1787,7 +1795,8 @@ const GenAIApp = (function () {
           return null;
       }
       return parts;
-    } catch (error) {
+    }
+    catch (error) {
       Logger.log('Error during file processing: ' + error.toString());
       return null;
     }
@@ -1819,14 +1828,14 @@ const GenAIApp = (function () {
 
     if (!fidelity) {
       fidelity = "low";
-    } else {
+    }
+    else {
       fidelity = "high";
     }
 
     let imageMessage = [{
       role: "user",
-      content: [
-        {
+      content: [{
           type: "text",
           text: "What is the content of this image ? Focus on important element." // Gives a more human friendly description than the initial example prompt given by OpenAI
         },
@@ -2064,11 +2073,13 @@ const GenAIApp = (function () {
         });
         const fileId = json.id;
         return fileId;
-      } else {
+      }
+      else {
         console.error(`Unexpected error: ${response.getContentText()} (Status Code: ${response.getResponseCode()})`);
         throw new Error(`Failed to upload file. Status Code: ${response.getResponseCode()}`);
       }
-    } catch (error) {
+    }
+    catch (error) {
       // Handle network errors or unexpected exceptions
       console.error(`An error occurred while uploading the file to OpenAI: ${error.message}`);
       // Optionally, rethrow the error to be handled by the caller
@@ -2158,14 +2169,17 @@ const GenAIApp = (function () {
 
           if (storageData.data.length < 100) {
             hasMoreFiles = false;
-          } else {
+          }
+          else {
             after = storageData.data[storageData.data.length - 1].id;
           }
-        } else {
+        }
+        else {
           Logger.log('No file IDs found in the vector store storage');
           hasMoreFiles = false;
         }
-      } catch (e) {
+      }
+      catch (e) {
         Logger.log(`Error fetching files IDs: ${e.message}`);
         hasMoreFiles = false;
       }
@@ -2196,8 +2210,9 @@ const GenAIApp = (function () {
 
     try {
       // Delete the file from the vector store
-      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
-    } catch (error) {
+      ErrorHandler.urlFetchWithExpBackOff(url, options);
+    }
+    catch (error) {
       console.error(`Failed to delete file with ID: ${fileId}`, error);
     }
   }
@@ -2331,7 +2346,7 @@ const GenAIApp = (function () {
      * @param {string} globalMetadataValue - The value of the key/value pair.
      */
     setGlobalMetadata: function (globalMetadataKey, globalMetadataValue) {
-       globalMetadata[globalMetadataKey] = globalMetadataValue;
+      globalMetadata[globalMetadataKey] = globalMetadataValue;
     },
 
     /**
@@ -2349,7 +2364,5 @@ const GenAIApp = (function () {
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
     }
-
-
   }
 })();
