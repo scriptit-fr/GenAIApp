@@ -657,7 +657,7 @@ const GenAIApp = (function () {
             .addParameter("query", "string", "The search query to run against the vector store.")
             .endWithResult(vectorStoreJSON.onlyChunks);
 
-          this.addfunction (fnObject);
+          this.addFunction(fnObject);
 
           functionNameToStore[fnName] = vectorStoreObject;
 
