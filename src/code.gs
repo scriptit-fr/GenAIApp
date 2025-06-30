@@ -388,11 +388,6 @@ const GenAIApp = (function () {
     .addParameter("imageUrl", "string", "The URL of the image.")
     .addParameter("highFidelity", "boolean", `Default: false. To improve the image quality, not needed in most cases.`, isOptional = true);
 
-  let webSearchFunction = new FunctionObject()
-    .setName("_webSearch")
-    .setDescription("Perform a web search via a LLM that can browse the web.")
-    .addParameter("p", "string", "the prompt for the web search LLM.");
-
   /**
    * @class
    * Class representing a chat.
@@ -895,16 +890,6 @@ const GenAIApp = (function () {
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
           }
-
-          if (advancedParametersObject?.function_call &&
-            payload.tool_choice.name !== "_webSearch" && numberOfAPICalls < 1) {
-            // the user has set a specific function to call
-            let tool_choosing = {
-              type: "function",
-              name: advancedParametersObject.function_call
-            };
-            payload.tool_choice = tool_choosing;
-          }
         }
 
         if (model.startsWith('o')) {
@@ -923,12 +908,6 @@ const GenAIApp = (function () {
               role: "user", // upon testing, this instruction has better results with user role instead of system
               content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
             });
-          }
-          if (numberOfAPICalls < 1) {
-            payload.tool_choice = {
-              type: "function",
-              name: "_webSearch"
-            };
           }
         }
         return payload;
@@ -1355,10 +1334,6 @@ const GenAIApp = (function () {
       })
       return stringResults;
     }
-
-    if (functionName == "_webSearch") {
-      return _webSearch(jsonArgs.p);
-    }
     if (functionName == "getImageDescription") {
       if (jsonArgs.fidelity) {
         return _getImageDescription(jsonArgs.imageUrl, jsonArgs.fidelity);
@@ -1499,40 +1474,6 @@ const GenAIApp = (function () {
       throw new Error('Error: ' + uploadedFileResponse.error.message);
     }
     return uploadedFileResponse.id;
-  }
-
-  /**
-   * Performs a web search using gpt-4o-search-preview
-   *
-   * @private
-   * @param {string} p - The prompt to be used in the web search LLM.
-   * @returns {string} - A string containing the search results and URLs.
-   */
-  function _webSearch(p) {
-    let payload = {
-      model: "gpt-4.1",
-      input: [{
-        role: "user",
-        content: p
-      }],
-      max_output_tokens: 1000,
-      tools: [{
-        "type": "web_search_preview"
-      }],
-    };
-    let responseMessage = _callGenAIApi("https://api.openai.com/v1/responses", payload);
-    responseMessage = responseMessage.find(item => item.type === "message").content[0]
-
-    let formatedContent = `${responseMessage.text}\n\n{{urls: ${responseMessage.annotations ? responseMessage.annotations
-            .filter(annotation => annotation.type === "url_citation" && annotation.url_citation && annotation.url_citation.url)
-            .map(annotation => annotation.url_citation.url) : []}}}`;
-
-    Logger.log({
-      message: "Performed web search with gpt-4o",
-      prompt: p,
-      response: formatedContent
-    });
-    return formatedContent;
   }
 
   /**
