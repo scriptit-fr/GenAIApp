@@ -31,9 +31,11 @@ const GenAIApp = (function () {
   let response_id;
 
   let apiBaseUrl = "https://api.openai.com";
-  let privateInstanceBaseUrl = "";
+  let privateInstanceBaseUrl;
 
   let globalMetadata = {};
+  let addedVectorStores = {};
+
 
   /**
    * @class
@@ -392,6 +394,13 @@ const GenAIApp = (function () {
     .setName("_webSearch")
     .setDescription("Perform a web search via a LLM that can browse the web.")
     .addParameter("p", "string", "the prompt for the web search LLM.");
+
+  let callVectorStoreFunction = new FunctionObject()
+  .setName("callVectorStore")
+  .setDescription("Search a given vector store by name and ID with a query.")
+  .addParameter("name", "string", "Name of the vector store.")
+  .addParameter("id", "string", "ID of the vector store.")
+  .addParameter("query", "string", "Search query to run against the vector store.");
   
   /**
    * @class
@@ -410,10 +419,11 @@ const GenAIApp = (function () {
       let reasoning_effort = "high";
       let knowledgeLink;
       let assistantIdentificator;
-      let functionNameToStore = {};
+      let vectorStoresString;
+
       let previous_response_id;
       let hasWebSearchBeenAdded;
-      let metadata = {};
+      let messageMetadata = {};
 
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
@@ -484,7 +494,7 @@ const GenAIApp = (function () {
        * @param {string} value - The value of the object that should be added.
        */
       this.addMetadata = function (key, value=null) {
-        metadata[key] = value;
+        messageMetadata[key] = value;
         return this;
       }
 
@@ -639,37 +649,25 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Uses the provided vector store ids (up to two) with the file search tool for simple RAG.
+       * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
        * @param {Object} vectorStoreObject - A vector store object. 
        */
       this.addVectorStores = function (vectorStoreObject) {
-        if (Object.keys(functionNameToStore).length < 5) {
-          const vectorStoreJSON = vectorStoreObject._toJson();
-          const vectorStoreName = vectorStoreJSON.name;
-          const vectorStoreDescription = vectorStoreJSON.description;
+        const vectorStoreJSON = vectorStoreObject._toJson();
+        const vectorStoreName = vectorStoreJSON.name;
+        const vectorStoreDescription = vectorStoreJSON.description;
 
-          if (!vectorStoreName) {
-            console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
-            return this;
-          }
-          
-          const fnName = `vectorStore${vectorStoreName}Search`;
-          const fnDescription = `This tool will search the ${vectorStoreDescription} vector store for relevant information based on a single query.`;
-
-          const fnObject = new FunctionObject()
-          .setName(fnName)
-          .setDescription(fnDescription)
-          .addParameter("query", "string", "The search query to run against the vector store.")
-          .endWithResult(vectorStoreJSON.onlyChunks);
-
-          this.addFunction(fnObject);
-
-          functionNameToStore[fnName] = vectorStoreObject;
-
+        if (!vectorStoreName) {
+          console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
+          return this;
         }
-        else {
-          console.warn(`The number of vector stores passed to the chat is currently limited to 5. This can be changed in the .addVectorStores method if needed. There are currently ${Object.keys(functionNameToStore).length} vector stores assigned to this chat instance.`);
+        else if (!vectorStoreDescription) {
+          console.warn("Cannot add a Vector Store with no description. Please call .setDescription() on the Vector Store Object first.");
+          return this;
         }
+
+        const vectorStoreId = vectorStoreJSON.id;
+        addedVectorStores[vectorStoreId] = vectorStoreObject;
         return this;
       };
 
@@ -758,15 +756,9 @@ const GenAIApp = (function () {
 
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = "";
+          let endpointUrl = apiBaseUrl + "/v1/responses";
           if (privateInstanceBaseUrl) {
-            endpointUrl = privateInstanceBaseUrl;
-          } else {
-            endpointUrl = apiBaseUrl 
-          }
-          endpointUrl += "/v1/responses";
-          if (endpointUrl.includes("azure")) {
-            endpointUrl += "?api-version=preview";
+            endpointUrl = privateInstanceBaseUrl + "/v1/responses?api-version=preview";
           }
           if (model.includes("gemini")) {
             if (geminiKey) {
@@ -811,7 +803,7 @@ const GenAIApp = (function () {
           else {
             let functionCalls = responseMessage.filter(item => item.type === "function_call");
             if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages, functionNameToStore);
+              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
@@ -829,7 +821,8 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              return responseMessage.find(item => item.type === "message").content[0].text;
+              const messageItem = responseMessage.find(item => item.type === "message");
+              return messageItem?.content?.[0]?.text || "";
             }
           }
           if (advancedParametersObject) {
@@ -866,8 +859,23 @@ const GenAIApp = (function () {
        */
       this._buildOpenAIPayload = function (advancedParametersObject) {
         if (globalMetadata) {
-          Object.assign(metadata, globalMetadata);
+          Object.assign(messageMetadata, globalMetadata);
         }
+
+        if (addedVectorStores && numberOfAPICalls < 1) {
+          vectorStoresString = "";
+          const vectorStoreContext = `\n\nTo help you answer the user's question, the developper has provided you with access to ${Object.keys(addedVectorStores).length} different Vector Store(s). You will find the Id, Name and Description of each Vector Store below. To use one, call the "callVectorStore" function with the correct parameters. Here is the list of the Vector Stores you have access to : \n\n`  
+          const vectorStoresDetails = Object.entries(addedVectorStores)
+          .map(([id, vectorStoreObject], i) =>
+            `Vector Store number ${i + 1} :\n` +
+            `Name: ${vectorStoreObject._toJson().name}, Description: ${vectorStoreObject._toJson().description}, Id: ${id}`
+          )
+          .join('\n\n');
+          vectorStoresString = vectorStoreContext + vectorStoresDetails;
+          this.addMessage(vectorStoresString);
+          this.addFunction(callVectorStoreFunction);
+        }
+
         let systemInstructions = "";
         let userMessages = [];
 
@@ -885,7 +893,7 @@ const GenAIApp = (function () {
           input: userMessages,
           max_output_tokens: max_tokens,
           previous_response_id: previous_response_id,
-          metadata: metadata
+          metadata: messageMetadata
         };
 
         if (tools.length > 0) {
@@ -918,37 +926,32 @@ const GenAIApp = (function () {
         }
         
         if (browsing) {
-          if (payload.tools) {
-            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
-              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
-            }
-            else {
-              payload.tools.push({
-              type: "web_search_preview"
-            });
-            }
-
-            if (restrictSearch) {
-              messages.push({
-                role: "user", // upon testing, this instruction has better results with user role instead of system
-                content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-              });
-            }
-            if (numberOfAPICalls < 1) {
-              payload.tool_choice = {
-              type: "function",
-              name: "_webSearch"
-            };
-            }
+          if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
+              console.warn(`Selected model (${model}) lacks built-in web search. Calling GPT-4o API to perform browsing. Browsing output will be sent back to the chat instance with the selected model.`)
           }
           else {
-            if (model.includes("o3") || model.includes("o4") || model.includes("o1")) {
-              console.log(`Model ${model} currently doesn't support web_search_preview, switching to old webSearch.`)
+            if (payload.tools) {
+              payload.tools.push({
+              type: "web_search_preview"
+              });
+
+              if (restrictSearch) {
+                messages.push({
+                  role: "user", // upon testing, this instruction has better results with user role instead of system
+                  content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+                });
+              }
+              if (numberOfAPICalls < 1) {
+                payload.tool_choice = {
+                type: "function",
+                name: "_webSearch"
+              };
+              }
             }
             else {
               payload.tools = [{
               type: "web_search_preview"
-            }];
+              }];
             }
           }
         }
@@ -1092,12 +1095,9 @@ const GenAIApp = (function () {
         } else {
           responseMessage = parsedResponse.output;
           response_id = parsedResponse.id;
-
-          if (parsedResponse.status == 'incomplete') {
-            console.warn(`Received message with incomplete status from Open AI. Incomplete details : ${parsedResponse.incomplete_details.reason}.`);
-          }
+          finish_reason = parsedResponse.status;
         }
-        if (finish_reason == "length") {
+        if (finish_reason == "length" || finish_reason == "incomplete") {
           console.warn(`${payload.model} response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
         }
         success = true;
@@ -1244,14 +1244,14 @@ const GenAIApp = (function () {
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
-   * @param {Object} responseMessageTools - The response message from OpenAI, containing details about tool calls.
+   * @param {Object} responseMessage - The response message from OpenAI, containing details about tool calls.
    * @param {Array} tools - Array of tool objects, each containing metadata about functions, argument orders, and conditions.
    * @param {Array} messages - Array representing the conversation flow, which is updated with tool call results and system messages.
    * @returns {Array} - The updated messages array, representing the conversation flow with function calls, results, and system responses.
    */
-  function _handleOpenAIToolCalls(responseMessageTools, tools, messages, functionNameToStore) {
-    responseMessageTools.forEach(item => messages.push(item));
-    for (let tool_call of responseMessageTools) {
+  function _handleOpenAIToolCalls(responseMessage, tools, messages) {
+    responseMessage.forEach(item => messages.push(item));
+    for (let tool_call of responseMessage) {
       if (tool_call.type == "function_call") {
         // Call the function
         let functionName = tool_call.name;
@@ -1260,10 +1260,6 @@ const GenAIApp = (function () {
         let argsOrder = [];
         let endWithResult = false;
         let onlyReturnArguments = false;
-
-        if (functionName.startsWith("vectorStore")) {
-          argsOrder = tool_call.arguments;
-        }
 
         for (let t in tools) {
           let currentFunction = tools[t].function._toJson();
@@ -1277,7 +1273,7 @@ const GenAIApp = (function () {
         
         if (endWithResult) {
           // User defined that if this function has been called, then no more actions should be performed with the chat.
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1316,7 +1312,7 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1353,26 +1349,8 @@ const GenAIApp = (function () {
    * @returns {*} - The result of the function call, or a success message if the function executes without a return.
    * @throws {Error} If the specified function is not found or is not a function.
    */
-  function _callFunction(functionName, jsonArgs, argsOrder, functionNameToStore) {
+  function _callFunction(functionName, jsonArgs, argsOrder) {
     // Handle internal functions
-    if (functionName.startsWith("vectorStore") && functionName.endsWith("Search")) {
-          const vs = functionNameToStore[functionName];
-          if (!vs) {
-            throw new Error(`No vectorStoreObject found for function ${functionName}`);
-          }
-          const returnOnlyChunks = vs._toJson().onlyChunks;
-          const queryText = jsonArgs.query;
-          const results = vs._search(queryText);
-
-          if (returnOnlyChunks) {
-            return results;
-          }
-          const stringResults = results.map((vsFile) => {
-            return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
-          })
-          return stringResults;
-    }
-
     if (functionName == "_webSearch") {
       return _webSearch(jsonArgs.p);
     }
@@ -1382,6 +1360,21 @@ const GenAIApp = (function () {
       } else {
         return _getImageDescription(jsonArgs.imageUrl);
       }
+    }
+
+    if (functionName == "callVectorStore") {
+      const vs = addedVectorStores[jsonArgs.id]
+      const returnOnlyChunks = vs._toJson().onlyChunks;
+      const queryText = jsonArgs.query;
+      const results = vs._search(queryText);
+
+      if (returnOnlyChunks) {
+        return results;
+      }
+      const stringResults = results.map((vsFile) => {
+        return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
+      })
+      return stringResults;
     }
     // Parse JSON arguments
     var argsObj = jsonArgs;
@@ -1736,7 +1729,7 @@ const GenAIApp = (function () {
           parts = {
             type: 'input_file',
             filename: fileName,
-            file_data: pdfBase64
+            file_data: `data:application/pdf;base64,${pdfBase64}`
           };
           break;
 
@@ -1773,12 +1766,10 @@ const GenAIApp = (function () {
           const pdfBase64FromExport = Utilities.base64Encode(
             pdfBlobFromExport.getBytes()
           );
-          const prefixString = "data:application/pdf;base64,"
-          const completeFileDataString = prefixString + pdfBase64FromExport
           parts = {
             type: 'input_file',
             filename: fileName,
-            file_data: completeFileDataString
+            file_data: `data:application/pdf;base64,${pdfBase64FromExport}`
           };
           break;
 
