@@ -1,3 +1,7 @@
+const GPT_MODEL = "gpt-4.1";
+const REASONING_MODEL = "o4-mini";
+const GEMINI_MODEL = "gemini-2.5-pro";
+
 // Run all tests
 function testAll() {
   testSimpleChatInstance();
