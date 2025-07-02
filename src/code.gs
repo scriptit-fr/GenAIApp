@@ -812,7 +812,7 @@ const GenAIApp = (function () {
                   if (verbose) {
                     console.log("Conversation stopped because argument return has been enabled - No function has been called");
                   }
-                  return messages[messages.length - 3].arguments; // the argument(s) of the last function called
+                  return _parseResponse(messages[messages.length - 3].arguments); // the argument(s) of the last function called
                 }
               }
             }
