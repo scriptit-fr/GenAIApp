@@ -354,17 +354,12 @@ const GenAIApp = (function () {
       let knowledgeLink;
 
       let previous_response_id;
-
-      let assistantIdentificator;
       
       let maxNumOfChunks = 20;
       let onlyChunks = false;
       let retrievedAttributes = {};
 
-      let previous_response_id;
-      let hasWebSearchBeenAdded;
       let messageMetadata = {};
-
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
@@ -419,6 +414,18 @@ const GenAIApp = (function () {
             image_url: imageUrl
           }]
         });
+        const base64Image = _convertImageToBase64FromUrl(imageUrl);
+        contents.push({
+          role: "user",
+          parts: [
+            {
+              inline_data: {
+                mime_type: "image/jpeg",
+                data: base64Image
+              }
+            }
+          ]
+        })
         vision = true;
         return this;
       };
@@ -538,6 +545,7 @@ const GenAIApp = (function () {
        */
       this.setMaximumAPICalls = function (maxAPICalls) {
         maximumAPICalls = maxAPICalls;
+        return this;
       };
 
       /**
@@ -759,7 +767,7 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              return responseMessage.parts[0].text;
+              return responseMessage?.parts?.[0]?.text || null;
             }
           }
           else {
@@ -796,22 +804,24 @@ const GenAIApp = (function () {
           }
         }
         else {
-          let fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
-          if (fileSearchCall.length > 0) {
-          let retrievedChunks = fileSearchCall[0].results;
-          retrievedAttributes = [];
-          for (let chunk of retrievedChunks) {
-            retrievedAttributes.push(chunk.attributes);
-          }
-            if (onlyChunks) {
-              return retrievedChunks;
+          if (Array.isArray(responseMessage)) {
+            let fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+            if (fileSearchCall.length > 0) {
+            let retrievedChunks = fileSearchCall[0].results;
+            retrievedAttributes = [];
+            for (let chunk of retrievedChunks) {
+              retrievedAttributes.push(chunk.attributes);
+            }
+              if (onlyChunks) {
+                return retrievedChunks;
+              }
             }
           }
           if (model.includes("gemini")) {
-            return responseMessage.parts[0].text;
+            return responseMessage?.parts?.[0]?.text || null;
           }
           else {
-            return responseMessage.find(item => item.type === "message").content[0].text;
+            return responseMessage.find(item => item.type === "message")?.content?.[0]?.text || null;
           }
         }
       }
@@ -890,7 +900,7 @@ const GenAIApp = (function () {
           }
         }
         
-        if (addedVectorStores && numberOfAPICalls < 1) {
+        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
           if (payload.tools) {
             payload.tools.push({
             type: "file_search",
@@ -944,18 +954,16 @@ const GenAIApp = (function () {
           delete advancedParametersObject.function_call;
         }
 
-        if (vision && numberOfAPICalls == 0) {
+        if (vision && numberOfAPICalls == 0 && (model == "o3-mini" || model == "o1-mini")) {
           tools.push({
             type: "function",
             function: imageDescriptionFunction
           });
           let messageContent = `You are able to retrieve images description using the getImageDescription function.`;
-          contents.push({
-            role: "system",
-            parts: {
-              text: messageContent
-            }
-          });
+          messages.push({
+          role: "user",
+          content: messageContent
+        });
         }
 
         if (tools.length > 0) {
@@ -1037,24 +1045,23 @@ const GenAIApp = (function () {
         payload: JSON.stringify(payload),
         muteHttpExceptions: true
       };
-
       let response = UrlFetchApp.fetch(endpoint, options);
       let responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
         // The request was successful, exit the loop.
-        let parsedResponse = JSON.parse(response.getContentText());;
+        let parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse.candidates[0].content;
-          finish_reason = parsedResponse.candidates[0].finish_reason;
+          finish_reason = parsedResponse.candidates[0].finishReason;
         }
         else {
           responseMessage = parsedResponse.output;
           response_id = parsedResponse.id;
           finish_reason = parsedResponse.status;
         }
-        if (finish_reason == "length" || finish_reason == "incomplete") {
-          console.warn(`${payload.model} response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
+        if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
+          console.warn(`${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
       }
@@ -1483,6 +1490,21 @@ const GenAIApp = (function () {
       return null;
     }
   }
+
+  /**
+   * Fetches an image from a URL and converts it to a base64 input.
+   * 
+   * @private
+   * @param {string} imageUrl - The url of the image.
+   * @returns {string} - The base64 string of the encoded image.
+   */
+  function _convertImageToBase64FromUrl(url) {
+    const response = UrlFetchApp.fetch(url);
+    const blob = response.getBlob();
+    const base64 = Utilities.base64Encode(blob.getBytes());
+    return base64;
+}
+
 
   /**
    * Converts a file to base64 or returns the file content as text.
