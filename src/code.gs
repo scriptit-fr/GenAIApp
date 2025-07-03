@@ -354,7 +354,7 @@ const GenAIApp = (function () {
       let knowledgeLink;
 
       let previous_response_id;
-      
+
       let maxNumOfChunks = 20;
       let onlyChunks = false;
       let retrievedAttributes = {};
@@ -448,7 +448,7 @@ const GenAIApp = (function () {
       this.getAttributes = function () {
         return retrievedAttributes;
       }
-      
+
       /**
        * Defines wether the vector store search should return the raw chunks or send them to the chat.
        * @param {boolean} bool - A boolean to set or not the flag.
@@ -807,11 +807,11 @@ const GenAIApp = (function () {
           if (Array.isArray(responseMessage)) {
             let fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
             if (fileSearchCall.length > 0) {
-            let retrievedChunks = fileSearchCall[0].results;
-            retrievedAttributes = [];
-            for (let chunk of retrievedChunks) {
-              retrievedAttributes.push(chunk.attributes);
-            }
+              let retrievedChunks = fileSearchCall[0].results;
+              retrievedAttributes = [];
+              for (let chunk of retrievedChunks) {
+                retrievedAttributes.push(chunk.attributes);
+              }
               if (onlyChunks) {
                 return retrievedChunks;
               }
@@ -899,21 +899,21 @@ const GenAIApp = (function () {
             });
           }
         }
-        
+
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
           if (payload.tools) {
             payload.tools.push({
-            type: "file_search",
-            vector_store_ids: Object.keys(addedVectorStores),
-            max_num_results: maxNumOfChunks
-          });
+              type: "file_search",
+              vector_store_ids: Object.keys(addedVectorStores),
+              max_num_results: maxNumOfChunks
+            });
           }
           else {
             payload.tools = [{
-            type: "file_search",
-            vector_store_ids: Object.keys(addedVectorStores),
-            max_num_results: maxNumOfChunks
-          }];
+              type: "file_search",
+              vector_store_ids: Object.keys(addedVectorStores),
+              max_num_results: maxNumOfChunks
+            }];
           }
           payload.include = ["file_search_call.results"];
         }
@@ -961,9 +961,9 @@ const GenAIApp = (function () {
           });
           let messageContent = `You are able to retrieve images description using the getImageDescription function.`;
           messages.push({
-          role: "user",
-          content: messageContent
-        });
+            role: "user",
+            content: messageContent
+          });
         }
 
         if (tools.length > 0) {
@@ -1503,7 +1503,7 @@ const GenAIApp = (function () {
     const blob = response.getBlob();
     const base64 = Utilities.base64Encode(blob.getBytes());
     return base64;
-}
+  }
 
 
   /**
@@ -1551,7 +1551,7 @@ const GenAIApp = (function () {
             'You have access to the content of a pdf. Use it to answer the user\'s questions.';
           break;
 
-          // ===== Plain-text =====
+        // ===== Plain-text =====
         case 'text/plain':
           fileContent = file.getBlob().getDataAsString();
           parts.push({
@@ -1561,7 +1561,7 @@ const GenAIApp = (function () {
             'You have access to the content of a text file. Use it to answer the user\'s questions.';
           break;
 
-          // ===== Images =====
+        // ===== Images =====
         case 'image/png':
         case 'image/jpeg':
         case 'image/gif':
@@ -1581,7 +1581,7 @@ const GenAIApp = (function () {
             'You have access to an image. Use it to answer the user\'s questions.';
           break;
 
-          // ===== Google Docs / Sheets / Slides (export to PDF) =====
+        // ===== Google Docs / Sheets / Slides (export to PDF) =====
         case 'application/vnd.google-apps.spreadsheet':
         case 'application/vnd.google-apps.document':
         case 'application/vnd.google-apps.presentation':
@@ -1683,7 +1683,7 @@ const GenAIApp = (function () {
           };
           break;
 
-          // ===== Google Docs / Sheets / Slides (export to PDF) =====
+        // ===== Google Docs / Sheets / Slides (export to PDF) =====
         case 'application/vnd.google-apps.spreadsheet':
         case 'application/vnd.google-apps.document':
         case 'application/vnd.google-apps.presentation':
@@ -1771,16 +1771,16 @@ const GenAIApp = (function () {
     let imageMessage = [{
       role: "user",
       content: [{
-          type: "text",
-          text: "What is the content of this image ? Focus on important element." // Gives a more human friendly description than the initial example prompt given by OpenAI
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: imageUrl,
-            detail: fidelity
-          }
-        },
+        type: "text",
+        text: "What is the content of this image ? Focus on important element." // Gives a more human friendly description than the initial example prompt given by OpenAI
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: imageUrl,
+          detail: fidelity
+        }
+      },
       ]
     }];
 
