@@ -30,9 +30,11 @@ const GenAIApp = (function () {
   let response_id;
 
   let apiBaseUrl = "https://api.openai.com";
-  let privateInstanceBaseUrl = "";
+  let privateInstanceBaseUrl;
 
   let globalMetadata = {};
+  let addedVectorStores = {};
+
 
   /**
    * @class
@@ -43,10 +45,8 @@ const GenAIApp = (function () {
       let name = "";
       let description = "";
       let id = null;
-      let retrievedChunks = [];
-      let maxNumOfChunks = 10;
       let onlyChunks = false;
-      let retrievedAttributes = [];
+
 
       /**
        * Sets the vector store's name
@@ -67,15 +67,6 @@ const GenAIApp = (function () {
         description = newDesc;
         return this;
       };
-
-      /**
-       * Sets the limit for how many chunks should be returned by the vector store.
-       * @param {int} maxChunks - The number of chunks to return.
-       */
-      this.setMaxChunks = function (maxChunks) {
-        maxNumOfChunks = maxChunks;
-        return this;
-      }
 
       /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
@@ -118,25 +109,6 @@ const GenAIApp = (function () {
       this.getId = function () {
         return id;
       };
-
-      /**
-       * Returns the retrieveAttributes list, containing all of the attributes from the chunks that were retrieved through the search() method.
-       * @returns {list} - The list of the attributes from the chunks that were retrieved.
-       */
-      this.getAttributes = function () {
-        return retrievedAttributes;
-      }
-
-      /**
-       * Defines wether the vector store search should return the raw chunks or send them to the chat.
-       * @param {boolean} bool - A boolean to set or not the flag.
-       */
-      this.onlyReturnChunks = function (bool) {
-        if (bool) {
-          onlyChunks = true;
-        }
-        return this;
-      }
 
       /**
        * Uploads a file to Open AI storage and attaches it to the vector store.
@@ -196,31 +168,6 @@ const GenAIApp = (function () {
           });
         }
 
-      };
-
-      /**
-       * Searches for a specific number of relevant chunks inside the vector store based on a query.
-       * @param {string} query - The query to search for in the vector store.
-       * @returns {Array<Object>} - The list of retrieved chunks.
-       */
-      this._search = function (query) {
-        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before searching.");
-        try {
-          const results = _searchVectorStore(id, query, maxNumOfChunks);
-          retrievedChunks = results.data || [];
-          retrievedAttributes = [];
-          for (let chunk of retrievedChunks) {
-            retrievedAttributes.push(chunk.attributes);
-          }
-          return retrievedChunks;
-        }
-        catch (e) {
-          Logger.log({
-            message: `An error occured when trying to search the vector store : ${e}`,
-            vectorStoreId: id,
-            query: query
-          });
-        }
       };
 
       /**
@@ -405,9 +352,19 @@ const GenAIApp = (function () {
       let vision = false;
       let reasoning_effort = "high";
       let knowledgeLink;
-      let functionNameToStore = {};
+
       let previous_response_id;
-      let metadata = {};
+
+      let assistantIdentificator;
+      
+      let maxNumOfChunks = 20;
+      let onlyChunks = false;
+      let retrievedAttributes = {};
+
+      let previous_response_id;
+      let hasWebSearchBeenAdded;
+      let messageMetadata = {};
+
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
@@ -473,7 +430,35 @@ const GenAIApp = (function () {
        * @param {string} value - The value of the object that should be added.
        */
       this.addMetadata = function (key, value = null) {
-        metadata[key] = value;
+        messageMetadata[key] = value;
+        return this;
+      }
+
+      /**
+       * Returns the retrieveAttributes list, containing all of the attributes from the chunks that were retrieved through the search() method.
+       * @returns {list} - The list of the attributes from the chunks that were retrieved.
+       */
+      this.getAttributes = function () {
+        return retrievedAttributes;
+      }
+      
+      /**
+       * Defines wether the vector store search should return the raw chunks or send them to the chat.
+       * @param {boolean} bool - A boolean to set or not the flag.
+       */
+      this.onlyReturnChunks = function (bool) {
+        if (bool) {
+          onlyChunks = true;
+        }
+        return this;
+      }
+
+      /**
+       * Sets the limit for how many chunks should be returned by the vector store.
+       * @param {int} maxChunks - The number of chunks to return.
+       */
+      this.setMaxChunks = function (maxChunks) {
+        maxNumOfChunks = maxChunks;
         return this;
       }
 
@@ -629,37 +614,25 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Uses the provided vector store ids (up to two) with the file search tool for simple RAG.
+       * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
        * @param {Object} vectorStoreObject - A vector store object. 
        */
       this.addVectorStores = function (vectorStoreObject) {
-        if (Object.keys(functionNameToStore).length < 5) {
-          const vectorStoreJSON = vectorStoreObject._toJson();
-          const vectorStoreName = vectorStoreJSON.name;
-          const vectorStoreDescription = vectorStoreJSON.description;
+        const vectorStoreJSON = vectorStoreObject._toJson();
+        const vectorStoreName = vectorStoreJSON.name;
+        const vectorStoreDescription = vectorStoreJSON.description;
 
-          if (!vectorStoreName) {
-            console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
-            return this;
-          }
-
-          const fnName = `vectorStore${vectorStoreName}Search`;
-          const fnDescription = `This tool will search the ${vectorStoreDescription} vector store for relevant information based on a single query.`;
-
-          const fnObject = new FunctionObject()
-            .setName(fnName)
-            .setDescription(fnDescription)
-            .addParameter("query", "string", "The search query to run against the vector store.")
-            .endWithResult(vectorStoreJSON.onlyChunks);
-
-          this.addFunction(fnObject);
-
-          functionNameToStore[fnName] = vectorStoreObject;
-
+        if (!vectorStoreName) {
+          console.warn("Cannot add an unnamed Vector Store. Please call .setName() on the Vector Store Object first.");
+          return this;
         }
-        else {
-          console.warn(`The number of vector stores passed to the chat is currently limited to 5. This can be changed in the .addVectorStores method if needed. There are currently ${Object.keys(functionNameToStore).length} vector stores assigned to this chat instance.`);
+        else if (!vectorStoreDescription) {
+          console.warn("Cannot add a Vector Store with no description. Please call .setDescription() on the Vector Store Object first.");
+          return this;
         }
+
+        const vectorStoreId = vectorStoreJSON.id;
+        addedVectorStores[vectorStoreId] = vectorStoreObject;
         return this;
       };
 
@@ -744,16 +717,9 @@ const GenAIApp = (function () {
 
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = "";
+          let endpointUrl = apiBaseUrl + "/v1/responses";
           if (privateInstanceBaseUrl) {
-            endpointUrl = privateInstanceBaseUrl;
-          }
-          else {
-            endpointUrl = apiBaseUrl
-          }
-          endpointUrl += "/v1/responses";
-          if (endpointUrl.includes("azure")) {
-            endpointUrl += "?api-version=preview";
+            endpointUrl = privateInstanceBaseUrl + "/v1/responses?api-version=preview";
           }
           if (model.includes("gemini")) {
             if (geminiKey) {
@@ -799,7 +765,7 @@ const GenAIApp = (function () {
           else {
             let functionCalls = responseMessage.filter(item => item.type === "function_call");
             if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages, functionNameToStore);
+              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
@@ -818,7 +784,8 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              return responseMessage.find(item => item.type === "message").content[0].text;
+              const messageItem = responseMessage.find(item => item.type === "message");
+              return messageItem?.content?.[0]?.text || "";
             }
           }
           if (advancedParametersObject) {
@@ -829,6 +796,17 @@ const GenAIApp = (function () {
           }
         }
         else {
+          let fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+          if (fileSearchCall.length > 0) {
+          let retrievedChunks = fileSearchCall[0].results;
+          retrievedAttributes = [];
+          for (let chunk of retrievedChunks) {
+            retrievedAttributes.push(chunk.attributes);
+          }
+            if (onlyChunks) {
+              return retrievedChunks;
+            }
+          }
           if (model.includes("gemini")) {
             return responseMessage.parts[0].text;
           }
@@ -853,8 +831,9 @@ const GenAIApp = (function () {
        */
       this._buildOpenAIPayload = function (advancedParametersObject) {
         if (globalMetadata) {
-          Object.assign(metadata, globalMetadata);
+          Object.assign(messageMetadata, globalMetadata);
         }
+
         let systemInstructions = "";
         let userMessages = [];
 
@@ -873,8 +852,8 @@ const GenAIApp = (function () {
           input: userMessages,
           max_output_tokens: max_tokens,
           previous_response_id: previous_response_id,
-          metadata: metadata,
-          tools: []
+          tools: [],
+          metadata: messageMetadata
         };
 
         if (tools.length > 0) {
@@ -909,6 +888,24 @@ const GenAIApp = (function () {
               content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
             });
           }
+        }
+        
+        if (addedVectorStores && numberOfAPICalls < 1) {
+          if (payload.tools) {
+            payload.tools.push({
+            type: "file_search",
+            vector_store_ids: Object.keys(addedVectorStores),
+            max_num_results: maxNumOfChunks
+          });
+          }
+          else {
+            payload.tools = [{
+            type: "file_search",
+            vector_store_ids: Object.keys(addedVectorStores),
+            max_num_results: maxNumOfChunks
+          }];
+          }
+          payload.include = ["file_search_call.results"];
         }
         return payload;
       }
@@ -1054,12 +1051,9 @@ const GenAIApp = (function () {
         else {
           responseMessage = parsedResponse.output;
           response_id = parsedResponse.id;
-
-          if (parsedResponse.status == 'incomplete') {
-            console.warn(`Received message with incomplete status from Open AI. Incomplete details : ${parsedResponse.incomplete_details.reason}.`);
-          }
+          finish_reason = parsedResponse.status;
         }
-        if (finish_reason == "length") {
+        if (finish_reason == "length" || finish_reason == "incomplete") {
           console.warn(`${payload.model} response has been troncated because it was too long. To resolve this issue, you can increase the max_tokens property. max_tokens: ${payload.max_tokens}, prompt_tokens: ${parsedResponse.usage.prompt_tokens}, completion_tokens: ${parsedResponse.usage.completion_tokens}`);
         }
         success = true;
@@ -1206,14 +1200,14 @@ const GenAIApp = (function () {
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
-   * @param {Object} responseMessageTools - The response message from OpenAI, containing details about tool calls.
+   * @param {Object} responseMessage - The response message from OpenAI, containing details about tool calls.
    * @param {Array} tools - Array of tool objects, each containing metadata about functions, argument orders, and conditions.
    * @param {Array} messages - Array representing the conversation flow, which is updated with tool call results and system messages.
    * @returns {Array} - The updated messages array, representing the conversation flow with function calls, results, and system responses.
    */
-  function _handleOpenAIToolCalls(responseMessageTools, tools, messages, functionNameToStore) {
-    responseMessageTools.forEach(item => messages.push(item));
-    for (let tool_call of responseMessageTools) {
+  function _handleOpenAIToolCalls(responseMessage, tools, messages) {
+    responseMessage.forEach(item => messages.push(item));
+    for (let tool_call of responseMessage) {
       if (tool_call.type == "function_call") {
         // Call the function
         let functionName = tool_call.name;
@@ -1222,10 +1216,6 @@ const GenAIApp = (function () {
         let argsOrder = [];
         let endWithResult = false;
         let onlyReturnArguments = false;
-
-        if (functionName.startsWith("vectorStore")) {
-          argsOrder = tool_call.arguments;
-        }
 
         for (let t in tools) {
           let currentFunction = tools[t].function._toJson();
@@ -1239,7 +1229,7 @@ const GenAIApp = (function () {
 
         if (endWithResult) {
           // User defined that if this function has been called, then no more actions should be performed with the chat.
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1278,7 +1268,7 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder, functionNameToStore);
+          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
           if (typeof functionResponse != "string") {
             if (typeof functionResponse == "object") {
               functionResponse = JSON.stringify(functionResponse);
@@ -1315,25 +1305,8 @@ const GenAIApp = (function () {
    * @returns {*} - The result of the function call, or a success message if the function executes without a return.
    * @throws {Error} If the specified function is not found or is not a function.
    */
-  function _callFunction(functionName, jsonArgs, argsOrder, functionNameToStore) {
+  function _callFunction(functionName, jsonArgs, argsOrder) {
     // Handle internal functions
-    if (functionName.startsWith("vectorStore") && functionName.endsWith("Search")) {
-      const vs = functionNameToStore[functionName];
-      if (!vs) {
-        throw new Error(`No vectorStoreObject found for function ${functionName}`);
-      }
-      const returnOnlyChunks = vs._toJson().onlyChunks;
-      const queryText = jsonArgs.query;
-      const results = vs._search(queryText);
-
-      if (returnOnlyChunks) {
-        return results;
-      }
-      const stringResults = results.map((vsFile) => {
-        return `\n\nFilename: ${vsFile.filename}\n\n${vsFile.content[0].text}`
-      })
-      return stringResults;
-    }
     if (functionName == "getImageDescription") {
       if (jsonArgs.fidelity) {
         return _getImageDescription(jsonArgs.imageUrl, jsonArgs.fidelity);
@@ -1342,6 +1315,7 @@ const GenAIApp = (function () {
         return _getImageDescription(jsonArgs.imageUrl);
       }
     }
+
     // Parse JSON arguments
     var argsObj = jsonArgs;
     let argsArray = argsOrder.map(argName => argsObj[argName]);
@@ -1683,7 +1657,7 @@ const GenAIApp = (function () {
           parts = {
             type: 'input_file',
             filename: fileName,
-            file_data: pdfBase64
+            file_data: `data:application/pdf;base64,${pdfBase64}`
           };
           break;
 
@@ -1722,12 +1696,10 @@ const GenAIApp = (function () {
           const pdfBase64FromExport = Utilities.base64Encode(
             pdfBlobFromExport.getBytes()
           );
-          const prefixString = "data:application/pdf;base64,"
-          const completeFileDataString = prefixString + pdfBase64FromExport
           parts = {
             type: 'input_file',
             filename: fileName,
-            file_data: completeFileDataString
+            file_data: `data:application/pdf;base64,${pdfBase64FromExport}`
           };
           break;
 
@@ -2156,34 +2128,6 @@ const GenAIApp = (function () {
     catch (error) {
       console.error(`Failed to delete file with ID: ${fileId}`, error);
     }
-  }
-
-  /**
-   * Searches a vector store for relevant chunks based on a query and file attributes filter.
-   * 
-   * @param {string} vectorStoreId - The unique identifier of the vector store from which to search for relevant chunks.
-   * @param {string} query - The query string for a search
-   * @param {int} max_num_results - The maximum number of results to return (defaults to 10).
-   * @returns {list of Objects} A list of the file objects that are closest to the query. 
-   */
-  function _searchVectorStore(vectorStoreId, query, max_num_results) {
-    const url = apiBaseUrl + `/v1/vector_stores/${vectorStoreId}/search`;
-    const payload = {
-      "query": query,
-      "max_num_results": max_num_results
-    }
-    const options = {
-      method: 'post',
-      'contentType': 'application/json',
-      'headers': {
-        'Authorization': 'Bearer ' + openAIKey
-      },
-      'payload': JSON.stringify(payload)
-    };
-
-    const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
-    const data = JSON.parse(response.getContentText());
-    return data;
   }
 
   /**
