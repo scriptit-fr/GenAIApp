@@ -676,16 +676,16 @@ const GenAIApp = (function () {
           if (advancedParametersObject.model) {
             model = advancedParametersObject.model;
             if (model.includes("gemini")) {
-              if (!geminiKey && (!region || !gcpProjectId)) {
+              if (!geminiKey && !gcpProjectId) {
                 throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
               }
-            }
-            if (model.startsWith("o") && browsing && max_tokens < 10000) {
-              console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.")
             }
             else {
               if (!openAIKey) {
                 throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
+              }
+              if (model.startsWith("o") && browsing && max_tokens < 10000) {
+                console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.")
               }
             }
           }
@@ -734,10 +734,20 @@ const GenAIApp = (function () {
           }
           if (model.includes("gemini")) {
             if (geminiKey) {
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+              // Public endpoint / Generative Language API
+              // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
             }
             else {
-              endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+              // Enterprise endpoint / Vertex AI API
+              // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
+              // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
+              if (region) {
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+              }
+              else {
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+              }
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
@@ -1023,7 +1033,7 @@ const GenAIApp = (function () {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
       if (geminiKey) {
-        // API key directly appended to endpoint url
+        // Header name different for Google API key
         authMethod = null;
       }
       else {
@@ -1041,6 +1051,10 @@ const GenAIApp = (function () {
       };
       if (authMethod) {
         headers['Authorization'] = authMethod;
+      }
+      else if (geminiKey) {
+        // use an HTTP header instead of including the API key in the query parameters.
+        headers['x-goog-api-key'] = geminiKey;
       }
       const options = {
         method: 'post',
@@ -2243,7 +2257,7 @@ const GenAIApp = (function () {
      * To use Gemini models without an API key
      * Requires Vertex AI enabled on a GCP project linked to your Google Apps Script project
      * @param {string} gcp_project_id - Your GCP project ID
-     * @param {string} gcp_project_region - Your GCP project region (ex: us-central1)
+     * @param {string} [gcp_project_region] - Your GCP project region (ex: us-central1, leave empty for global)
      */
     setGeminiAuth: function (gcp_project_id, gcp_project_region) {
       gcpProjectId = gcp_project_id;
