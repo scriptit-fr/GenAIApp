@@ -680,12 +680,12 @@ const GenAIApp = (function () {
                 throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
               }
             }
-            if (model.startsWith("o") && browsing && max_tokens < 10000) {
-              console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.")
-            }
             else {
               if (!openAIKey) {
                 throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
+              }
+              if (model.startsWith("o") && browsing && max_tokens < 10000) {
+                console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.")
               }
             }
           }
