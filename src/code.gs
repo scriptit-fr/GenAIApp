@@ -29,11 +29,11 @@ const GenAIApp = (function () {
 
   let response_id;
 
-  let apiBaseUrl = "https://api.openai.com";
+  const apiBaseUrl = "https://api.openai.com";
   let privateInstanceBaseUrl;
 
-  let globalMetadata = {};
-  let addedVectorStores = {};
+  const globalMetadata = {};
+  const addedVectorStores = {};
 
 
   /**
@@ -45,7 +45,7 @@ const GenAIApp = (function () {
       let name = "";
       let description = "";
       let id = null;
-      let onlyChunks = false;
+      const onlyChunks = false;
 
 
       /**
@@ -213,9 +213,9 @@ const GenAIApp = (function () {
     constructor() {
       let name = '';
       let description = '';
-      let properties = {};
-      let required = [];
-      let argumentsInRightOrder = [];
+      const properties = {};
+      const required = [];
+      const argumentsInRightOrder = [];
       let endingFunction = false;
       let onlyArgs = false;
 
@@ -268,8 +268,8 @@ const GenAIApp = (function () {
         let itemsType;
 
         if (String(type).includes("Array")) {
-          let startIndex = type.indexOf("<") + 1;
-          let endIndex = type.indexOf(">");
+          const startIndex = type.indexOf("<") + 1;
+          const endIndex = type.indexOf(">");
           itemsType = type.slice(startIndex, endIndex);
           type = "array";
         }
@@ -329,7 +329,7 @@ const GenAIApp = (function () {
     }
   }
 
-  let imageDescriptionFunction = new FunctionObject()
+  const imageDescriptionFunction = new FunctionObject()
     .setName("getImageDescription")
     .setDescription("To retrieve the description of an image.")
     .addParameter("imageUrl", "string", "The URL of the image.")
@@ -343,7 +343,7 @@ const GenAIApp = (function () {
     constructor() {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
-      let tools = [];
+      const tools = [];
       let model = "gpt-4.1"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
@@ -359,7 +359,7 @@ const GenAIApp = (function () {
       let onlyChunks = false;
       let retrievedAttributes = {};
 
-      let messageMetadata = {};
+      const messageMetadata = {};
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
@@ -698,7 +698,7 @@ const GenAIApp = (function () {
         }
 
         if (knowledgeLink) {
-          let knowledge = _urlFetch(knowledgeLink);
+          const knowledge = _urlFetch(knowledgeLink);
           if (!knowledge) {
             throw Error(`The webpage ${knowledgeLink} didn't respond, please change the url of the addKnowledgeLink() function.`);
           }
@@ -771,7 +771,7 @@ const GenAIApp = (function () {
             }
           }
           else {
-            let functionCalls = responseMessage.filter(item => item.type === "function_call");
+            const functionCalls = responseMessage.filter(item => item.type === "function_call");
             if (functionCalls.length > 0) {
               messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
               // check if endWithResults or onlyReturnArguments
@@ -805,11 +805,11 @@ const GenAIApp = (function () {
         }
         else {
           if (Array.isArray(responseMessage)) {
-            let fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+            const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
             if (fileSearchCall.length > 0) {
-              let retrievedChunks = fileSearchCall[0].results;
+              const retrievedChunks = fileSearchCall[0].results;
               retrievedAttributes = [];
-              for (let chunk of retrievedChunks) {
+              for (const chunk of retrievedChunks) {
                 retrievedAttributes.push(chunk.attributes);
               }
               if (onlyChunks) {
@@ -845,7 +845,7 @@ const GenAIApp = (function () {
         }
 
         let systemInstructions = "";
-        let userMessages = [];
+        const userMessages = [];
 
         for (const message of messages) {
           if (message.role === "system") {
@@ -856,7 +856,7 @@ const GenAIApp = (function () {
           }
         }
 
-        let payload = {
+        const payload = {
           model: model,
           instructions: systemInstructions,
           input: userMessages,
@@ -868,7 +868,7 @@ const GenAIApp = (function () {
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          let toolsPayload = Object.keys(tools).map(t => ({
+          const toolsPayload = Object.keys(tools).map(t => ({
             type: "function",
             name: tools[t].function._toJson().name,
             description: tools[t].function._toJson().description,
@@ -933,7 +933,7 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
-        let payload = {
+        const payload = {
           'contents': contents,
           'model': model,
           'generationConfig': {
@@ -959,7 +959,7 @@ const GenAIApp = (function () {
             type: "function",
             function: imageDescriptionFunction
           });
-          let messageContent = `You are able to retrieve images description using the getImageDescription function.`;
+          const messageContent = `You are able to retrieve images description using the getImageDescription function.`;
           messages.push({
             role: "user",
             content: messageContent
@@ -968,8 +968,8 @@ const GenAIApp = (function () {
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          let payloadTools = Object.keys(tools).map(t => {
-            let toolFunction = tools[t].function._toJson();
+          const payloadTools = Object.keys(tools).map(t => {
+            const toolFunction = tools[t].function._toJson();
 
             const parameters = toolFunction.parameters;
             if (parameters && parameters.type) {
@@ -1027,7 +1027,7 @@ const GenAIApp = (function () {
         authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
       }
     }
-    let maxRetries = 5;
+    const maxRetries = 5;
     let retries = 0;
     let success = false;
 
@@ -1039,18 +1039,18 @@ const GenAIApp = (function () {
       if (authMethod) {
         headers['Authorization'] = authMethod;
       }
-      let options = {
+      const options = {
         method: 'post',
         headers: headers,
         payload: JSON.stringify(payload),
         muteHttpExceptions: true
       };
-      let response = UrlFetchApp.fetch(endpoint, options);
-      let responseCode = response.getResponseCode();
+      const response = UrlFetchApp.fetch(endpoint, options);
+      const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
         // The request was successful, exit the loop.
-        let parsedResponse = JSON.parse(response.getContentText());
+        const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse.candidates[0].content;
           finish_reason = parsedResponse.candidates[0].finishReason;
@@ -1068,14 +1068,14 @@ const GenAIApp = (function () {
       else if (responseCode === 429) {
         console.warn(`Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
         // Rate limit reached, wait before retrying.
-        let delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
       }
       else if (responseCode === 503 || responseCode === 500) {
         // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
         // https://platform.openai.com/docs/guides/error-codes/api-errors
-        let delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
       }
@@ -1111,10 +1111,10 @@ const GenAIApp = (function () {
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
-    for (let tool_call in responseMessage.parts) {
+    for (const tool_call in responseMessage.parts) {
       // Call the function
-      let functionName = responseMessage.parts[tool_call].functionCall.name;
-      let functionArgs = responseMessage.parts[tool_call].functionCall.args;
+      const functionName = responseMessage.parts[tool_call].functionCall.name;
+      const functionArgs = responseMessage.parts[tool_call].functionCall.args;
       contents.push({
         role: "model",
         parts: [{
@@ -1129,8 +1129,8 @@ const GenAIApp = (function () {
       let endWithResult = false;
       let onlyReturnArguments = false;
 
-      for (let t in tools) {
-        let currentFunction = tools[t].function._toJson();
+      for (const t in tools) {
+        const currentFunction = tools[t].function._toJson();
         if (currentFunction.name == functionName) {
           argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
           endWithResult = currentFunction.endingFunction;
@@ -1214,18 +1214,18 @@ const GenAIApp = (function () {
    */
   function _handleOpenAIToolCalls(responseMessage, tools, messages) {
     responseMessage.forEach(item => messages.push(item));
-    for (let tool_call of responseMessage) {
+    for (const tool_call of responseMessage) {
       if (tool_call.type == "function_call") {
         // Call the function
-        let functionName = tool_call.name;
-        let functionArgs = _parseResponse(tool_call.arguments);
+        const functionName = tool_call.name;
+        const functionArgs = _parseResponse(tool_call.arguments);
 
         let argsOrder = [];
         let endWithResult = false;
         let onlyReturnArguments = false;
 
-        for (let t in tools) {
-          let currentFunction = tools[t].function._toJson();
+        for (const t in tools) {
+          const currentFunction = tools[t].function._toJson();
           if (currentFunction.name == functionName) {
             argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
             endWithResult = currentFunction.endingFunction;
@@ -1324,12 +1324,12 @@ const GenAIApp = (function () {
     }
 
     // Parse JSON arguments
-    var argsObj = jsonArgs;
-    let argsArray = argsOrder.map(argName => argsObj[argName]);
+    const argsObj = jsonArgs;
+    const argsArray = argsOrder.map(argName => argsObj[argName]);
 
     // Call the function dynamically
     if (globalThis[functionName] instanceof Function) {
-      let functionResponse = globalThis[functionName].apply(null, argsArray);
+      const functionResponse = globalThis[functionName].apply(null, argsArray);
       if (functionResponse) {
         return functionResponse;
       }
@@ -1353,12 +1353,12 @@ const GenAIApp = (function () {
    */
   function _parseResponse(response) {
     try {
-      let parsedReponse = JSON.parse(response);
+      const parsedReponse = JSON.parse(response);
       return parsedReponse;
     }
     catch (e) {
       // Split the response into lines
-      let lines = String(response).trim().split('\n');
+      const lines = String(response).trim().split('\n');
 
       if (lines[0] !== '{') {
         return null;
@@ -1388,7 +1388,7 @@ const GenAIApp = (function () {
 
       // Try parsing the corrected response
       try {
-        let parsedResponse = JSON.parse(response);
+        const parsedResponse = JSON.parse(response);
         return parsedResponse;
       }
       catch (e) {
@@ -1406,8 +1406,8 @@ const GenAIApp = (function () {
    * @returns {string} The OpenAI file ID.
    */
   function _uploadFileToOpenAI(optionalAttachment) {
-    var file = DriveApp.getFileById(optionalAttachment);
-    var mimeType = file.getMimeType();
+    const file = DriveApp.getFileById(optionalAttachment);
+    const mimeType = file.getMimeType();
     let fileBlobUrl;
 
     switch (mimeType) {
@@ -1422,25 +1422,25 @@ const GenAIApp = (function () {
         break;
     }
 
-    var token = ScriptApp.getOAuthToken();
+    const token = ScriptApp.getOAuthToken();
 
     // Fetch the file from Google Drive using the generated URL and OAuth token
-    var response = UrlFetchApp.fetch(fileBlobUrl, {
+    let response = UrlFetchApp.fetch(fileBlobUrl, {
       headers: {
         'Authorization': 'Bearer ' + token
       }
     });
 
-    var fileBlob = response.getBlob();
+    const fileBlob = response.getBlob();
 
     const openAIFileEndpoint = 'https://api.openai.com/v1/files';
 
-    var formData = {
+    const formData = {
       'file': fileBlob,
       'purpose': 'assistants'
     };
 
-    var uploadOptions = {
+    const uploadOptions = {
       'method': 'post',
       'headers': {
         'Authorization': 'Bearer ' + openAIKey
@@ -1450,7 +1450,7 @@ const GenAIApp = (function () {
     };
 
     response = UrlFetchApp.fetch(openAIFileEndpoint, uploadOptions);
-    var uploadedFileResponse = JSON.parse(response.getContentText());
+    const uploadedFileResponse = JSON.parse(response.getContentText());
     if (uploadedFileResponse.error) {
       throw new Error('Error: ' + uploadedFileResponse.error.message);
     }
@@ -1531,7 +1531,7 @@ const GenAIApp = (function () {
       }
       let fileContent;
       let systemMessage;
-      let parts = [];
+      const parts = [];
 
       switch (mimeType) {
         // ===== PDF =====
@@ -1768,7 +1768,7 @@ const GenAIApp = (function () {
       fidelity = "high";
     }
 
-    let imageMessage = [{
+    const imageMessage = [{
       role: "user",
       content: [{
         type: "text",
@@ -1784,14 +1784,14 @@ const GenAIApp = (function () {
       ]
     }];
 
-    let payload = {
+    const payload = {
       'messages': imageMessage,
       'model': "gpt-4-vision-preview",
       'max_tokens': 1000,
       'user': Session.getTemporaryActiveUserKey()
     };
 
-    let responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
+    const responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
 
     return responseMessage;
   }
@@ -1850,8 +1850,8 @@ const GenAIApp = (function () {
 
     // Handle table headers (if they exist)
     htmlString = htmlString.replace(/<thead>([\s\S]*?)<\/thead>/g, (match, content) => {
-      let headerRow = content.replace(/<th>(.*?)<\/th>/g, '| $1 ').trim() + '|';
-      let separatorRow = headerRow.replace(/[^|]+/g, match => {
+      const headerRow = content.replace(/<th>(.*?)<\/th>/g, '| $1 ').trim() + '|';
+      const separatorRow = headerRow.replace(/[^|]+/g, match => {
         return '-'.repeat(match.length);
       }).replace(/\| -/g, '|--');
       return headerRow + '\n' + separatorRow;
