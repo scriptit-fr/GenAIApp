@@ -1053,6 +1053,7 @@ const GenAIApp = (function () {
         headers['Authorization'] = authMethod;
       }
       else if (geminiKey) {
+        // use an HTTP header instead of including the API key in the query parameters.
         headers['x-goog-api-key'] = geminiKey;
       }
       const options = {
