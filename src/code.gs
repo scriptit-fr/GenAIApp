@@ -725,7 +725,7 @@ const GenAIApp = (function () {
               text: `Information to help with your response : ${knowledge}`
             }
           })
-          knowledgeLink = null;
+          knowledgeLink = [];
         }
 
         let payload;
