@@ -351,7 +351,7 @@ const GenAIApp = (function () {
       let browsing = false;
       let vision = false;
       let reasoning_effort = "high";
-      let knowledgeLink;
+      let knowledgeLink = [];
 
       let previous_response_id;
 
@@ -534,7 +534,12 @@ const GenAIApp = (function () {
        * @returns {Chat} - The current Chat instance.
        */
       this.addKnowledgeLink = function (url) {
-        knowledgeLink = url;
+        if (typeof url === 'string'){
+          knowledgeLink.push(url);
+        }
+        else if (Array.isArray(url)) {
+          knowledgeLink.push(...url);
+        }
         return this;
       };
 
@@ -700,19 +705,24 @@ const GenAIApp = (function () {
           }
         }
 
-        if (knowledgeLink) {
-          const knowledge = _urlFetch(knowledgeLink);
+        if (knowledgeLink.length > 0) {
+          let knowledge = "";
+          knowledgeLink.forEach(url => {
+            const urlContent = _urlFetch(url);
+            knowledge += `${url}: \n\n ${urlContent}\n\n`;
+          } )
+          console.log(knowledge);
           if (!knowledge) {
-            throw Error(`The webpage ${knowledgeLink} didn't respond, please change the url of the addKnowledgeLink() function.`);
+            throw Error(`The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
           }
           messages.push({
             role: "system",
-            content: `Information to help with your response (publicly available here: ${knowledgeLink}):\n\n${knowledge}`
+            content: `Information to help with your response : ${knowledge}`
           });
           contents.push({
             role: "user",
             parts: {
-              text: `Information to help with your response (publicly available here: ${knowledgeLink}):\n\n${knowledge}`
+              text: `Information to help with your response : ${knowledge}`
             }
           })
           knowledgeLink = null;
