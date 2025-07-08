@@ -35,6 +35,7 @@ const GenAIApp = (function () {
   const globalMetadata = {};
   const addedVectorStores = {};
 
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
 
   /**
    * @class
@@ -45,13 +46,12 @@ const GenAIApp = (function () {
       let name = "";
       let description = "";
       let id = null;
-      const onlyChunks = false;
 
 
       /**
        * Sets the vector store's name
        * @param {string} newName - The name to assign to the vector store.
-       * @returns {VectorStore}
+       * @returns {VectorStoreObject}
        */
       this.setName = function (newName) {
         name = newName;
@@ -197,8 +197,7 @@ const GenAIApp = (function () {
         return {
           name: name,
           description: description,
-          id: id,
-          onlyChunks: onlyChunks
+          id: id
         };
       };
     }
@@ -443,7 +442,7 @@ const GenAIApp = (function () {
 
       /**
        * Returns the retrieveAttributes list, containing all of the attributes from the chunks that were retrieved through the search() method.
-       * @returns {list} - The list of the attributes from the chunks that were retrieved.
+       * @returns {Array} - The list of the attributes from the chunks that were retrieved.
        */
       this.getAttributes = function () {
         return retrievedAttributes;
@@ -711,7 +710,6 @@ const GenAIApp = (function () {
             const urlContent = _urlFetch(url);
             knowledge += `${url}: \n\n ${urlContent}\n\n`;
           } )
-          console.log(knowledge);
           if (!knowledge) {
             throw Error(`The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
           }
@@ -815,7 +813,7 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              const messageItem = responseMessage.find(item => item.type === "message");
+              const messageItem = responseMessage?.find?.(item => item.type === "message");
               return messageItem?.content?.[0]?.text || "";
             }
           }
@@ -891,11 +889,11 @@ const GenAIApp = (function () {
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          const toolsPayload = Object.keys(tools).map(t => ({
+          const toolsPayload = tools.map(tool => ({
             type: "function",
-            name: tools[t].function._toJson().name,
-            description: tools[t].function._toJson().description,
-            parameters: tools[t].function._toJson().parameters,
+            name: tool.function._toJson().name,
+            description: tool.function._toJson().description,
+            parameters: tool.function._toJson().parameters,
           }));
           payload.tools = toolsPayload;
 
@@ -1551,7 +1549,6 @@ const GenAIApp = (function () {
       const fileName = file.getName();
       const fileSize = file.getSize();
       // Gemini has a 20MB limit for API requests
-      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
       if (fileSize > MAX_FILE_SIZE) {
         Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
         return null;
@@ -1689,13 +1686,10 @@ const GenAIApp = (function () {
       const fileName = file.getName();
       const fileSize = file.getSize();
       // Gemini has a 20MB limit for API requests
-      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
       if (fileSize > MAX_FILE_SIZE) {
         Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
         return null;
       }
-      let fileContent;
-      let systemMessage;
       let parts = [];
 
       switch (mimeType) {
@@ -1945,7 +1939,7 @@ const GenAIApp = (function () {
     };
 
     try {
-      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+      const response = UrlFetchApp.fetch(url, options);
       const result = JSON.parse(response.getContentText());
 
       if (result && result.id) {
@@ -2025,7 +2019,7 @@ const GenAIApp = (function () {
     };
 
     try {
-      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+      const response = UrlFetchApp.fetch(url, options);
 
       if (response.getResponseCode() == 200) {
         const json = JSON.parse(response.getContentText());
@@ -2081,7 +2075,7 @@ const GenAIApp = (function () {
       },
       'payload': JSON.stringify(payload)
     };
-    const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+    const response = UrlFetchApp.fetch(url, options);
     const data = JSON.parse(response.getContentText());
     return data;
   }
@@ -2119,7 +2113,7 @@ const GenAIApp = (function () {
           },
         };
 
-        const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+        const response = UrlFetchApp.fetch(url, options);
         const storageData = JSON.parse(response.getContentText());
 
         if (storageData && storageData.data) {
@@ -2172,7 +2166,7 @@ const GenAIApp = (function () {
 
     try {
       // Delete the file from the vector store
-      ErrorHandler.urlFetchWithExpBackOff(url, options);
+      UrlFetchApp.fetch(url, options);
     }
     catch (error) {
       console.error(`Failed to delete file with ID: ${fileId}`, error);
@@ -2201,7 +2195,7 @@ const GenAIApp = (function () {
     };
 
     try {
-      const response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+      const response = UrlFetchApp.fetch(url, options);
       const result = JSON.parse(response.getContentText());
 
       if (result && result.id) {
@@ -2281,14 +2275,6 @@ const GenAIApp = (function () {
      */
     setGlobalMetadata: function (globalMetadataKey, globalMetadataValue) {
       globalMetadata[globalMetadataKey] = globalMetadataValue;
-    },
-
-    /**
-     * To set the Open AI log ID.
-     * @param {string} logId - The id of the Open AI log.
-     */
-    setOpenAiLogId: function (logId) {
-      openAiLogId = logId;
     },
 
     /**
