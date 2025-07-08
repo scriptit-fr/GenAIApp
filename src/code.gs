@@ -61,7 +61,7 @@ const GenAIApp = (function () {
       /**
        * Sets the description of the vector store.
        * @param {string} newDesc - The description to assign to the vector store.
-       * @returns {VectorStore}
+       * @returns {VectorStoreObject}
        */
       this.setDescription = function (newDesc) {
         description = newDesc;
@@ -70,7 +70,7 @@ const GenAIApp = (function () {
 
       /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
-       * @returns {VectorStore}
+       * @returns {VectorStoreObject}
        */
       this.createVectorStore = function () {
         if (!name) throw new Error("Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
