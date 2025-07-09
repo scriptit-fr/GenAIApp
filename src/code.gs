@@ -160,7 +160,12 @@ const GenAIApp = (function () {
         else if (typeof fileInput.getBytes === 'function' &&
           typeof fileInput.getContentType === 'function') {
           // the input is a Blob
-          blobToBase64 = Utilities.base64Encode(fileInput.getBytes());
+          const fileBytes = fileInput.getBytes();
+          const fileSize = fileBytes.length;
+          if (fileSize > MAX_FILE_SIZE) {
+            throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+          }
+          blobToBase64 = Utilities.base64Encode(fileBytes);
           fileInfo = {
             mimeType: fileInput.getContentType(),
             fileName: fileInput.getName()
@@ -179,7 +184,7 @@ const GenAIApp = (function () {
         else {
           contentObj.type = "input_file";
           contentObj.file_data = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
-          contentObj.fileInfo.fileName;
+          contentObj.filename = fileInfo.fileName;
         }
         messages.push({
           role: "user",
@@ -702,8 +707,7 @@ const GenAIApp = (function () {
         let blob;
         // Gemini has a 20MB limit for API requests
         if (fileSize > MAX_FILE_SIZE) {
-          Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
-          return null;
+          throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
         }
 
         switch (mimeType) {
