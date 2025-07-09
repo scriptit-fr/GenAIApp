@@ -51,7 +51,6 @@ const GenAIApp = (function () {
       let temperature = 1;
       let max_tokens = 1000;
       let browsing = false;
-      let vision = false;
       let reasoning_effort = "high";
       let knowledgeLink = [];
 
@@ -59,7 +58,7 @@ const GenAIApp = (function () {
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
-      let retrievedAttributes = {};
+      let retrievedAttributes = [];
 
       const messageMetadata = {};
       let maximumAPICalls = 30;
@@ -103,32 +102,100 @@ const GenAIApp = (function () {
       };
 
       /**
-       * NOT FOR GEMINI
-       * Add an image to the chat. Will automatically include an image with gpt-4-turbo-2024-04-09.
-       * @param {string} imageUrl - The URL of the image to add.
+       * Add an image to the chat.
+       * @param {string | Blob} imageInput - The publicly accessible URL of an image or a Blob
        * @returns {Chat} - The current Chat instance.
        */
-      this.addImage = function (imageUrl) {
+      this.addImage = function (imageInput) {
+        if (typeof imageInput == 'string') {
+          // assume it's an url
+          // Must be converted to base64 for Gemini
+          const response = UrlFetchApp.fetch(imageInput);
+          const blob = response.getBlob();
+          const base64Image = Utilities.base64Encode(blob.getBytes());
+          contents.push({
+            role: "user",
+            parts: [
+              {
+                inline_data: {
+                  mime_type: blob.getContentType(),
+                  data: base64Image
+                }
+              }
+            ]
+          });
+          // With OpenAI the image url can directly be sent to the model
+          messages.push({
+            role: "user",
+            content: [{
+              type: "input_image",
+              image_url: imageInput
+            }]
+          });
+        }
+        else if (typeof imageInput.getBytes === 'function' &&
+          typeof imageInput.getContentType === 'function') {
+          // the input is a Blob, to be handled by the addFile() method
+          this.addFile(imageInput);
+        }
+        else {
+          throw new Error('Invalid image input provided to addImage() method. Please provide the url of a publicly available image or a Blob.');
+        }
+        return this;
+      };
+
+      /**
+       * Adds the content of a file in the prompt
+       * @param {string | Blob} fileInput - the ID of a Google Drive or a Blob
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.addFile = function (fileInput) {
+        let fileInfo, blobToBase64;
+
+        if (typeof fileInput == 'string') {
+          // assume the input is a Google Drive ID
+          fileInfo = this._getBlobFromGoogleDrive(fileInput);
+          blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
+        }
+        else if (typeof fileInput.getBytes === 'function' &&
+          typeof fileInput.getContentType === 'function') {
+          // the input is a Blob
+          blobToBase64 = Utilities.base64Encode(fileInput.getBytes());
+          fileInfo = {
+            mimeType: fileInput.getContentType(),
+            fileName: fileInput.getName()
+          };
+        }
+        else {
+          throw new Error('Invalid file input provided to addFile() method. Please provide a valid Google Drive file ID or a Blob.');
+        }
+
+        // OpenAI
+        const contentObj = {};
+        if (fileInfo.mimeType.startsWith("image/")) {
+          contentObj.type = "input_image";
+          contentObj.image_url = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
+        }
+        else {
+          contentObj.type = "input_file";
+          contentObj.file_data = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
+          contentObj.fileInfo.fileName;
+        }
         messages.push({
           role: "user",
-          content: [{
-            type: "input_image",
-            image_url: imageUrl
+          content: [contentObj]
+        });
+
+        // Gemini
+        contents.push({
+          role: 'user',
+          parts: [{
+            inline_data: {
+              mime_type: fileInfo.mimeType,
+              data: blobToBase64
+            }
           }]
         });
-        const base64Image = _convertImageToBase64FromUrl(imageUrl);
-        contents.push({
-          role: "user",
-          parts: [
-            {
-              inline_data: {
-                mime_type: "image/jpeg",
-                data: base64Image
-              }
-            }
-          ]
-        })
-        vision = true;
         return this;
       };
 
@@ -164,7 +231,7 @@ const GenAIApp = (function () {
 
       /**
        * Sets the limit for how many chunks should be returned by the vector store.
-       * @param {int} maxChunks - The number of chunks to return.
+       * @param {number} maxChunks - The number of chunks to return.
        */
       this.setMaxChunks = function (maxChunks) {
         maxNumOfChunks = maxChunks;
@@ -217,20 +284,6 @@ const GenAIApp = (function () {
       };
 
       /**
-       * OPTIONAL
-       * 
-       * Allow genAI to call vision model.
-       * @param {true} scope - set to true to enable vision. 
-       * @returns {Chat} - The current Chat instance.
-       */
-      this.enableVision = function (scope) {
-        if (scope) {
-          vision = true;
-        }
-        return this;
-      };
-
-      /**
        * Includes the content of a web page in the prompt sent to openAI
        * @param {string} url - the url of the webpage you want to fetch
        * @returns {Chat} - The current Chat instance.
@@ -252,63 +305,6 @@ const GenAIApp = (function () {
        */
       this.setMaximumAPICalls = function (maxAPICalls) {
         maximumAPICalls = maxAPICalls;
-        return this;
-      };
-
-      /**
-       * Includes the content of a file in the prompt sent to gemini
-       * @param {string} fileID - the Google Drive ID of the file you want to fetch
-       * @returns {Chat} - The current Chat instance.
-       */
-      this.addFile = function (fileID) {
-        if (!fileID || typeof fileID !== 'string' || fileID.trim() === '') {
-          if (verbose) {
-            console.warn('Invalid file ID provided to addFile method');
-          }
-          contents.push({
-            role: 'user',
-            parts: {
-              text: 'Failed to process the file. Invalid file ID provided.'
-            }
-          });
-          return this;
-        }
-
-        const fileContentGemini = _convertFileToGeminiInput(fileID); // Get the file content
-        const fileContentOpenAi = _convertFileToOpenAiInput(fileID);
-
-        if (fileContentOpenAi) {
-          messages.push({
-            role: "user",
-            content: [
-              fileContentOpenAi
-            ]
-          });
-        }
-
-        if (fileContentGemini) {
-          contents.push({
-            role: 'user',
-            parts: fileContentGemini.parts
-          });
-          contents.push({
-            role: 'user',
-            parts: {
-              text: fileContentGemini.systemMessage
-            }
-          });
-        }
-        else {
-          if (verbose) {
-            console.warn(`Failed to process file with ID: ${fileID}`);
-          }
-          contents.push({
-            role: 'user',
-            parts: {
-              text: 'Failed to process the requested file. Please verify the file ID and try again.'
-            }
-          });
-        }
         return this;
       };
 
@@ -366,33 +362,24 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
+        model = advancedParametersObject.model ?? model;
+        temperature = advancedParametersObject.temperature ?? temperature;
+        max_tokens = advancedParametersObject.max_tokens ?? max_tokens;
+        reasoning_effort = advancedParametersObject.reasoning_effort ?? reasoning_effort;
 
-        if (advancedParametersObject) {
-          if (advancedParametersObject.model) {
-            model = advancedParametersObject.model;
-            if (model.includes("gemini")) {
-              if (!geminiKey && !gcpProjectId) {
-                throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
-              }
-            }
-            else {
-              if (!openAIKey) {
-                throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
-              }
-            }
+        if (model.includes("gemini")) {
+          if (!geminiKey && !gcpProjectId) {
+            throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
           }
-          if (advancedParametersObject.temperature) {
-            temperature = advancedParametersObject.temperature;
+        }
+        else {
+          if (!openAIKey) {
+            throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
           }
-          if (advancedParametersObject.max_tokens) {
-            max_tokens = advancedParametersObject.max_tokens;
-          }
-          if (advancedParametersObject.reasoning_effort) {
-            reasoning_effort = advancedParametersObject.reasoning_effort;
-          }
-          if (model.startsWith("o") && browsing && max_tokens < 10000) {
-            console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.")
-          }
+        }
+
+        if ((model.startsWith("o") || model.includes("gemini")) && browsing && max_tokens < 10000) {
+          console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.");
         }
 
         if (knowledgeLink.length > 0) {
@@ -422,7 +409,7 @@ const GenAIApp = (function () {
           payload = this._buildGeminiPayload(advancedParametersObject);
         }
         else {
-          payload = this._buildOpenAIPayload(advancedParametersObject);
+          payload = this._buildOpenAIPayload();
         }
 
         let responseMessage;
@@ -545,13 +532,11 @@ const GenAIApp = (function () {
        * `advancedParametersObject`.
        *
        * @private
-       * @param {Object} advancedParametersObject - An object containing additional parameters for the API call,
-       *                                            such as function call preferences.
        * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
        *                     for OpenAI's API.
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
-      this._buildOpenAIPayload = function (advancedParametersObject) {
+      this._buildOpenAIPayload = function () {
         if (globalMetadata) {
           Object.assign(messageMetadata, globalMetadata);
         }
@@ -629,7 +614,7 @@ const GenAIApp = (function () {
 
       /**
        * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
-       * and tool settings based on advanced options and feature flags such as browsing and vision. 
+       * and tool settings based on advanced options and feature flags such as browsing. 
        * Adapts the payload for specific function calls and tools.
        *
        * @private
@@ -697,6 +682,83 @@ const GenAIApp = (function () {
 
         return payload;
       }
+
+      /**
+       * Get a blob from a Google Drive file ID
+       *
+       * @private
+       * @param {string} fileId - The ID of the Google Drive file
+       * @returns {{
+       * blob: Blob,
+       * fileName: fileName,
+       * mimeType: mimeType
+       * }} - The data as a blob.
+       */
+      this._getBlobFromGoogleDrive = function (fileId) {
+        const file = DriveApp.getFileById(fileId);
+        const mimeType = file.getMimeType();
+        const fileName = file.getName();
+        const fileSize = file.getSize();
+        let blob;
+        // Gemini has a 20MB limit for API requests
+        if (fileSize > MAX_FILE_SIZE) {
+          Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+          return null;
+        }
+
+        switch (mimeType) {
+          case 'application/pdf':
+          case 'text/plain':
+          case 'image/png':
+          case 'image/jpeg':
+          case 'image/gif':
+          case 'image/webp':
+            blob = file.getBlob();
+            break;
+
+          case 'application/vnd.google-apps.spreadsheet':
+          case 'application/vnd.google-apps.document':
+          case 'application/vnd.google-apps.presentation':
+            let fileBlobUrl;
+            switch (mimeType) {
+              case 'application/vnd.google-apps.spreadsheet':
+                fileBlobUrl =
+                  'https://docs.google.com/spreadsheets/d/' +
+                  fileId +
+                  '/export?format=pdf';
+                break;
+              case 'application/vnd.google-apps.document':
+                fileBlobUrl =
+                  'https://docs.google.com/document/d/' +
+                  fileId +
+                  '/export?format=pdf';
+                break;
+              case 'application/vnd.google-apps.presentation':
+                fileBlobUrl =
+                  'https://docs.google.com/presentation/d/' +
+                  fileId +
+                  '/export?format=pdf';
+                break;
+            }
+            const token = ScriptApp.getOAuthToken();
+            const response = UrlFetchApp.fetch(fileBlobUrl, {
+              headers: {
+                Authorization: 'Bearer ' + token
+              }
+            });
+            blob = response.getBlob();
+            break;
+
+          default:
+            throw new Error('Invalid file type provided to addFile() method.');
+        }
+
+        return {
+          fileName: fileName,
+          mimeType: mimeType,
+          blob: blob
+        };
+      }
     }
   }
 
@@ -711,7 +773,6 @@ const GenAIApp = (function () {
       let id = null;
       let max_chunk_size = 800;
       let chunk_overlap = 400;
-
 
       /**
        * Sets the vector store's name
@@ -735,15 +796,15 @@ const GenAIApp = (function () {
 
       /**
        * Sets the chunking strategy for the Vector Store.
-       * @param {int} maxChunkSize - The maximum token size of a chunk (max is 4096, defaults to 800).
-       * @param {int} chunkOverlap - The chunk overlap to apply. Cannot exceed half of the maxChunkSize (defaults to 400).
+       * @param {number} maxChunkSize - The maximum token size of a chunk (max is 4096, defaults to 800).
+       * @param {number} chunkOverlap - The chunk overlap to apply. Cannot exceed half of the maxChunkSize (defaults to 400).
        */
       this.setChunkingStrategy = function (maxChunkSize, chunkOverlap) {
         max_chunk_size = maxChunkSize;
         chunk_overlap = chunkOverlap;
         return this
       }
-      
+
       /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
        * @returns {VectorStoreObject}
@@ -1003,13 +1064,6 @@ const GenAIApp = (function () {
       };
     }
   }
-
-  const imageDescriptionFunction = new FunctionObject()
-    .setName("getImageDescription")
-    .setDescription("To retrieve the description of an image.")
-    .addParameter("imageUrl", "string", "The URL of the image.")
-    .addParameter("highFidelity", "boolean", `Default: false. To improve the image quality, not needed in most cases.`, isOptional = true);
-
 
   /**
    * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
@@ -1323,16 +1377,6 @@ const GenAIApp = (function () {
    * @throws {Error} If the specified function is not found or is not a function.
    */
   function _callFunction(functionName, jsonArgs, argsOrder) {
-    // Handle internal functions
-    if (functionName == "getImageDescription") {
-      if (jsonArgs.fidelity) {
-        return _getImageDescription(jsonArgs.imageUrl, jsonArgs.fidelity);
-      }
-      else {
-        return _getImageDescription(jsonArgs.imageUrl);
-      }
-    }
-
     // Parse JSON arguments
     const argsObj = jsonArgs;
     const argsArray = argsOrder.map(argName => argsObj[argName]);
@@ -1499,307 +1543,6 @@ const GenAIApp = (function () {
     else {
       return null;
     }
-  }
-
-  /**
-   * Fetches an image from a URL and converts it to a base64 input.
-   * 
-   * @private
-   * @param {string} imageUrl - The url of the image.
-   * @returns {string} - The base64 string of the encoded image.
-   */
-  function _convertImageToBase64FromUrl(url) {
-    const response = UrlFetchApp.fetch(url);
-    const blob = response.getBlob();
-    const base64 = Utilities.base64Encode(blob.getBytes());
-    return base64;
-  }
-
-
-  /**
-   * Converts a file to base64 or returns the file content as text.
-   *
-   * @private
-   * @param {string} fileId - The Google Drive ID of the file to convert.
-   * @returns {object|null} - An object containing the file content and a system message, or null if an error occurs.
-   */
-  function _convertFileToGeminiInput(fileId) {
-    if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
-      Logger.log('Error: Invalid file identifier.');
-      return null;
-    }
-    try {
-      const file = DriveApp.getFileById(fileId);
-      const mimeType = file.getMimeType();
-      const fileName = file.getName();
-      const fileSize = file.getSize();
-      // Gemini has a 20MB limit for API requests
-      if (fileSize > MAX_FILE_SIZE) {
-        Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
-        return null;
-      }
-      let fileContent;
-      let systemMessage;
-      const parts = [];
-
-      switch (mimeType) {
-        // ===== PDF =====
-        case 'application/pdf':
-          const pdfBlob = file.getBlob();
-          const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
-          parts.push({
-            text: `Here is the pdf to analyze: ${fileName}`
-          });
-          parts.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: pdfBase64
-            }
-          });
-          systemMessage =
-            'You have access to the content of a pdf. Use it to answer the user\'s questions.';
-          break;
-
-        // ===== Plain-text =====
-        case 'text/plain':
-          fileContent = file.getBlob().getDataAsString();
-          parts.push({
-            text: `Here is the text file to analyze: ${fileName}\n\n${fileContent}`
-          });
-          systemMessage =
-            'You have access to the content of a text file. Use it to answer the user\'s questions.';
-          break;
-
-        // ===== Images =====
-        case 'image/png':
-        case 'image/jpeg':
-        case 'image/gif':
-        case 'image/webp':
-          const imageBlob = file.getBlob();
-          const imageBase64 = Utilities.base64Encode(imageBlob.getBytes());
-          parts.push({
-            text: `Here is the image to analyze: ${fileName}`
-          });
-          parts.push({
-            inlineData: {
-              mimeType: mimeType,
-              data: imageBase64
-            }
-          });
-          systemMessage =
-            'You have access to an image. Use it to answer the user\'s questions.';
-          break;
-
-        // ===== Google Docs / Sheets / Slides (export to PDF) =====
-        case 'application/vnd.google-apps.spreadsheet':
-        case 'application/vnd.google-apps.document':
-        case 'application/vnd.google-apps.presentation':
-          let fileBlobUrl;
-          switch (mimeType) {
-            case 'application/vnd.google-apps.spreadsheet':
-              fileBlobUrl =
-                'https://docs.google.com/spreadsheets/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-            case 'application/vnd.google-apps.document':
-              fileBlobUrl =
-                'https://docs.google.com/document/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-            case 'application/vnd.google-apps.presentation':
-              fileBlobUrl =
-                'https://docs.google.com/presentation/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-          }
-          const token = ScriptApp.getOAuthToken();
-          const response = UrlFetchApp.fetch(fileBlobUrl, {
-            headers: {
-              Authorization: 'Bearer ' + token
-            }
-          });
-          const pdfBlobFromExport = response.getBlob();
-          const pdfBase64FromExport = Utilities.base64Encode(
-            pdfBlobFromExport.getBytes()
-          );
-          parts.push({
-            text: `Here is the file to analyze: ${fileName}`
-          });
-          parts.push({
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: pdfBase64FromExport
-            }
-          });
-          systemMessage =
-            'You have access to the content of a file. Use it to answer the user\'s questions.';
-          break;
-
-        default:
-          Logger.log(`Unsupported file type: ${mimeType}`);
-          return null;
-      }
-      return {
-        parts: parts,
-        systemMessage: systemMessage
-      };
-    }
-    catch (error) {
-      Logger.log('Error during file processing: ' + error.toString());
-      return null;
-    }
-  }
-
-  /**
-   * Converts a PDF file to base64.
-   *
-   * @private
-   * @param {string} fileId - The Google Drive ID of the file to convert.
-   * @returns {object|null} - An object containing the base64 encoded pdf file. The object follows Open AI's API schema and can be added directly to the input attribute of the reauest.
-   */
-  function _convertFileToOpenAiInput(fileId) {
-    if (!fileId || typeof fileId !== 'string' || fileId.trim() === '') {
-      Logger.log('Error: Invalid file identifier.');
-      return null;
-    }
-    try {
-      const file = DriveApp.getFileById(fileId);
-      const mimeType = file.getMimeType();
-      const fileName = file.getName();
-      const fileSize = file.getSize();
-      // Gemini has a 20MB limit for API requests
-      if (fileSize > MAX_FILE_SIZE) {
-        Logger.log(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
-        return null;
-      }
-      let parts = [];
-
-      switch (mimeType) {
-        // ===== PDF =====
-        case 'application/pdf':
-          const pdfBlob = file.getBlob();
-          const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
-          parts = {
-            type: 'input_file',
-            filename: fileName,
-            file_data: `data:application/pdf;base64,${pdfBase64}`
-          };
-          break;
-
-        // ===== Google Docs / Sheets / Slides (export to PDF) =====
-        case 'application/vnd.google-apps.spreadsheet':
-        case 'application/vnd.google-apps.document':
-        case 'application/vnd.google-apps.presentation':
-          let fileBlobUrl;
-          switch (mimeType) {
-            case 'application/vnd.google-apps.spreadsheet':
-              fileBlobUrl =
-                'https://docs.google.com/spreadsheets/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-            case 'application/vnd.google-apps.document':
-              fileBlobUrl =
-                'https://docs.google.com/document/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-            case 'application/vnd.google-apps.presentation':
-              fileBlobUrl =
-                'https://docs.google.com/presentation/d/' +
-                fileId +
-                '/export?format=pdf';
-              break;
-          }
-          const token = ScriptApp.getOAuthToken();
-          const response = UrlFetchApp.fetch(fileBlobUrl, {
-            headers: {
-              Authorization: 'Bearer ' + token
-            }
-          });
-          const pdfBlobFromExport = response.getBlob();
-          const pdfBase64FromExport = Utilities.base64Encode(
-            pdfBlobFromExport.getBytes()
-          );
-          parts = {
-            type: 'input_file',
-            filename: fileName,
-            file_data: `data:application/pdf;base64,${pdfBase64FromExport}`
-          };
-          break;
-
-        default:
-          Logger.log(`Unsupported file type: ${mimeType}`);
-          return null;
-      }
-      return parts;
-    }
-    catch (error) {
-      Logger.log('Error during file processing: ' + error.toString());
-      return null;
-    }
-  }
-
-  /**
-   * Generates a description of an image using OpenAI's API, based on the provided image URL and fidelity level.
-   * Verifies that the image URL has a supported extension (png, jpeg, gif, webp) before proceeding. Adjusts the 
-   * description fidelity (detail level) based on the fidelity parameter and constructs an AI prompt to request 
-   * a description focused on key elements.
-   *
-   * @private
-   * @param {string} imageUrl - The URL of the image to describe.
-   * @param {string} [fidelity="low"] - Optional fidelity level of the description, either "low" or "high". Defaults to "low".
-   * @returns {string} - The response message from the OpenAI API, containing the description of the image. 
-   *                     Returns an error message if the image format is unsupported.
-   */
-  function _getImageDescription(imageUrl, fidelity) {
-    const extensions = ['png', 'jpeg', 'gif', 'webp'];
-    if (!extensions.some(extension => imageUrl.toLowerCase().endsWith(`.${extension}`))) {
-      if (verbose) {
-        Logger.log({
-          message: `Tried to get description of image, but extension is not supported by OpenAI API. Supported extensions are 'png', 'jpeg', 'gif', 'webp'`,
-          imageUrl: imageUrl
-        })
-      }
-      return "This is not a supported image, no description available."
-    }
-
-    if (!fidelity) {
-      fidelity = "low";
-    }
-    else {
-      fidelity = "high";
-    }
-
-    const imageMessage = [{
-      role: "user",
-      content: [{
-        type: "text",
-        text: "What is the content of this image ? Focus on important element." // Gives a more human friendly description than the initial example prompt given by OpenAI
-      },
-      {
-        type: "image_url",
-        image_url: {
-          url: imageUrl,
-          detail: fidelity
-        }
-      },
-      ]
-    }];
-
-    const payload = {
-      'messages': imageMessage,
-      'model': "gpt-4-vision-preview",
-      'max_tokens': 1000,
-      'user': Session.getTemporaryActiveUserKey()
-    };
-
-    const responseMessage = _callGenAIApi("https://api.openai.com/v1/chat/completions", payload);
-
-    return responseMessage;
   }
 
   /**
@@ -1983,7 +1726,7 @@ const GenAIApp = (function () {
   /**
    * Uploads a file to the Open AI storage.
    * 
-   * @param {blob} blob - The file blob.
+   * @param {Blob} blob - The file blob.
    * @returns {string} id - The id of the uploaded file.
    */
   function _uploadFileToOpenAIStorage(blob) {
