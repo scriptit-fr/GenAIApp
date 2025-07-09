@@ -362,10 +362,10 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
-        model = advancedParametersObject.model ?? model;
-        temperature = advancedParametersObject.temperature ?? temperature;
-        max_tokens = advancedParametersObject.max_tokens ?? max_tokens;
-        reasoning_effort = advancedParametersObject.reasoning_effort ?? reasoning_effort;
+        model = advancedParametersObject?.model ?? model;
+        temperature = advancedParametersObject?.temperature ?? temperature;
+        max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
+        reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
 
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
