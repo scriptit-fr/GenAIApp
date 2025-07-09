@@ -709,6 +709,8 @@ const GenAIApp = (function () {
       let name = "";
       let description = "";
       let id = null;
+      let max_chunk_size = 800;
+      let chunk_overlap = 400;
 
 
       /**
@@ -731,6 +733,17 @@ const GenAIApp = (function () {
         return this;
       };
 
+      /**
+       * Sets the chunking strategy for the Vector Store.
+       * @param {int} maxChunkSize - The maximum token size of a chunk (max is 4096, defaults to 800).
+       * @param {int} chunkOverlap - The chunk overlap to apply. Cannot exceed half of the maxChunkSize (defaults to 400).
+       */
+      this.setChunkingStrategy = function (maxChunkSize, chunkOverlap) {
+        max_chunk_size = maxChunkSize;
+        chunk_overlap = chunkOverlap;
+        return this
+      }
+      
       /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
        * @returns {VectorStoreObject}
@@ -783,7 +796,7 @@ const GenAIApp = (function () {
         if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
         try {
           const uploadedFileId = _uploadFileToOpenAIStorage(blob);
-          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes)
+          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes, max_chunk_size, chunk_overlap);
           return attachedFileId;
         }
         catch (e) {
@@ -2024,7 +2037,7 @@ const GenAIApp = (function () {
    * @returns {object} A vector store file object (JSON object).
    * @throws {Error} Throws an error if the attachment fails or if a network error occurs.
    */
-  function _attachFileToVectorStore(fileId, vectorStoreId, attributes) {
+  function _attachFileToVectorStore(fileId, vectorStoreId, attributes, max_chunk_size, chunk_overlap) {
     const url = apiBaseUrl + `/v1/vector_stores/${vectorStoreId}/files`;
     const payload = {
       "file_id": fileId,
@@ -2032,8 +2045,8 @@ const GenAIApp = (function () {
       "chunking_strategy": {
         "type": "static",
         "static": {
-          "max_chunk_size_tokens": 100,
-          "chunk_overlap_tokens": 10
+          "max_chunk_size_tokens": max_chunk_size,
+          "chunk_overlap_tokens": chunk_overlap
         }
       }
     };
