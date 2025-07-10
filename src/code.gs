@@ -150,7 +150,8 @@ const GenAIApp = (function () {
        * @returns {Chat} - The current Chat instance.
        */
       this.addFile = function (fileInput) {
-        let fileInfo, blobToBase64;
+        let fileInfo;
+        let blobToBase64;
 
         if (typeof fileInput == 'string') {
           // assume the input is a Google Drive ID
@@ -657,7 +658,7 @@ const GenAIApp = (function () {
             const toolFunction = tools[t].function._toJson();
 
             const parameters = toolFunction.parameters;
-            if (parameters && parameters.type) {
+            if (parameters?.type) {
               toolFunction.parameters.type = parameters.type.toUpperCase();
             }
 
