@@ -125,7 +125,7 @@ If you want to allow the chat to perform web searches and fetch web pages, you c
 ```javascript
 chat.enableBrowsing(true);
 ```
-If want to restrict your browsing to a specific web page, you can add as a second argument the url of this web page as bellow.
+If you want to restrict browsing to a specific web page, pass the target URL as the second argument, as shown below.
 
 ```javascript
   chat.enableBrowsing(true, "https://support.google.com");
@@ -138,7 +138,7 @@ If you don't need the perform a web search and want to directly give a link for 
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
 
-### Add Files (optional)
+### Add Files (Optional)
 
 If you want to add a file from Google Drive as context to the chat, use the `addFile()` method. For example, using the Drive file ID:
 
@@ -154,11 +154,12 @@ Once you've set up the chat and added the necessary components, you can start th
 ```js
 let response = chat.run({
   model: "gemini-2.5-flash", // Optional: set the model to use
-  temperature: 0.5 // Optional: set response creativity
+  temperature: 0.5, // Optional: set response creativity
   function_call: "getWeather" // Optional: force the first API response to call a function
 });
 
 console.log(response);
+
 ```
 The library supports the following models: 
 1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
