@@ -14,23 +14,17 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Adding Callable Functions to the Chat](#adding-callable-functions-to-the-chat)
   - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
-  - [Enable Vision (Optional)](#enable-vision-optional)
-  - [Add File to Gemini (optional)](#add-file-to-gemini-optional)
+  - [Add Files (Optional)](#add-files-optional)
   - [Running the Chat](#running-the-chat)
 - [FunctionObject Class](#functionobject-class)
   - [Creating a Function](#creating-a-function)
   - [Configuring Parameters](#configuring-parameters)
-- [Advanced Options](#advanced-options)
-  - [Retrieving Knowledge from an OpenAI Assistant](#retrieving-knowledge-from-an-openai-assistant)
-  - [Analyzing Documents with an OpenAI Assistant](#analyzing-documents-with-an-openai-assistant)
 - [Examples](#examples)
   - [Example 1: Send a Prompt and Get Completion](#example-1--send-a-prompt-and-get-completion)
   - [Example 2: Ask Open AI to Create a Draft Reply for the Last Email in Gmail Inbox](#example-2--ask-open-ai-to-create-a-draft-reply-for-the-last-email-in-gmail-inbox)
   - [Example 3: Retrieve Structured Data Instead of Raw Text with onlyReturnArguments](#example-3--retrieve-structured-data-instead-of-raw-text-with-onlyreturnargument)
   - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
   - [Example 5: Describe an Image](#example-5--describe-an-image)
-  - [Example 6: Access Google Sheet Content](#example-6--access-google-sheet-content)
-- [Debugging and Logging](#debugging-and-logging)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -40,8 +34,8 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 ## Features
 
 - **Chat Creation:** Create interactive chats that can send and receive messages using Gemini or OpenAI's API.
-- **Web Search Integration:** Perform web searches using the Google Custom Search API to enhance chatbot responses.
-- **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI's vision models.
+- **Web Search Integration:** Perform web searches to enhance chatbot responses.
+- **Image Analysis:** Retrieve image descriptions.
 - **Function Calling:** Enable the chat to call predefined functions and utilize their results in conversations.
 - **Assistant Knowledge Retrieval:** Retrieve knowledge from OpenAI vector search assistants for a better contextual response.
 - **Document Analysis:** Analyze documents from Google Drive with support for various formats.
@@ -61,7 +55,6 @@ Ensure to link your Google Apps Script project to a GCP project with Vertex AI e
 
 1. An **OpenAI API key** for accessing OpenAI models.
 2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
-3. (Optionnal) A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
 
 ## Installation
 
@@ -82,9 +75,6 @@ GenAIApp.setGeminiAuth('your-gcp-project-id','your-region');
 
 // Set OpenAI API Key if using OpenAI
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
-
-// Set Google Search API Key (optional, for web browsing)
-GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
 ```
 
 ### Creating a New Chat
@@ -130,9 +120,7 @@ For more information :
 
 ### Enable web browsing (optional)
 
-If you want to allow the chat to perform web searches and fetch web pages, you can either:
-- run the chat with a Gemini model
-- if you're using OpenAI's model, you'll need to enable browsing (and set your Google Custom Search API key, as desbribed above)
+If you want to allow the chat to perform web searches and fetch web pages, you can use the enableBrowsing() method:
 
 ```javascript
 chat.enableBrowsing(true);
@@ -149,22 +137,13 @@ If you don't need the perform a web search and want to directly give a link for 
 ```javascript
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
-### Enable Vision (optional)
 
-To enable the chat model to describe images, use the `enableVision()` method
+### Add Files (optional)
 
-```javascript
-chat.enableVision(true);
-```
-
-### Add File to Gemini (optional)
-
-This feature is supported by multimodal Gemini models, such as `gemini-1.5-pro`, `gemini-1.5-flash`, and the Gemini 2.0 family (e.g., `gemini-2.0-flash`).
-
-If you want to add a file from Google Drive as context to the Gemini chat, use the `addFile()` method. For example, using the Drive file ID:
+If you want to add a file from Google Drive as context to the chat, use the `addFile()` method. For example, using the Drive file ID:
 
 ```javascript
-// Add a Google Drive file to the Gemini chat context using its Drive file ID
+// Add a Google Drive file to the chat context using its Drive file ID
 chat.addFile('your-google-drive-file-id');
 ```
 
@@ -174,7 +153,7 @@ Once you've set up the chat and added the necessary components, you can start th
 
 ```js
 let response = chat.run({
-  model: "gemini-1.5-pro-002", // Optional: set the model to use
+  model: "gemini-2.5-flash", // Optional: set the model to use
   temperature: 0.5 // Optional: set response creativity
   function_call: "getWeather" // Optional: force the first API response to call a function
 });
@@ -182,10 +161,8 @@ let response = chat.run({
 console.log(response);
 ```
 The library supports the following models: 
-1. Gemini: "gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash"
-2. OpenAI: "gpt-3.5-turbo" | "gpt-4" | "gpt-4-turbo" | "gpt-4o" | "gpt-4o-mini"
-
-⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
+1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
+2. OpenAI: "gpt-4.1" | "o4-mini" | "o3"
 
 ## FunctionObject Class
 
@@ -210,25 +187,6 @@ functionObject.addParameter("year", "number", "The year of the movie release.");
 
 // Adding optional parameter
 functionObject.addParameter("rating", "number", "The minimum rating of movies to return.", true);
-```
-
-## Advanced Options
-
-### Retrieving Knowledge from an OpenAI Assistant
-
-Retrieve contextual information from a specific OpenAI vector search assistant:
-
-```js
-chat.retrieveKnowledgeFromAssistant("assistant-id", "A description of available knowledge.");
-```
-To find out more : [https://platform.openai.com/docs/assistants/overview](https://platform.openai.com/docs/assistants/overview)
-
-### Analyzing Documents with an OpenAI Assistant
-
-Analyze a document from Google Drive using an assistant:
-
-```js
-chat.analyzeDocumentWithAssistant("assistant-id", "drive-file-id");
 ```
 
 ## Examples
@@ -313,46 +271,10 @@ To have the chat model describe an image:
 
 ```javascript
 const chat = ChatGPTApp.newChat();
-chat.enableVision(true);
 chat.addMessage("Describe the following image.");
-chat.addImage("https://example.com/image.jpg", "high");
+chat.addImage("https://example.com/image.jpg");
 const response = chat.run();
 Logger.log(response);
-```
-This will enable the vision capability and use the OpenAI model to provide a description of the image at the specified URL. The fidelity parameter can be "low" or "high", affecting the detail level of the description.
-
-### Example 6 : Access Google Sheet Content
-
-To retrieve data from a Google Sheet:
-
-```javascript
-const chat = ChatGPTApp.newChat();
-chat.enableGoogleSheetsAccess(true);
-chat.addMessage("What data is stored in the following spreadsheet?");
-const spreadsheetId = "your_spreadsheet_id_here";
-chat.run({
-  function_call: "getDataFromGoogleSheets",
-  arguments: { spreadsheetId: spreadsheetId }
-});
-const response = chat.run();
-Logger.log(response);
-```
-This example demonstrates how to enable access to Google Sheets and retrieve data from a specified spreadsheet.
-
-## Debugging and Logging
-
-To debug the chat and view the search queries and pages opened:
-
-```js
-let debugInfo = GenAIApp.debug(chat);
-
-// Get web search queries
-let webSearchQueries = debugInfo.getWebSearchQueries();
-
-// Get web pages opened
-let webPagesOpened = debugInfo.getWebPagesOpened();
-
-console.log(webSearchQueries, webPagesOpened);
 ```
 
 ## Contributing
