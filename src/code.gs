@@ -332,14 +332,16 @@ const GenAIApp = (function () {
 
       /**
        * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
-       * @param {Object} vectorStoreObject - A vector store object. 
+       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs 
        */
-      this.addVectorStores = function (vectorStoreObject) {
-        const vectorStoreJSON = vectorStoreObject._toJson();
-        const vectorStoreId = vectorStoreJSON.id;
-        addedVectorStores[vectorStoreId] = vectorStoreObject;
+      this.addVectorStores = function (vectorStoreIds) {
+        const ids = vectorStoreIds.split(',').map(id => id.trim());
+        ids.forEach(id => {
+          if (id) addedVectorStores[id] = 1;
+        });
         return this;
       };
+
 
       this._toJson = function () {
         return {
@@ -449,6 +451,23 @@ const GenAIApp = (function () {
           throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
         }
 
+        if (Array.isArray(responseMessage)) {
+          const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+          if (fileSearchCall.length > 0) {
+            // @todo improve as currently we would only list attributes related to a single search in vector store
+            // even if AI did multiple searchs
+            console.log("[GenAIApp] Open AI model used the file_search tool to search the Vector Store(s)");
+            retrievedAttributes = [];
+            const retrievedChunks = fileSearchCall[0].results;
+            for (const chunk of retrievedChunks) {
+              retrievedAttributes.push(chunk.attributes);
+            }
+            if (onlyChunks) {
+              return retrievedChunks;
+            }
+          }
+        }
+
         if (tools.length > 0) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
@@ -458,13 +477,13 @@ const GenAIApp = (function () {
               if (contents[contents.length - 1].role == "model") {
                 if (contents[contents.length - 1].parts.text == "endWithResult") {
                   if (verbose) {
-                    console.log("Conversation stopped because end function has been called");
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
                   }
                   return contents[contents.length - 2].parts.text; // the last chat completion
                 }
                 else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
                   if (verbose) {
-                    console.log("Conversation stopped because argument return has been enabled - No function has been called");
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                   }
                   return contents[contents.length - 2].parts[0].functionCall.args; // the argument(s) of the last function called
                 }
@@ -483,13 +502,13 @@ const GenAIApp = (function () {
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
                   if (verbose) {
-                    console.log("Conversation stopped because end function has been called");
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
                   }
                   return messages[messages.length - 2].content; // the last chat completion
                 }
                 else if (messages[messages.length - 1].content == "onlyReturnArguments") {
                   if (verbose) {
-                    console.log("Conversation stopped because argument return has been enabled - No function has been called");
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                   }
                   return _parseResponse(messages[messages.length - 3].arguments); // the argument(s) of the last function called
                 }
@@ -509,19 +528,6 @@ const GenAIApp = (function () {
           }
         }
         else {
-          if (Array.isArray(responseMessage)) {
-            const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
-            if (fileSearchCall.length > 0) {
-              const retrievedChunks = fileSearchCall[0].results;
-              retrievedAttributes = [];
-              for (const chunk of retrievedChunks) {
-                retrievedAttributes.push(chunk.attributes);
-              }
-              if (onlyChunks) {
-                return retrievedChunks;
-              }
-            }
-          }
           if (model.includes("gemini")) {
             return responseMessage?.parts?.[0]?.text || null;
           }
@@ -1161,7 +1167,7 @@ const GenAIApp = (function () {
 
     if (verbose) {
       Logger.log({
-        message: `Got response from ${payload.model}`,
+        message: `[GenAIApp] - Got response from ${payload.model}`,
         responseMessage: responseMessage
       });
     }
@@ -1255,7 +1261,7 @@ const GenAIApp = (function () {
         }
         else {
           if (verbose) {
-            console.log(`function ${functionName}() called by Gemini.`);
+            console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
           }
         }
         contents.push({
@@ -1355,7 +1361,7 @@ const GenAIApp = (function () {
           }
           else {
             if (verbose) {
-              console.log(`function ${functionName}() called by OpenAI.`);
+              console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
             }
           }
           messages.push({
@@ -1528,7 +1534,7 @@ const GenAIApp = (function () {
    */
   function _urlFetch(url) {
     if (verbose) {
-      console.log(`Clicked on link : ${url}`);
+      console.log(`[GenAIApp] - Clicked on link : ${url}`);
     }
     let response;
     try {
