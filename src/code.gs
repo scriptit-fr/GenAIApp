@@ -59,6 +59,7 @@ const GenAIApp = (function () {
       let maxNumOfChunks = 10;
       let onlyChunks = false;
       let retrievedAttributes = [];
+      let seenFileIds = [];
 
       const messageMetadata = {};
       let maximumAPICalls = 30;
@@ -460,7 +461,10 @@ const GenAIApp = (function () {
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall[0].results;
             for (const chunk of retrievedChunks) {
-              if (!retrievedAttributes.some(item => item.url === chunk.attributes.url)) {
+              console.log("Chunk ID : ");
+              console.log(chunk)
+              if (!seenFileIds.includes(chunk.file_id)) {
+                seenFileIds.push(chunk.file_id);
                 retrievedAttributes.push(chunk.attributes);
               }
             }
