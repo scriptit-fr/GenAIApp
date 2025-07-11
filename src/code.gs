@@ -455,14 +455,10 @@ const GenAIApp = (function () {
         if (Array.isArray(responseMessage)) {
           const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
           if (fileSearchCall.length > 0) {
-            // @todo improve as currently we would only list attributes related to a single search in vector store
-            // even if AI did multiple searchs
             console.log("[GenAIApp] Open AI model used the file_search tool to search the Vector Store(s)");
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall[0].results;
             for (const chunk of retrievedChunks) {
-              console.log("Chunk ID : ");
-              console.log(chunk)
               if (!seenFileIds.includes(chunk.file_id)) {
                 seenFileIds.push(chunk.file_id);
                 retrievedAttributes.push(chunk.attributes);
