@@ -460,7 +460,9 @@ const GenAIApp = (function () {
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall[0].results;
             for (const chunk of retrievedChunks) {
-              retrievedAttributes.push(chunk.attributes);
+              if (!retrievedAttributes.some(item => item.url === chunk.attributes.url)) {
+                retrievedAttributes.push(chunk.attributes);
+              }
             }
             if (onlyChunks) {
               return retrievedChunks;
