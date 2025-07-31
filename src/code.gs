@@ -133,7 +133,7 @@ const GenAIApp = (function () {
 
       /**
        * Lists the files attached to the vector store.
-       * @returns {Object} - A JSON object containing the ids of the files attached to the vector store.
+       * @returns {Array} - An array containing the files attached to the vector store.
        */
       this.listFiles = function () {
         if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
@@ -2088,12 +2088,12 @@ const GenAIApp = (function () {
    * stored as keys in an object with their values set to `true`.
    *
    * @param {string} vectorStoreId - The unique identifier of the vector store from which to list files.
-   * @returns {Object} An object where each key is a file ID from the vector store.
+   * @returns {Array} An array where each key is a file object from the vector store.
    * @throws {Error} Throws an error if there is an issue fetching the file IDs.
    */
   function _listFilesInVectorStore(vectorStoreId) {
     const baseUrl = apiBaseUrl + '/v1/vector_stores';
-    const fileIds = {};
+    const files = [];
     let hasMoreFiles = true;
     let after;
 
@@ -2118,7 +2118,7 @@ const GenAIApp = (function () {
 
         if (storageData && storageData.data) {
           storageData.data.forEach(file => {
-            fileIds[file.id] = true;
+            files.push(file);
           });
 
           Logger.log(`Fetched ${storageData.data.length} files`);
@@ -2141,7 +2141,7 @@ const GenAIApp = (function () {
       }
     }
 
-    return fileIds;
+    return files;
   }
 
   /**
