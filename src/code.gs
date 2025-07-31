@@ -2088,7 +2088,7 @@ const GenAIApp = (function () {
    * stored as keys in an object with their values set to `true`.
    *
    * @param {string} vectorStoreId - The unique identifier of the vector store from which to list files.
-   * @returns {Array} An array where each key is a file object from the vector store.
+   * @returns {Array} An array where each element is a file object from the vector store.
    * @throws {Error} Throws an error if there is an issue fetching the file IDs.
    */
   function _listFilesInVectorStore(vectorStoreId) {
