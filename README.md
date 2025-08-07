@@ -14,12 +14,12 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Adding Callable Functions to the Chat](#adding-callable-functions-to-the-chat)
   - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
-  - [Enable Vision (Optional)](#enable-vision-optional)
-  - [Add File to Gemini (optional)](#add-file-to-gemini-optional)
+  - [Add Image (Optional)](#add-image-optional)
+  - [Add File to Chat (optional)](#add-file-to-chat-optional)
   - [Running the Chat](#running-the-chat)
-- [FunctionObject Class](#functionobject-class)
-  - [Creating a Function](#creating-a-function)
-  - [Configuring Parameters](#configuring-parameters)
+  - [FunctionObject Class](#functionobject-class)
+    - [Creating a Function](#creating-a-function)
+    - [Configuring Parameters](#configuring-parameters)
 - [Advanced Options](#advanced-options)
   - [Retrieving Knowledge from an OpenAI Assistant](#retrieving-knowledge-from-an-openai-assistant)
   - [Analyzing Documents with an OpenAI Assistant](#analyzing-documents-with-an-openai-assistant)
@@ -29,18 +29,19 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 3: Retrieve Structured Data Instead of Raw Text with onlyReturnArguments](#example-3--retrieve-structured-data-instead-of-raw-text-with-onlyreturnargument)
   - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
   - [Example 5: Describe an Image](#example-5--describe-an-image)
-  - [Example 6: Access Google Sheet Content](#example-6--access-google-sheet-content)
-- [Debugging and Logging](#debugging-and-logging)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
+  - [GenAIApp](#genaiapp)
+  - [Chat](#chat)
   - [Function Object](#function-object)
+  - [Vector Store Object](#vector-store-object)
 
 
 ## Features
 
 - **Chat Creation:** Create interactive chats that can send and receive messages using Gemini or OpenAI's API.
-- **Web Search Integration:** Perform web searches using the Google Custom Search API to enhance chatbot responses.
+- **Web Search Integration:** Perform web searches to enhance chatbot responses.
 - **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI's vision models.
 - **Function Calling:** Enable the chat to call predefined functions and utilize their results in conversations.
 - **Assistant Knowledge Retrieval:** Retrieve knowledge from OpenAI vector search assistants for a better contextual response.
@@ -61,7 +62,6 @@ Ensure to link your Google Apps Script project to a GCP project with Vertex AI e
 
 1. An **OpenAI API key** for accessing OpenAI models.
 2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
-3. (Optionnal) A **Google Custom Search API key** for utilizing the Google Custom Search API (if web browsing is enabled).
 
 ## Installation
 
@@ -83,8 +83,11 @@ GenAIApp.setGeminiAuth('your-gcp-project-id','your-region');
 // Set OpenAI API Key if using OpenAI
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
 
-// Set Google Search API Key (optional, for web browsing)
-GenAIApp.setGoogleSearchAPIKey('your-google-search-api-key');
+// Set global metadata passed with each request (optional)
+GenAIApp.setGlobalMetadata('app', 'demo');
+
+// Use a custom OpenAI-compatible endpoint (optional)
+GenAIApp.setPrivateInstanceBaseUrl('https://your-endpoint.example.com');
 ```
 
 ### Creating a New Chat
@@ -130,9 +133,7 @@ For more information :
 
 ### Enable web browsing (optional)
 
-If you want to allow the chat to perform web searches and fetch web pages, you can either:
-- run the chat with a Gemini model
-- if you're using OpenAI's model, you'll need to enable browsing (and set your Google Custom Search API key, as desbribed above)
+If you want to allow the chat to perform web searches and fetch web pages, enable browsing on your chat instance:
 
 ```javascript
 chat.enableBrowsing(true);
@@ -149,22 +150,20 @@ If you don't need the perform a web search and want to directly give a link for 
 ```javascript
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
-### Enable Vision (optional)
+### Add Image (optional)
 
-To enable the chat model to describe images, use the `enableVision()` method
+To include an image in the conversation, use the `addImage()` method with a URL or a Blob.
 
 ```javascript
-chat.enableVision(true);
+chat.addImage('https://example.com/image.jpg');
 ```
 
-### Add File to Gemini (optional)
+### Add File to Chat (optional)
 
-This feature is supported by multimodal Gemini models, such as `gemini-1.5-pro`, `gemini-1.5-flash`, and the Gemini 2.0 family (e.g., `gemini-2.0-flash`).
-
-If you want to add a file from Google Drive as context to the Gemini chat, use the `addFile()` method. For example, using the Drive file ID:
+You can include the contents of a Google Drive file or a Blob in your conversation using the `addFile()` method. This works with both Gemini and OpenAI multimodal models.
 
 ```javascript
-// Add a Google Drive file to the Gemini chat context using its Drive file ID
+// Add a Google Drive file to the chat context using its Drive file ID
 chat.addFile('your-google-drive-file-id');
 ```
 
@@ -236,9 +235,9 @@ chat.analyzeDocumentWithAssistant("assistant-id", "drive-file-id");
 ### Example 1 : Send a prompt and get completion
 
 ```javascript
- ChatGPTApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
- const chat = ChatGPTApp.newChat();
+ const chat = GenAIApp.newChat();
  chat.addMessage("What are the steps to add an external library to my Google Apps Script project?");
 
  const chatAnswer = chat.run();
@@ -248,20 +247,20 @@ chat.analyzeDocumentWithAssistant("assistant-id", "drive-file-id");
 ### Example 2 : Ask Open AI to create a draft reply for the last email in Gmail inbox
 
 ```javascript
- ChatGPTApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
- const chat = ChatGPTApp.newChat();
+ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+ const chat = GenAIApp.newChat();
 
- var getLatestThreadFunction = ChatGPTApp.newFunction()
+ var getLatestThreadFunction = GenAIApp.newFunction()
     .setName("getLatestThread")
     .setDescription("Retrieve information from the last message received.");
 
- var createDraftResponseFunction = ChatGPTApp.newFunction()
+ var createDraftResponseFunction = GenAIApp.newFunction()
     .setName("createDraftResponse")
     .setDescription("Create a draft response.")
     .addParameter("threadId", "string", "the ID of the thread to retrieve")
     .addParameter("body", "string", "the body of the email in plain text");
 
-  var resp = ChatGPTApp.newChat()
+  var resp = GenAIApp.newChat()
     .addMessage("You are an assistant managing my Gmail inbox.", true)
     .addMessage("Retrieve the latest message I received and draft a response.")
     .addFunction(getLatestThreadFunction)
@@ -279,7 +278,7 @@ const ticket = "Hello, could you check the status of my subscription under custo
   chat.addMessage("You just received this ticket : " + ticket);
   chat.addMessage("What's the customer email address ? You will give it to me using the function getEmailAddress.");
 
-  const myFunction = ChatGPTApp.newFunction() // in this example, getEmailAddress is not actually a real function in your script
+  const myFunction = GenAIApp.newFunction() // in this example, getEmailAddress is not actually a real function in your script
     .setName("getEmailAddress")
     .setDescription("To give the user an email address")
     .addParameter("emailAddress", "string", "the email address")
@@ -298,7 +297,7 @@ const ticket = "Hello, could you check the status of my subscription under custo
 ```javascript
  const message = "You're a google support agent, a customer is asking you how to install a library he found on github in a google appscript project."
 
- const chat = ChatGPTApp.newChat();
+ const chat = GenAIApp.newChat();
  chat.addMessage(message);
  chat.addMessage("Browse this website to answer : https://developers.google.com/apps-script", true)
  chat.enableBrowsing(true);
@@ -312,48 +311,13 @@ const ticket = "Hello, could you check the status of my subscription under custo
 To have the chat model describe an image: 
 
 ```javascript
-const chat = ChatGPTApp.newChat();
-chat.enableVision(true);
+const chat = GenAIApp.newChat();
 chat.addMessage("Describe the following image.");
-chat.addImage("https://example.com/image.jpg", "high");
+chat.addImage("https://example.com/image.jpg");
 const response = chat.run();
 Logger.log(response);
 ```
-This will enable the vision capability and use the OpenAI model to provide a description of the image at the specified URL. The fidelity parameter can be "low" or "high", affecting the detail level of the description.
-
-### Example 6 : Access Google Sheet Content
-
-To retrieve data from a Google Sheet:
-
-```javascript
-const chat = ChatGPTApp.newChat();
-chat.enableGoogleSheetsAccess(true);
-chat.addMessage("What data is stored in the following spreadsheet?");
-const spreadsheetId = "your_spreadsheet_id_here";
-chat.run({
-  function_call: "getDataFromGoogleSheets",
-  arguments: { spreadsheetId: spreadsheetId }
-});
-const response = chat.run();
-Logger.log(response);
-```
-This example demonstrates how to enable access to Google Sheets and retrieve data from a specified spreadsheet.
-
-## Debugging and Logging
-
-To debug the chat and view the search queries and pages opened:
-
-```js
-let debugInfo = GenAIApp.debug(chat);
-
-// Get web search queries
-let webSearchQueries = debugInfo.getWebSearchQueries();
-
-// Get web pages opened
-let webPagesOpened = debugInfo.getWebPagesOpened();
-
-console.log(webSearchQueries, webPagesOpened);
-```
+This will use the selected model to provide a description of the image at the specified URL.
 
 ## Contributing
 
@@ -365,83 +329,64 @@ The **GenAIApp** library is licensed under the Apache License, Version 2.0. You 
 
 ## Reference
 
+### GenAIApp
+
+- `newChat()`: Create a new `Chat` instance.
+- `newFunction()`: Create a new `FunctionObject`.
+- `newVectorStore()`: Create a new `VectorStoreObject`.
+- `setOpenAIAPIKey(apiKey)`: Set the OpenAI API key.
+- `setGeminiAPIKey(apiKey)`: Set the Gemini API key.
+- `setGeminiAuth(projectId, region)`: Use Vertex AI authentication.
+- `setGlobalMetadata(key, value)`: Attach a key/value pair to every request.
+- `setPrivateInstanceBaseUrl(baseUrl)`: Use a custom OpenAI‑compatible endpoint.
+
+### Chat
+
+A `Chat` represents a conversation with the model.
+
+- `addMessage(messageContent, [system])`: Add a user or system message.
+- `addFunction(functionObject)`: Attach a `FunctionObject` for function calling.
+- `addImage(imageInput)`: Include an image URL or Blob in the conversation.
+- `addFile(fileInput)`: Include the content of a Google Drive file or Blob.
+- `addMetadata(key, value)`: Add metadata sent with the next request.
+- `getAttributes()`: Retrieve attributes from vector store search results.
+- `onlyReturnChunks(bool)`: Return raw chunks from vector store searches.
+- `setMaxChunks(maxChunks)`: Limit the number of chunks returned by vector stores.
+- `getMessages()`: Get the messages as a JSON string.
+- `getFunctions()`: Get the functions as a JSON string.
+- `disableLogs(bool)`: Disable library logs.
+- `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
+- `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
+- `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
+- `retrieveLastResponseId()`: Get the last response ID.
+- `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
+- `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
+- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
+
 ### Function Object
 
 A `FunctionObject` represents a function that can be called by the chat.
 
-Creating a function object and setting its name to the name of an actual function you have in your script will permit the library to call your real function.
+- `setName(name)`: Set the function name.
+- `setDescription(description)`: Set the function description.
+- `addParameter(name, type, description, [isOptional])`: Add a parameter to the function. Parameters are required by default; set `isOptional` to `true` to make a parameter optional.
+- `endWithResult(bool)`: End the conversation after the function is executed.
+- `onlyReturnArguments(bool)`: End the conversation and return only the arguments.
 
-#### `setName(name)`
+### Vector Store Object
 
-Sets the name of the function.
+A `VectorStoreObject` represents an OpenAI vector store.
 
-#### `setDescription(description)`
-
-Sets the description of the function.
-
-#### `addParameter(name, type, description, [isOptional])`
-
-Adds a parameter to the function. Parameters are required by default. Set 'isOptional' to true to make a parameter optional.
-
-#### `endWithResult(bool)`
-
-If enabled, the conversation with the chat will automatically end after this function is executed.
-
-#### `onlyReturnArguments(bool)`
-
-If enabled, the conversation will automatically end when this function is called and the chat will return the arguments in a stringified JSON object.
-
-#### `toJSON()`
-
-Returns a JSON representation of the function object.
-
-### Chat
-
-A `Chat` represents a conversation with the chat.
-
-#### `addMessage(messageContent, [system])`
-
-Add a message to the chat. If `system` is true, the message is from the system, else it's from the user.
-
-#### `addFunction(functionObject)`
-
-Add a function to the chat.
-
-#### `enableBrowsing(bool)`
-
-Enable the chat to use a Google search engine to browse the web.
-
-#### `run([advancedParametersObject])`
-
-Start the chat conversation. It sends all your messages and any added function to the chat GPT. It will return the last chat answer.
-
-Supported attributes for the advanced parameters :
-
-```javascript
-advancedParametersObject = {
-	temperature: temperature, 
-	model: model,
-	function_call: function_call
-}
-```
-
-**Temperature** : Lower values for temperature result in more consistent outputs, while higher values generate more diverse and creative results. Select a temperature value based on the desired trade-off between coherence and creativity for your specific application.
-
-**Model** : The Gemini and OpenAI API are powered by a diverse set of models with different capabilities and price points. 
-- [Find out more about Gemini models](https://ai.google.dev/gemini-api/docs/models/gemini)
-- [Find out more about OpenAI models](https://platform.openai.com/docs/models/overview)
-
-**Function_call** : If you want to force the model to call a specific function you can do so by setting `function_call: "<insert-function-name>"`.
-
-### Note
-
-If you wish to disable the library logs and keep only your own, call `disableLogs()`:
-
-```javascript
-ChatGPTApp.disableLogs();
-```
-
-This can be useful for keeping your logs clean and specific to your application.
+- `setName(newName)`: Set the vector store name.
+- `setDescription(newDesc)`: Set the description.
+- `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure chunking before uploads.
+- `createVectorStore()`: Create the vector store.
+- `initializeFromId(vectorStoreId)`: Initialize from an existing vector store ID.
+- `getId()`: Get the vector store ID.
+- `uploadAndAttachFile(blob, attributes)`: Upload a file and attach it to the store.
+- `listFiles()`: List files attached to the store.
+- `deleteFile(fileId)`: Delete a file from the store.
+- `deleteVectorStore()`: Delete the vector store.
 
 ---
 
