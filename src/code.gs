@@ -1146,7 +1146,7 @@ const GenAIApp = (function () {
         Utilities.sleep(delay);
         retries++;
       }
-      else if (responseCode === 503 || responseCode === 500) {
+      else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
         // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
         // https://platform.openai.com/docs/guides/error-codes/api-errors
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
