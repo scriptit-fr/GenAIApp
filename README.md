@@ -20,9 +20,8 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [FunctionObject Class](#functionobject-class)
     - [Creating a Function](#creating-a-function)
     - [Configuring Parameters](#configuring-parameters)
-- [Advanced Options](#advanced-options)
-  - [Retrieving Knowledge from an OpenAI Assistant](#retrieving-knowledge-from-an-openai-assistant)
-  - [Analyzing Documents with an OpenAI Assistant](#analyzing-documents-with-an-openai-assistant)
+  - [VectorStoreObject Class](#vectorstoreobject-class)
+  - [Retrieving Knowledge from an OpenAI Vector Store](#retrieving-knowledge-from-an-openai-vector-store)
 - [Examples](#examples)
   - [Example 1: Send a Prompt and Get Completion](#example-1--send-a-prompt-and-get-completion)
   - [Example 2: Ask Open AI to Create a Draft Reply for the Last Email in Gmail Inbox](#example-2--ask-open-ai-to-create-a-draft-reply-for-the-last-email-in-gmail-inbox)
@@ -44,7 +43,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 - **Web Search Integration:** Perform web searches to enhance chatbot responses.
 - **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI's vision models.
 - **Function Calling:** Enable the chat to call predefined functions and utilize their results in conversations.
-- **Assistant Knowledge Retrieval:** Retrieve knowledge from OpenAI vector search assistants for a better contextual response.
+- **Vector Store Search:** Retrieve knowledge from OpenAI vector stores for a better contextual response.
 - **Document Analysis:** Analyze documents from Google Drive with support for various formats.
 
 ## Prerequisites
@@ -173,16 +172,16 @@ Once you've set up the chat and added the necessary components, you can start th
 
 ```js
 let response = chat.run({
-  model: "gemini-1.5-pro-002", // Optional: set the model to use
-  temperature: 0.5 // Optional: set response creativity
+  model: "gemini-2.5-flash", // Optional: set the model to use
+  temperature: 0.5, // Optional: set response creativity
   function_call: "getWeather" // Optional: force the first API response to call a function
 });
 
 console.log(response);
 ```
 The library supports the following models: 
-1. Gemini: "gemini-1.5-pro-002" | "gemini-1.5-pro" | "gemini-1.5-flash-002" | "gemini-1.5-flash"
-2. OpenAI: "gpt-3.5-turbo" | "gpt-4" | "gpt-4-turbo" | "gpt-4o" | "gpt-4o-mini"
+1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
+2. OpenAI: "gpt-4.1" | "o4-mini" | "o3"
 
 ⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
 
@@ -211,24 +210,18 @@ functionObject.addParameter("year", "number", "The year of the movie release.");
 functionObject.addParameter("rating", "number", "The minimum rating of movies to return.", true);
 ```
 
-## Advanced Options
+## VectorStoreObject Class
 
-### Retrieving Knowledge from an OpenAI Assistant
+### Retrieving Knowledge from an OpenAI Vector Store
 
-Retrieve contextual information from a specific OpenAI vector search assistant:
-
-```js
-chat.retrieveKnowledgeFromAssistant("assistant-id", "A description of available knowledge.");
-```
-To find out more : [https://platform.openai.com/docs/assistants/overview](https://platform.openai.com/docs/assistants/overview)
-
-### Analyzing Documents with an OpenAI Assistant
-
-Analyze a document from Google Drive using an assistant:
+Retrieve contextual information from a specific OpenAI vector search :
 
 ```js
-chat.analyzeDocumentWithAssistant("assistant-id", "drive-file-id");
+const vectorStoreObject = GenAIApp.newVectorStore()
+  .initializeFromId("your-vector-store-id");
+chat.addVectorStore(vectorStoreObject);
 ```
+To find out more : [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search)
 
 ## Examples
 
