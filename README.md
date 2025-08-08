@@ -181,7 +181,7 @@ console.log(response);
 ```
 The library supports the following models: 
 1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-4.1" | "o4-mini" | "o3"
+2. OpenAI: "gpt-4.1" | "o4-mini" | "o3" | "gpt-5"
 
 ⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
 
