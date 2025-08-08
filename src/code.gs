@@ -24,7 +24,6 @@ const GenAIApp = (function () {
   let region = "";
 
   let restrictSearch;
-
   let verbose = true;
 
   let response_id;
@@ -46,7 +45,7 @@ const GenAIApp = (function () {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       const tools = [];
-      let model = "gpt-4.1"; // default 
+      let model = "gpt-5"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
@@ -362,7 +361,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to high
        * @param {number} [advancedParametersObject.max_tokens]
@@ -589,7 +588,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if (model.startsWith('o')) {
+        if (model.startsWith('o') || model.includes("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
