@@ -184,6 +184,7 @@ The library supports the following models:
 2. OpenAI: "gpt-4.1" | "o4-mini" | "o3" | "gpt-5"
 
 ⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
+⚠️ **Warning:** The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
 ## FunctionObject Class
 
