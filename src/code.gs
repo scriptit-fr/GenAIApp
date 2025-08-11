@@ -459,8 +459,6 @@ const GenAIApp = (function () {
             if (verbose) {
               console.log(`[GenAIApp] - File search performed.`);
             }
-            // @todo improve as currently we would only list attributes related to a single search in vector store
-            // even if AI did multiple searches
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall.flatMap(call =>
               Array.isArray(call?.results) ? call.results : []
