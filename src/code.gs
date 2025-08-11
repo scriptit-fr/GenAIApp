@@ -386,7 +386,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.startsWith("o") || model.includes("gemini")) && browsing && max_tokens < 10000) {
+        if ((model.startsWith("o") || model.includes("gemini") || model.includes("gpt-5")) && browsing && max_tokens < 10000) {
           console.warn("You have activated the browsing tool on a reasoning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.");
         }
 
@@ -460,7 +460,7 @@ const GenAIApp = (function () {
               console.log(`[GenAIApp] - File search performed.`);
             }
             // @todo improve as currently we would only list attributes related to a single search in vector store
-            // even if AI did multiple searchs
+            // even if AI did multiple searches
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall.flatMap(call =>
               Array.isArray(call?.results) ? call.results : []
