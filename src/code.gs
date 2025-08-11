@@ -1234,6 +1234,7 @@ const GenAIApp = (function () {
         }
       }
 
+      // No actual call to the function
       if (onlyReturnArguments) {
         contents.push({
           "role": "model",
@@ -1270,7 +1271,7 @@ const GenAIApp = (function () {
       });
 
       if (endWithResult) {
-        // User defined that if this function has been called, then no more actions should be performed with the chat.
+        // User defined that if this function has been called, we do not call back the AI endpoint.
         contents.push({
           "role": "model",
           "parts": {
@@ -1298,7 +1299,7 @@ const GenAIApp = (function () {
     responseMessage.forEach(item => messages.push(item));
     for (const tool_call of responseMessage) {
       if (tool_call.type == "function_call") {
-        // Call the function
+
         const functionName = tool_call.name;
         const functionArgs = _parseResponse(tool_call.arguments);
 
@@ -1316,26 +1317,37 @@ const GenAIApp = (function () {
           }
         }
 
-        if (endWithResult) {
-          // User defined that if this function has been called, then no more actions should be performed with the chat.
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-          if (typeof functionResponse != "string") {
-            if (typeof functionResponse == "object") {
-              functionResponse = JSON.stringify(functionResponse);
-            }
-            else {
-              functionResponse = String(functionResponse);
-            }
-          }
-          messages.push({
-            "tool_call_id": tool_call.id,
-            "role": "tool",
-            "name": functionName,
-            "content": functionResponse,
-          });
+        // No actual call to the function
+        if (onlyReturnArguments) {
+          messages.push(tool_call);
           messages.push({
             "role": "system",
-            "content": functionResponse
+            "content": "onlyReturnArguments"
+          });
+          return messages;
+        }
+
+        // Call the function
+        let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+        if (typeof functionResponse != "string") {
+          if (typeof functionResponse == "object") {
+            functionResponse = JSON.stringify(functionResponse);
+          }
+          else {
+            functionResponse = String(functionResponse);
+          }
+        }
+        if (verbose) {
+          console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
+        }
+
+        if (endWithResult) {
+          // User defined that if this function has been called, we do not call back the AI endpoint.
+          messages.push(tool_call);
+          messages.push({
+            "type": "function_call_output",
+            "call_id": tool_call.call_id,
+            "output": functionResponse
           });
           messages.push({
             "role": "system",
@@ -1343,39 +1355,18 @@ const GenAIApp = (function () {
           });
           return messages;
         }
-        else if (onlyReturnArguments) {
-          messages.push({
-            "tool_call_id": tool_call.id,
-            "role": "tool",
-            "name": functionName,
-            "content": "",
-          });
-          messages.push({
-            "role": "system",
-            "content": "onlyReturnArguments"
-          });
-          return messages;
-        }
         else {
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-          if (typeof functionResponse != "string") {
-            if (typeof functionResponse == "object") {
-              functionResponse = JSON.stringify(functionResponse);
-            }
-            else {
-              functionResponse = String(functionResponse);
-            }
-          }
-          else {
-            if (verbose) {
-              console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
-            }
-          }
           // Reset the previous messages, 
           // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
           // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
           // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-          messages = [];
+          if (messages.some(msg => msg.type !== "function_call_output")) {
+            // Reset only if it contains other messages than function_call_output 
+            // to allow for parallel function calling
+            // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
+            // Preserve only system messages
+            messages = messages.filter(msg => msg.role === "system");
+          }
           messages.push({
             "type": "function_call_output",
             "call_id": tool_call.call_id,
