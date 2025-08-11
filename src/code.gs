@@ -46,12 +46,12 @@ const GenAIApp = (function () {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       const tools = [];
-      let model = "gpt-4.1"; // default 
+      let model = "gpt-5"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
       let browsing = false;
-      let reasoning_effort = "high";
+      let reasoning_effort = "medium";
       let knowledgeLink = [];
 
       let previous_response_id;
@@ -362,9 +362,9 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
-       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to high
+       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat 
@@ -386,8 +386,8 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.startsWith("o") || model.includes("gemini")) && browsing && max_tokens < 10000) {
-          console.warn("You have activated the browsing tool on a reasonning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.");
+        if ((model.startsWith("o") || model.includes("gemini") || model.includes("gpt-5")) && browsing && max_tokens < 10000) {
+          console.warn("You have activated the browsing tool on a reasoning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.");
         }
 
         if (knowledgeLink.length > 0) {
@@ -454,12 +454,19 @@ const GenAIApp = (function () {
         if (Array.isArray(responseMessage)) {
           const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
           if (fileSearchCall.length > 0) {
-            // @todo improve as currently we would only list attributes related to a single search in vector store
-            // even if AI did multiple searchs
+            // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
+            // https://platform.openai.com/docs/guides/tools-file-search
+            if (verbose) {
+              console.log(`[GenAIApp] - File search performed.`);
+            }
             retrievedAttributes = [];
-            const retrievedChunks = fileSearchCall[0].results;
+            const retrievedChunks = fileSearchCall.flatMap(call =>
+              Array.isArray(call?.results) ? call.results : []
+            );
             for (const chunk of retrievedChunks) {
-              retrievedAttributes.push(chunk.attributes);
+              if (chunk?.attributes != null) {
+                retrievedAttributes.push(chunk.attributes);
+              }
             }
             if (onlyChunks) {
               return retrievedChunks;
@@ -470,7 +477,7 @@ const GenAIApp = (function () {
         if (tools.length > 0) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
-            if (responseMessage?.parts?.[0]?.functionCall) {
+            if (responseMessage?.parts?.some(p => p?.functionCall)) {
               contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
               if (contents[contents.length - 1].role == "model") {
@@ -484,13 +491,17 @@ const GenAIApp = (function () {
                   if (verbose) {
                     console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                   }
-                  return contents[contents.length - 2].parts[0].functionCall.args; // the argument(s) of the last function called
+                  // return the argument(s) of the last function called
+                  return contents[contents.length - 2].parts
+                    .find(p => p && p.functionCall)
+                    ?.functionCall.args;
                 }
               }
             }
             else {
               // if no function has been found, stop here
-              return responseMessage?.parts?.[0]?.text || null;
+              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+              return part?.text || null;
             }
           }
           else {
@@ -509,14 +520,19 @@ const GenAIApp = (function () {
                   if (verbose) {
                     console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                   }
-                  return _parseResponse(messages[messages.length - 3].arguments); // the argument(s) of the last function called
+                  // return the argument(s) of the last function called
+                  return _parseResponse(messages[messages.length - 3].arguments);
                 }
               }
+              // Use the previous_response_id parameter to pass reasoning items from previous responses
+              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              previous_response_id = response_id;
             }
             else {
               // if no function has been found, stop here
               const messageItem = responseMessage?.find?.(item => item.type === "message");
-              return messageItem?.content?.[0]?.text || "";
+              return messageItem?.content?.find(part => part?.text)?.text || null;
             }
           }
           if (advancedParametersObject) {
@@ -528,10 +544,13 @@ const GenAIApp = (function () {
         }
         else {
           if (model.includes("gemini")) {
-            return responseMessage?.parts?.[0]?.text || null;
+            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+            return part?.text || null;
           }
           else {
-            return responseMessage.find(item => item.type === "message")?.content?.[0]?.text || null;
+            return responseMessage
+              .find(item => item.type === "message")?.content
+              ?.find(part => part?.text)?.text || null;
           }
         }
       }
@@ -589,7 +608,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if (model.startsWith('o')) {
+        if (model.startsWith('o') || model.includes("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
@@ -641,7 +660,7 @@ const GenAIApp = (function () {
           'model': model,
           'generationConfig': {
             maxOutputTokens: max_tokens,
-            temperature: temperature
+            temperature: temperature,
           },
           'tool_config': {
             function_calling_config: {
@@ -1119,6 +1138,7 @@ const GenAIApp = (function () {
         payload: JSON.stringify(payload),
         muteHttpExceptions: true
       };
+
       const response = UrlFetchApp.fetch(endpoint, options);
       const responseCode = response.getResponseCode();
 
@@ -1126,8 +1146,9 @@ const GenAIApp = (function () {
         // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
-          responseMessage = parsedResponse.candidates[0].content;
-          finish_reason = parsedResponse.candidates[0].finishReason;
+          const firstCandidate = parsedResponse.candidates?.[0];
+          responseMessage = firstCandidate?.content || null;
+          finish_reason = firstCandidate?.finishReason || null;
         }
         else {
           responseMessage = parsedResponse.output;
@@ -1185,19 +1206,19 @@ const GenAIApp = (function () {
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
-    for (const tool_call in responseMessage.parts) {
-      // Call the function
-      const functionName = responseMessage.parts[tool_call].functionCall.name;
-      const functionArgs = responseMessage.parts[tool_call].functionCall.args;
-      contents.push({
-        role: "model",
-        parts: [{
-          functionCall: {
-            "name": functionName,
-            "args": functionArgs
-          }
-        }]
-      })
+    // Append function call to contents
+    // The thought signature is also sent back
+    // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#thinking
+    // Note: thoughtSignature seems to be only included in Generative Language API, not Vertex AI API
+    contents.push(responseMessage);
+
+    var parts = (responseMessage && responseMessage.parts) || [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i] || {};
+      if (!part.functionCall || !part.functionCall.name) continue;
+
+      const functionName = part.functionCall.name;
+      const functionArgs = part.functionCall.args;
 
       let argsOrder = [];
       let endWithResult = false;
@@ -1213,32 +1234,8 @@ const GenAIApp = (function () {
         }
       }
 
-      if (endWithResult) {
-        // User defined that if this function has been called, then no more actions should be performed with the chat.
-        let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-        if (typeof functionResponse != "string") {
-          if (typeof functionResponse == "object") {
-            functionResponse = JSON.stringify(functionResponse);
-          }
-          else {
-            functionResponse = String(functionResponse);
-          }
-        }
-        contents.push({
-          "role": "user",
-          "parts": {
-            text: functionResponse
-          }
-        });
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "endWithResult"
-          }
-        });
-        return contents;
-      }
-      else if (onlyReturnArguments) {
+      // No actual call to the function
+      if (onlyReturnArguments) {
         contents.push({
           "role": "model",
           "parts": {
@@ -1247,30 +1244,42 @@ const GenAIApp = (function () {
         });
         return contents;
       }
-      else {
 
-        let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-        if (typeof functionResponse != "string") {
-          if (typeof functionResponse == "object") {
-            functionResponse = JSON.stringify(functionResponse);
-          }
-          else {
-            functionResponse = String(functionResponse);
-          }
+      let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+      if (verbose) {
+        console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
+      }
+      if (typeof functionResponse != "string") {
+        if (typeof functionResponse == "object") {
+          functionResponse = JSON.stringify(functionResponse);
         }
         else {
-          if (verbose) {
-            console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
-          }
+          functionResponse = String(functionResponse);
         }
-        contents.push({
-          "role": "user",
-          "parts": {
-            text: functionResponse
-          }
-        });
       }
 
+      // Append result of the function execution to contents
+      // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
+      contents.push({
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: functionName,
+            response: { functionResponse }
+          }
+        }]
+      });
+
+      if (endWithResult) {
+        // User defined that if this function has been called, we do not call back the AI endpoint.
+        contents.push({
+          "role": "model",
+          "parts": {
+            text: "endWithResult"
+          }
+        });
+        return contents;
+      }
     }
     return contents;
   }
@@ -1290,7 +1299,7 @@ const GenAIApp = (function () {
     responseMessage.forEach(item => messages.push(item));
     for (const tool_call of responseMessage) {
       if (tool_call.type == "function_call") {
-        // Call the function
+
         const functionName = tool_call.name;
         const functionArgs = _parseResponse(tool_call.arguments);
 
@@ -1308,26 +1317,37 @@ const GenAIApp = (function () {
           }
         }
 
-        if (endWithResult) {
-          // User defined that if this function has been called, then no more actions should be performed with the chat.
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-          if (typeof functionResponse != "string") {
-            if (typeof functionResponse == "object") {
-              functionResponse = JSON.stringify(functionResponse);
-            }
-            else {
-              functionResponse = String(functionResponse);
-            }
-          }
-          messages.push({
-            "tool_call_id": tool_call.id,
-            "role": "tool",
-            "name": functionName,
-            "content": functionResponse,
-          });
+        // No actual call to the function
+        if (onlyReturnArguments) {
+          messages.push(tool_call);
           messages.push({
             "role": "system",
-            "content": functionResponse
+            "content": "onlyReturnArguments"
+          });
+          return messages;
+        }
+
+        // Call the function
+        let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+        if (typeof functionResponse != "string") {
+          if (typeof functionResponse == "object") {
+            functionResponse = JSON.stringify(functionResponse);
+          }
+          else {
+            functionResponse = String(functionResponse);
+          }
+        }
+        if (verbose) {
+          console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
+        }
+
+        if (endWithResult) {
+          // User defined that if this function has been called, we do not call back the AI endpoint.
+          messages.push(tool_call);
+          messages.push({
+            "type": "function_call_output",
+            "call_id": tool_call.call_id,
+            "output": functionResponse
           });
           messages.push({
             "role": "system",
@@ -1335,33 +1355,17 @@ const GenAIApp = (function () {
           });
           return messages;
         }
-        else if (onlyReturnArguments) {
-          messages.push({
-            "tool_call_id": tool_call.id,
-            "role": "tool",
-            "name": functionName,
-            "content": "",
-          });
-          messages.push({
-            "role": "system",
-            "content": "onlyReturnArguments"
-          });
-          return messages;
-        }
         else {
-          let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
-          if (typeof functionResponse != "string") {
-            if (typeof functionResponse == "object") {
-              functionResponse = JSON.stringify(functionResponse);
-            }
-            else {
-              functionResponse = String(functionResponse);
-            }
-          }
-          else {
-            if (verbose) {
-              console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
-            }
+          // Reset the previous messages, 
+          // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
+          // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+          // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+          if (messages.some(msg => msg.type !== "function_call_output")) {
+            // Reset only if it contains other messages than function_call_output 
+            // to allow for parallel function calling
+            // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
+            // Preserve only system messages
+            messages = messages.filter(msg => msg.role === "system");
           }
           messages.push({
             "type": "function_call_output",
@@ -1421,17 +1425,20 @@ const GenAIApp = (function () {
       return parsedReponse;
     }
     catch (e) {
-      // Split the response into lines
-      const lines = String(response).trim().split('\n');
-
-      if (lines[0] !== '{') {
+      // Normalize to the substring between the first '{' and the last '}' to avoid fixed-index assumptions
+      let text = String(response);
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1 || end < start) {
+        console.warn('Malformed JSON: missing object boundaries');
         return null;
       }
-      else if (lines[lines.length - 1] !== '}') {
-        lines.push('}');
-      }
+      text = text.slice(start, end + 1).trim();
+      const lines = text.split('\n');
       for (let i = 1; i < lines.length - 1; i++) {
         let line = lines[i].trim();
+        if (!line) continue; // skip empty lines
+        if (!/"[^"]+"\s*:/.test(line)) continue; // not a key-value line
         // For other lines, check for missing values or colons
         line = line.trimEnd(); // Strip trailing white spaces
         if (line[line.length - 1] !== ',') {

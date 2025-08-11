@@ -181,9 +181,14 @@ console.log(response);
 ```
 The library supports the following models: 
 1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-4.1" | "o4-mini" | "o3"
+2. OpenAI: "gpt-4.1" | "o4-mini" | "o3" | "gpt-5"
 
-⚠️ **Warning:** the "function_call" advanced parameter is only supported by OpenAI models, gemini-1.5-pro and gemini-1.5-flash
+⚠️ **Warning:** the "function_call" advanced parameter is supported by:
+  - OpenAI models (including GPT-5)  
+  - Gemini 2.5 variants (gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-native-audio)
+
+  The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
+⚠️ **Warning:** The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
 ## FunctionObject Class
 
