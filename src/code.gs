@@ -1052,7 +1052,6 @@ const GenAIApp = (function () {
           }
           else {
             throw Error("[GenAIApp] - Please precise the type of the items contained in the array when calling addParameter. Use format Array.<itemsType> for the type parameter.");
-            return
           }
         }
 
@@ -1215,9 +1214,9 @@ const GenAIApp = (function () {
     // Note: thoughtSignature seems to be only included in Generative Language API, not Vertex AI API
     contents.push(responseMessage);
 
-    var parts = (responseMessage && responseMessage.parts) || [];
-    for (var i = 0; i < parts.length; i++) {
-      var part = parts[i] || {};
+    const parts = (responseMessage && responseMessage.parts) || [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i] || {};
       if (!part.functionCall || !part.functionCall.name) continue;
 
       const functionName = part.functionCall.name;
