@@ -377,17 +377,17 @@ const GenAIApp = (function () {
 
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
-            throw Error("Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
+            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
           }
         }
         else {
           if (!openAIKey) {
-            throw Error("Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
+            throw Error("[GenAIApp] - Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
           }
         }
 
         if ((model.startsWith("o") || model.includes("gemini") || model.includes("gpt-5")) && browsing && max_tokens < 10000) {
-          console.warn("You have activated the browsing tool on a reasoning model with less than 10 000 tokens allocated. This will most likely result in a truncated response or no response at all. We recommend increasing the amount of tokens to around 20 000 with chat.run({max_tokens: 20000}) for optimal results.");
+          console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
         if (knowledgeLink.length > 0) {
@@ -397,7 +397,7 @@ const GenAIApp = (function () {
             knowledge += `${url}: \n\n ${urlContent}\n\n`;
           })
           if (!knowledge) {
-            throw Error(`The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
+            throw Error(`[GenAIApp] - The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
           }
           messages.push({
             role: "system",
@@ -448,7 +448,7 @@ const GenAIApp = (function () {
           numberOfAPICalls++;
         }
         else {
-          throw new Error(`Too many calls to genAI API: ${numberOfAPICalls}`);
+          throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
         }
 
         if (Array.isArray(responseMessage)) {
@@ -456,13 +456,13 @@ const GenAIApp = (function () {
           if (fileSearchCall.length > 0) {
             // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
             // https://platform.openai.com/docs/guides/tools-file-search
-            if (verbose) {
-              console.log(`[GenAIApp] - File search performed.`);
-            }
             retrievedAttributes = [];
             const retrievedChunks = fileSearchCall.flatMap(call =>
               Array.isArray(call?.results) ? call.results : []
             );
+            if (verbose) {
+              console.log(`[GenAIApp] - File search performed: retrieved ${retrievedChunks.length} chunks (max_num_results=${maxNumOfChunks}).`);
+            }
             for (const chunk of retrievedChunks) {
               if (chunk?.attributes != null) {
                 retrievedAttributes.push(chunk.attributes);
@@ -485,7 +485,8 @@ const GenAIApp = (function () {
                   if (verbose) {
                     console.log("[GenAIApp] - Conversation stopped because end function has been called");
                   }
-                  return contents[contents.length - 2].parts.text; // the last chat completion
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
                 }
                 else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
                   if (verbose) {
@@ -514,7 +515,8 @@ const GenAIApp = (function () {
                   if (verbose) {
                     console.log("[GenAIApp] - Conversation stopped because end function has been called");
                   }
-                  return messages[messages.length - 2].content; // the last chat completion
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
                 }
                 else if (messages[messages.length - 1].content == "onlyReturnArguments") {
                   if (verbose) {
@@ -732,7 +734,7 @@ const GenAIApp = (function () {
         let blob;
         // Gemini has a 20MB limit for API requests
         if (fileSize > MAX_FILE_SIZE) {
-          throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+          throw new Error(`[GenAIApp] - File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
         }
 
         switch (mimeType) {
@@ -779,7 +781,7 @@ const GenAIApp = (function () {
             break;
 
           default:
-            throw new Error('Invalid file type provided to addFile() method.');
+            throw new Error('[GenAIApp] - Invalid file type provided to addFile() method.');
         }
 
         return {
@@ -839,14 +841,12 @@ const GenAIApp = (function () {
        * @returns {VectorStoreObject}
        */
       this.createVectorStore = function () {
-        if (!name) throw new Error("Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
+        if (!name) throw new Error("[GenAIApp] - Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
         try {
           id = _createOpenAiVectorStore(name);
         }
         catch (e) {
-          Logger.log({
-            message: `Error creating the vector store : ${e}`
-          });
+          console.error(`Error creating the vector store : ${e}`);
         }
         return this;
       };
@@ -863,7 +863,7 @@ const GenAIApp = (function () {
           id = vectorStoreId;
         }
         catch (e) {
-          Logger.log(`Could not initialize vector store object from id : ${e}`);
+          console.error(`[GenAIApp] - Could not initialize vector store object from id : ${e}`);
         }
         return this;
       }
@@ -883,7 +883,7 @@ const GenAIApp = (function () {
        * @returns {object} - The raw JSON chunks returned by the vector store.
        */
       this.uploadAndAttachFile = function (blob, attributes = {}) {
-        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
+        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
         try {
           const uploadedFileId = _uploadFileToOpenAIStorage(blob);
           const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes, max_chunk_size, chunk_overlap);
@@ -902,7 +902,7 @@ const GenAIApp = (function () {
        * @returns {Array} - An array containing the files attached to the vector store.
        */
       this.listFiles = function () {
-        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
+        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
         try {
           const listedFiles = _listFilesInVectorStore(id);
           return listedFiles;
@@ -920,8 +920,8 @@ const GenAIApp = (function () {
        * @param {string} fileId - The ID of the file to delete.
        */
       this.deleteFile = function (fileId) {
-        if (!fileId) throw new Error("Please pass an Open AI storage file ID to the deleteFile(fileId) function. You can retrieve the file ID through the Open AI Files API or directly through the platform.");
-        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before deleting files.");
+        if (!fileId) throw new Error("[GenAIApp] - Please pass an Open AI storage file ID to the deleteFile(fileId) function. You can retrieve the file ID through the Open AI Files API or directly through the platform.");
+        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before deleting files.");
         try {
           const deleteId = _deleteFileInVectorStore(id, fileId);
           return deleteId;
@@ -941,7 +941,7 @@ const GenAIApp = (function () {
        * @returns {string} - The delete ID.
        */
       this.deleteVectorStore = function () {
-        if (!id) throw new Error("Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before being deleted.");
+        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before being deleted.");
         try {
           const deleteId = _deleteVectorStore(id);
           id = null;
@@ -1051,7 +1051,7 @@ const GenAIApp = (function () {
             }
           }
           else {
-            throw Error("Please precise the type of the items contained in the array when calling addParameter. Use format Array.<itemsType> for the type parameter.");
+            throw Error("[GenAIApp] - Please precise the type of the items contained in the array when calling addParameter. Use format Array.<itemsType> for the type parameter.");
             return
           }
         }
@@ -1156,12 +1156,12 @@ const GenAIApp = (function () {
           finish_reason = parsedResponse.status;
         }
         if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
-          console.warn(`${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
+          console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
       }
       else if (responseCode === 429) {
-        console.warn(`Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
         // Rate limit reached, wait before retrying.
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
@@ -1173,16 +1173,19 @@ const GenAIApp = (function () {
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
+        if (verbose) {
+          console.warn(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}, retrying (${retries}/${maxRetries})`);
+        }
       }
       else {
         // The request failed for another reason, log the error and exit the loop.
-        console.error(`Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
         break;
       }
     }
 
     if (!success) {
-      throw new Error(`Failed to call ${payload.model} after ${retries} retries.`);
+      throw new Error(`[GenAIApp] - Failed to call ${payload.model} after ${retries} retries.`);
     }
 
     if (verbose) {
@@ -1360,13 +1363,14 @@ const GenAIApp = (function () {
           // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
           // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
           // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-          if (messages.some(msg => msg.type !== "function_call_output")) {
+          if (!messages.every(msg => msg.type === "function_call_output" || msg.role === "system")) {
             // Reset only if it contains other messages than function_call_output 
             // to allow for parallel function calling
             // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
             // Preserve only system messages
             messages = messages.filter(msg => msg.role === "system");
           }
+          // Provide function call results to the model
           messages.push({
             "type": "function_call_output",
             "call_id": tool_call.call_id,
@@ -1406,7 +1410,7 @@ const GenAIApp = (function () {
       }
     }
     else {
-      throw Error("Function not found or not a function: " + functionName);
+      throw Error("[GenAIApp] - Function not found or not a function: " + functionName);
     }
   }
 
@@ -1430,7 +1434,7 @@ const GenAIApp = (function () {
       const start = text.indexOf('{');
       const end = text.lastIndexOf('}');
       if (start === -1 || end === -1 || end < start) {
-        console.warn('Malformed JSON: missing object boundaries');
+        console.warn('[GenAIApp] - Malformed JSON: missing object boundaries');
         return null;
       }
       text = text.slice(start, end + 1).trim();
@@ -1464,7 +1468,7 @@ const GenAIApp = (function () {
       }
       catch (e) {
         // If parsing still fails, log the error and return null.
-        console.warn('Error parsing corrected response: ' + e.message);
+        console.warn('[GenAIApp] - Error parsing corrected response: ' + e.message);
         return null;
       }
     }
@@ -1523,7 +1527,7 @@ const GenAIApp = (function () {
     response = UrlFetchApp.fetch(openAIFileEndpoint, uploadOptions);
     const uploadedFileResponse = JSON.parse(response.getContentText());
     if (uploadedFileResponse.error) {
-      throw new Error('Error: ' + uploadedFileResponse.error.message);
+      throw new Error('[GenAIApp] - Error: ' + uploadedFileResponse.error.message);
     }
     return uploadedFileResponse.id;
   }
@@ -1547,7 +1551,7 @@ const GenAIApp = (function () {
       response = UrlFetchApp.fetch(url);
     }
     catch (e) {
-      console.warn(`Error fetching the URL: ${e.message}`);
+      console.warn(`[GenAIApp] - Error fetching the URL: ${e.message}`);
       return JSON.stringify({
         error: "Failed to fetch the URL : You are not authorized to access this website. Try another one."
       });
@@ -1683,26 +1687,20 @@ const GenAIApp = (function () {
       muteHttpExceptions: true
     };
 
-    try {
-      const response = UrlFetchApp.fetch(url, options);
-      const result = JSON.parse(response.getContentText());
+    const response = UrlFetchApp.fetch(url, options);
+    const result = JSON.parse(response.getContentText());
 
-      if (result && result.id) {
-        Logger.log({
-          message: `Vector store successfully created.`,
-          id: result.id
-        });
+    if (result && result.id) {
+      Logger.log({
+        message: `[GenAIApp] - Vector store successfully created.`,
+        id: result.id
+      });
 
-        const id = result.id;
-        return id;
-      }
-      else {
-        Logger.log(`Failed to create vector store. Response: ${response.getContentText()}`);
-        throw new Error("Fail to create vector store");
-      }
+      const id = result.id;
+      return id;
     }
-    catch (e) {
-      Logger.log(`Error creating vector store: ${e.message} - Full response: ${e.response.getContentText()}`);
+    else {
+      console.log(`[GenAIApp] - Failed to create vector store. Response: ${response.getContentText()}`);
       throw new Error("Fail to create vector store");
     }
   }
@@ -1722,21 +1720,11 @@ const GenAIApp = (function () {
         'OpenAI-Beta': 'assistants=v2'
       }
     };
-    try {
-      const response = UrlFetchApp.fetch(url, options);
-      const result = JSON.parse(response.getContentText());
-      Logger.log(`Succesfully retrieved Vector Store information from Open AI : ${result}`);
-      if (result.status == "completed") {
-        return result.name;
-      }
-    }
-    catch (e) {
-      Logger.log({
-        message: `Failed to retrieve Vector Store information. ${e}`,
-        vectorStoreId: vectorStoreId,
-        errorMessage: e
-      });
-      throw new Error(`Failed to retrieve Vector Store information : ${e}`);
+    const response = UrlFetchApp.fetch(url, options);
+    const result = JSON.parse(response.getContentText());
+    console.log(`[GenAIApp] - Succesfully retrieved Vector Store information from Open AI : ${result}`);
+    if (result.status == "completed") {
+      return result.name;
     }
   }
 
@@ -1769,20 +1757,20 @@ const GenAIApp = (function () {
       if (response.getResponseCode() == 200) {
         const json = JSON.parse(response.getContentText());
         Logger.log({
-          message: `File successfully uploaded to OpenAI`,
+          message: `[GenAIApp] - File successfully uploaded to OpenAI`,
           id: json.id
         });
         const fileId = json.id;
         return fileId;
       }
       else {
-        console.error(`Unexpected error: ${response.getContentText()} (Status Code: ${response.getResponseCode()})`);
-        throw new Error(`Failed to upload file. Status Code: ${response.getResponseCode()}`);
+        console.error(`[GenAIApp] - Unexpected error: ${response.getContentText()} (Status Code: ${response.getResponseCode()})`);
+        throw new Error(`[GenAIApp] - Failed to upload file. Status Code: ${response.getResponseCode()}`);
       }
     }
     catch (error) {
       // Handle network errors or unexpected exceptions
-      console.error(`An error occurred while uploading the file to OpenAI: ${error.message}`);
+      console.error(`[GenAIApp] - An error occurred while uploading the file to OpenAI: ${error.message}`);
       // Optionally, rethrow the error to be handled by the caller
       throw error;
     }
@@ -1866,7 +1854,7 @@ const GenAIApp = (function () {
             files.push(file);
           });
 
-          Logger.log(`Fetched ${storageData.data.length} files`);
+          console.log(`[GenAIApp] - Fetched ${storageData.data.length} files`);
 
           if (storageData.data.length < 100) {
             hasMoreFiles = false;
@@ -1876,12 +1864,12 @@ const GenAIApp = (function () {
           }
         }
         else {
-          Logger.log('No file IDs found in the vector store storage');
+          console.log('[GenAIApp] - No file IDs found in the vector store storage');
           hasMoreFiles = false;
         }
       }
       catch (e) {
-        Logger.log(`Error fetching files IDs: ${e.message}`);
+        console.log(`[GenAIApp] - Error fetching files IDs: ${e.message}`);
         hasMoreFiles = false;
       }
     }
@@ -1914,7 +1902,7 @@ const GenAIApp = (function () {
       UrlFetchApp.fetch(url, options);
     }
     catch (error) {
-      console.error(`Failed to delete file with ID: ${fileId}`, error);
+      console.error(`[GenAIApp] - Failed to delete file with ID: ${fileId}`, error);
     }
   }
 
@@ -1939,25 +1927,19 @@ const GenAIApp = (function () {
       muteHttpExceptions: true
     };
 
-    try {
-      const response = UrlFetchApp.fetch(url, options);
-      const result = JSON.parse(response.getContentText());
+    const response = UrlFetchApp.fetch(url, options);
+    const result = JSON.parse(response.getContentText());
 
-      if (result && result.id) {
-        Logger.log({
-          message: `Vector store successfully deleted.`,
-          id: result.id
-        });
-        return result.id;
-      }
-      else {
-        console.error(`Failed to delete Vector store. Response: ${response.getContentText()}`);
-        throw new Error("Fail to delete Vector store");
-      }
+    if (result && result.id) {
+      Logger.log({
+        message: `[GenAIApp] - Vector store successfully deleted.`,
+        id: result.id
+      });
+      return result.id;
     }
-    catch (e) {
-      console.error(`Error deleting Vector store: ${e.message}`);
-      throw new Error("Fail to deleting Vector store");
+    else {
+      console.error(`[GenAIApp] - Failed to delete Vector store. Response: ${response.getContentText()}`);
+      throw new Error("[GenAIApp] - Fail to delete Vector store");
     }
   }
 
