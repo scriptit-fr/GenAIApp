@@ -1138,7 +1138,14 @@ const GenAIApp = (function () {
         muteHttpExceptions: true
       };
 
-      const response = UrlFetchApp.fetch(endpoint, options);
+      let response;
+      // if the ErrorHandler library is loaded, use it (https://github.com/RomainVialard/ErrorHandler)
+      if (typeof ErrorHandler !== 'undefined') {
+        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+      }
+      else {
+        response = UrlFetchApp.fetch(endpoint, options);
+      }
       const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
