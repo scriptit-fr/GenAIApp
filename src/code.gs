@@ -1139,23 +1139,23 @@ const GenAIApp = (function () {
       };
 
       let response;
-      try {
-        // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
-        if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
-          response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
-        }
-        else {
+      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
+      if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+      }
+      else {
+        try {
           response = UrlFetchApp.fetch(endpoint, options);
         }
-      }
-      catch (err) {
-        if (verbose) {
-          console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
+        catch (err) {
+          if (verbose) {
+            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
+          }
+          const delay = Math.pow(2, retries) * 1000;
+          Utilities.sleep(delay);
+          retries++;
+          continue;
         }
-        const delay = Math.pow(2, retries) * 1000;
-        Utilities.sleep(delay);
-        retries++;
-        continue;
       }
       const responseCode = response.getResponseCode();
 
