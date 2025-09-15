@@ -46,6 +46,7 @@ const GenAIApp = (function () {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       const tools = [];
+      const googleConnectors = [];
       let model = "gpt-5"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
@@ -184,7 +185,7 @@ const GenAIApp = (function () {
         }
         else {
           contentObj.type = "input_file";
-          contentObj.file_data = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
+          contentObj.file_data = `data:application/pdf;base64,${blobToBase64}`;
           contentObj.filename = fileInfo.fileName;
         }
         messages.push({
@@ -342,6 +343,39 @@ const GenAIApp = (function () {
         return this;
       };
 
+      /**
+       * Add a Google connector to the chat request.
+       * @param {string} connectorType - The connector type: 'gmail', 'calendar' or 'drive'.
+       * @param {string} [accessToken] - OPTIONAL - A OAuth2 Google access token.
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.addGoogleConnector = function (connectorType, accessToken = ScriptApp.getOAuthToken()) {
+        const normalizedType = connectorType.toLowerCase();
+        const validTypes = ["gmail", "calendar", "drive"];
+        if (!validTypes.includes(normalizedType)) {
+          throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}`);
+        }
+
+        const connectorIds = {
+          gmail: "connector_gmail",
+          calendar: "connector_googlecalendar",
+          drive: "connector_googledrive"
+        };
+
+        const serverLabels = {
+          gmail: "gmail",
+          calendar: "google_calendar",
+          drive: "google_drive"
+        };
+
+        googleConnectors.push({
+          server_label: serverLabels[normalizedType],
+          connector_id: connectorIds[normalizedType],
+          authorization: accessToken,
+          require_approval: "never"
+        });
+        return this;
+      };
 
       this._toJson = function () {
         return {
@@ -569,13 +603,15 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
       this._buildOpenAIPayload = function () {
-        if (globalMetadata) {
-          Object.assign(messageMetadata, globalMetadata);
-        }
+        let payload = {
+          model: model,
+          max_output_tokens: max_tokens,
+        };
+
+        if (numberOfAPICalls !== 0) payload.previous_response_id = previous_response_id;
 
         let systemInstructions = "";
         const userMessages = [];
-
         for (const message of messages) {
           if (message.role === "system") {
             systemInstructions += message.content + "\n";
@@ -585,15 +621,14 @@ const GenAIApp = (function () {
           }
         }
 
-        const payload = {
-          model: model,
-          instructions: systemInstructions,
-          input: userMessages,
-          max_output_tokens: max_tokens,
-          previous_response_id: previous_response_id,
-          tools: [],
-          metadata: messageMetadata
-        };
+        if (systemInstructions !== "") {
+          payload.instructions = systemInstructions;
+        }
+
+        if (globalMetadata && Object.keys(globalMetadata).length > 0) {
+          Object.assign(messageMetadata, globalMetadata);
+          payload.metadata = messageMetadata;
+        }
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
@@ -610,16 +645,42 @@ const GenAIApp = (function () {
           }
         }
 
-        if (model.startsWith('o') || model.includes("gpt-5")) {
-          payload.reasoning = {
-            "effort": reasoning_effort
+        if (googleConnectors.length > 0) {
+          googleConnectors.forEach(connector => {
+            if (payload.tools) {
+              payload.tools.push(Object.assign({ type: "mcp" }, connector));
+            }
+            else {
+              payload.tools = [Object.assign({ type: "mcp" }, connector)];
+            }
+          });
+
+          let inputString = '';
+          userMessages.forEach(m => {
+            inputString += m.content + '\n';
+          });
+          payload.input = inputString;
+        } else {
+          payload.input = userMessages;
+          if (model.startsWith('o') || model.includes("gpt-5")) {
+            payload.reasoning = {
+              "effort": reasoning_effort
+            }
           }
         }
 
+
+
         if (browsing) {
-          payload.tools.push({
-            type: "web_search_preview"
-          });
+          if (payload.tools) {
+            payload.tools.push({
+              type: "web_search"
+            });
+          } else {
+            payload.tools = [{
+              type: "web_search"
+            }];
+          }
 
           if (restrictSearch) {
             messages.push({
