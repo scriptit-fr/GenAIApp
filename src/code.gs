@@ -613,7 +613,7 @@ const GenAIApp = (function () {
           max_output_tokens: max_tokens,
         };
 
-        if (numberOfAPICalls !== 0) payload.previous_response_id = previous_response_id;
+        if (previous_response_id) payload.previous_response_id = previous_response_id;
 
         let systemInstructions = "";
         const userMessages = [];
@@ -652,12 +652,8 @@ const GenAIApp = (function () {
 
         if (googleConnectors.length > 0) {
           googleConnectors.forEach(connector => {
-            if (payload.tools) {
-              payload.tools.push(Object.assign({ type: "mcp" }, connector));
-            }
-            else {
-              payload.tools = [Object.assign({ type: "mcp" }, connector)];
-            }
+            payload.tools = payload.tools || [];
+            payload.tools.push(Object.assign({ type: "mcp" }, connector));
           });
 
           let inputString = '';
@@ -677,15 +673,10 @@ const GenAIApp = (function () {
 
 
         if (browsing) {
-          if (payload.tools) {
-            payload.tools.push({
-              type: "web_search"
-            });
-          } else {
-            payload.tools = [{
-              type: "web_search"
-            }];
-          }
+          payload.tools = payload.tools || [];
+          payload.tools.push({
+            type: "web_search"
+          });
 
           if (restrictSearch) {
             messages.push({
