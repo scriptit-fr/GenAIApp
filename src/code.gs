@@ -356,6 +356,11 @@ const GenAIApp = (function () {
           throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}`);
         }
 
+        // Basic validation for access token
+        if (typeof accessToken !== 'string' || accessToken.trim().length === 0 || !accessToken.startsWith('ya29.')) {
+          throw Error(`[GenAIApp] - Invalid access token provided`);
+        }
+
         const connectorIds = {
           gmail: "connector_gmail",
           calendar: "connector_googlecalendar",
