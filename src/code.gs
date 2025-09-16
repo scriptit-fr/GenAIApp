@@ -46,7 +46,7 @@ const GenAIApp = (function () {
       let messages = []; // messages for OpenAI API
       let contents = []; // contents for Gemini API
       const tools = [];
-      const googleConnectors = [];
+      const mcpConnectors = [];
       let model = "gpt-5"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
@@ -344,41 +344,68 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Add a Google connector to the chat request.
-       * @param {string} connectorType - The connector type: 'gmail', 'calendar' or 'drive'.
-       * @param {string} [accessToken] - OPTIONAL - A OAuth2 Google access token.
-       * @returns {Chat} - The current Chat instance.
+       * Add a Google or custom MCP connector to the chat request.
+       *
+       * @param {string} connector - The connector type: 'gmail', 'calendar', 'drive'
+       *   or a custom MCP server URL (e.g. "https://api.githubcopilot.com/mcp/").
+       *
+       * @param {Object} [options] - OPTIONAL - Extra configuration for the connector.
+       * @param {string} [options.accessToken=ScriptApp.getOAuthToken()]
+       *   A Google OAuth2 access token or a Bearer token for custom MCP.
+       * @param {string} [options.serverLabel]
+       *   Custom label for the connector (useful if you add several per user/email).
+       * @param {string} [options.serverDescription]
+       *   Optional description of the MCP server, used to provide more context.
+       * @param {"never"|"domain"|"always"} [options.requireApproval="never"]
+       *   Approval requirement for the connector.
+       *
+       * @returns {Chat} The current Chat instance (for chaining).
+       *
        */
-      this.addGoogleConnector = function (connectorType, accessToken = ScriptApp.getOAuthToken()) {
-        const normalizedType = connectorType.toLowerCase();
-        const validTypes = ["gmail", "calendar", "drive"];
-        if (!validTypes.includes(normalizedType)) {
-          throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}`);
+      this.addMCP = function addMCP(connector, options) {
+        if (typeof connector !== "string" || connector.trim() === "") {
+          throw Error("[GenAIApp] - connector must be a non-empty string");
         }
 
-        // Basic validation for access token
-        if (typeof accessToken !== 'string' || accessToken.trim().length === 0 || !accessToken.startsWith('ya29.')) {
-          throw Error(`[GenAIApp] - Invalid access token provided`);
+        const normalizedConnector = connector.toLowerCase().trim();
+
+        const accessToken = options?.accessToken || ScriptApp.getOAuthToken();
+        if (typeof accessToken !== "string" || accessToken.trim().length < 10) {
+          throw Error("[GenAIApp] - Invalid access token provided");
         }
 
-        const connectorIds = {
-          gmail: "connector_gmail",
-          calendar: "connector_googlecalendar",
-          drive: "connector_googledrive"
-        };
+        const requireApproval = options?.requireApproval || "never";
 
-        const serverLabels = {
-          gmail: "gmail",
-          calendar: "google_calendar",
-          drive: "google_drive"
-        };
+        const isUrl = normalizedConnector.startsWith("https://");
+        if (isUrl) {
+          const serverLabel = options?.serverLabel || "custom_mcp";
+          const serverDescription = options?.serverDescription || null;
 
-        googleConnectors.push({
-          server_label: serverLabels[normalizedType],
-          connector_id: connectorIds[normalizedType],
-          authorization: accessToken,
-          require_approval: "never"
-        });
+          mcpConnectors.push({
+            server_label: serverLabel,
+            server_description: serverDescription,
+            server_url: normalizedConnector,
+            require_approval: requireApproval
+          })
+
+        } else {
+          const connectorIds = {
+            gmail: "connector_gmail",
+            calendar: "connector_googlecalendar",
+            drive: "connector_googledrive",
+          };
+          const serverLabels = {
+            gmail: "gmail",
+            calendar: "google_calendar",
+            drive: "google_drive"
+          };
+          mcpConnectors.push({
+            server_label: serverLabels[normalizedConnector],
+            connector_id: connectorIds[normalizedConnector],
+            authorization: accessToken,
+            require_approval: requireApproval
+          });
+        }
         return this;
       };
 
@@ -650,8 +677,8 @@ const GenAIApp = (function () {
           }
         }
 
-        if (googleConnectors.length > 0) {
-          googleConnectors.forEach(connector => {
+        if (mcpConnectors.length > 0) {
+          mcpConnectors.forEach(connector => {
             payload.tools = payload.tools || [];
             payload.tools.push(Object.assign({ type: "mcp" }, connector));
           });
