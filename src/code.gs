@@ -346,66 +346,16 @@ const GenAIApp = (function () {
       /**
        * Add a Google or custom MCP connector to the chat request.
        *
-       * @param {string} connector - The connector type: 'gmail', 'calendar', 'drive'
-       *   or a custom MCP server URL (e.g. "https://api.githubcopilot.com/mcp/").
-       *
-       * @param {Object} [options] - OPTIONAL - Extra configuration for the connector.
-       * @param {string} [options.accessToken=ScriptApp.getOAuthToken()]
-       *   A Google OAuth2 access token or a Bearer token for custom MCP.
-       * @param {string} [options.serverLabel]
-       *   Custom label for the connector (useful if you add several per user/email).
-       * @param {string} [options.serverDescription]
-       *   Optional description of the MCP server, used to provide more context.
-       * @param {"never"|"domain"|"always"} [options.requireApproval="never"]
-       *   Approval requirement for the connector.
+       * @param {ConnectorObject} connectorObject - The connector to be added.
        *
        * @returns {Chat} The current Chat instance (for chaining).
-       *
        */
-      this.addMCP = function addMCP(connector, options) {
-        if (typeof connector !== "string" || connector.trim() === "") {
-          throw Error("[GenAIApp] - connector must be a non-empty string");
+      this.addMCP = function addMCP(connectorObject) {
+        if (!connectorObject || typeof connectorObject._toJson !== "function") {
+          throw Error("[GenAIApp] - Please provide a ConnectorObject created with GenAIApp.newConnector().");
         }
 
-        const normalizedConnector = connector.toLowerCase().trim();
-
-        const accessToken = options?.accessToken || ScriptApp.getOAuthToken();
-        if (typeof accessToken !== "string" || accessToken.trim().length < 10) {
-          throw Error("[GenAIApp] - Invalid access token provided");
-        }
-
-        const requireApproval = options?.requireApproval || "never";
-
-        const isUrl = normalizedConnector.startsWith("https://");
-        if (isUrl) {
-          const serverLabel = options?.serverLabel || "custom_mcp";
-          const serverDescription = options?.serverDescription || null;
-
-          mcpConnectors.push({
-            server_label: serverLabel,
-            server_description: serverDescription,
-            server_url: normalizedConnector,
-            require_approval: requireApproval
-          })
-
-        } else {
-          const connectorIds = {
-            gmail: "connector_gmail",
-            calendar: "connector_googlecalendar",
-            drive: "connector_googledrive",
-          };
-          const serverLabels = {
-            gmail: "gmail",
-            calendar: "google_calendar",
-            drive: "google_drive"
-          };
-          mcpConnectors.push({
-            server_label: serverLabels[normalizedConnector],
-            connector_id: connectorIds[normalizedConnector],
-            authorization: accessToken,
-            require_approval: requireApproval
-          });
-        }
+        mcpConnectors.push(connectorObject);
         return this;
       };
 
@@ -678,9 +628,9 @@ const GenAIApp = (function () {
         }
 
         if (mcpConnectors.length > 0) {
+          payload.tools = payload.tools || [];
           mcpConnectors.forEach(connector => {
-            payload.tools = payload.tools || [];
-            payload.tools.push(Object.assign({ type: "mcp" }, connector));
+            payload.tools.push(connector._toJson());
           });
 
           let inputString = '';
@@ -1049,6 +999,196 @@ const GenAIApp = (function () {
           description: description,
           id: id
         };
+      };
+    }
+  }
+
+  /**
+   * @class
+   * Class representing an MCP Connector.
+   */
+  class ConnectorObject {
+    constructor() {
+      let serverLabel = "";
+      let serverDescription = null;
+      let serverUrl = null;
+      let connectorId = null;
+      let authorization = null;
+      let requireApproval = "never";
+
+      /**
+       * Sets the label used to identify the connector.
+       * @param {string} label - The label to assign to the connector.
+       * @returns {ConnectorObject}
+       */
+      this.setServerLabel = function (label) {
+        if (typeof label !== "string" || label.trim() === "") {
+          throw Error("[GenAIApp] - Please provide a non-empty server label.");
+        }
+        serverLabel = label.trim();
+        return this;
+      };
+
+      /**
+       * Sets the optional description for the connector.
+       * @param {string|null} description - The description to assign.
+       * @returns {ConnectorObject}
+       */
+      this.setServerDescription = function (description) {
+        if (description === null || description === undefined) {
+          serverDescription = null;
+        }
+        else {
+          if (typeof description !== "string") {
+            throw Error("[GenAIApp] - The server description must be a string.");
+          }
+          serverDescription = description;
+        }
+        return this;
+      };
+
+      /**
+       * Configures the connector to use a custom MCP server URL.
+       * @param {string} url - The HTTPS URL of the MCP server.
+       * @returns {ConnectorObject}
+       */
+      this.useServerUrl = function (url) {
+        if (typeof url !== "string" || url.trim() === "") {
+          throw Error("[GenAIApp] - Please provide a non-empty server URL.");
+        }
+        const trimmedUrl = url.trim();
+        if (!trimmedUrl.toLowerCase().startsWith("https://")) {
+          throw Error("[GenAIApp] - The server URL must start with https://");
+        }
+        serverUrl = trimmedUrl;
+        connectorId = null;
+        return this;
+      };
+
+      /**
+       * Configures the connector to use one of the predefined Google connectors (Gmail, Calendar, Drive).
+       * @param {"gmail"|"calendar"|"drive"} connectorType - The Google connector identifier.
+       * @param {string} [accessToken=ScriptApp.getOAuthToken()] - Optional access token to use for the connector.
+       * @returns {ConnectorObject}
+       */
+      this.useGoogleConnector = function (connectorType, accessToken) {
+        if (typeof connectorType !== "string" || connectorType.trim() === "") {
+          throw Error("[GenAIApp] - Please specify the Google MCP connector you want to use.");
+        }
+
+        const normalizedConnector = connectorType.toLowerCase().trim();
+        const connectorIds = {
+          gmail: "connector_gmail",
+          calendar: "connector_googlecalendar",
+          drive: "connector_googledrive",
+        };
+        const serverLabels = {
+          gmail: "gmail",
+          calendar: "google_calendar",
+          drive: "google_drive"
+        };
+
+        if (!connectorIds[normalizedConnector]) {
+          throw Error("[GenAIApp] - Unsupported Google MCP connector provided.");
+        }
+
+        const tokenToUse = accessToken || ScriptApp.getOAuthToken();
+        if (typeof tokenToUse !== "string" || tokenToUse.trim().length < 10) {
+          throw Error("[GenAIApp] - Invalid access token provided for the Google MCP connector.");
+        }
+
+        connectorId = connectorIds[normalizedConnector];
+        serverLabel = serverLabels[normalizedConnector];
+        authorization = tokenToUse.trim();
+        serverUrl = null;
+        return this;
+      };
+
+      /**
+       * Sets the connector identifier (used for non custom connectors).
+       * @param {string} id - The connector identifier.
+       * @returns {ConnectorObject}
+       */
+      this.setConnectorId = function (id) {
+        if (typeof id !== "string" || id.trim() === "") {
+          throw Error("[GenAIApp] - Please provide a non-empty connector id.");
+        }
+        connectorId = id.trim();
+        serverUrl = null;
+        return this;
+      };
+
+      /**
+       * Sets the authorization token for the connector.
+       * @param {string|null} token - The access token used to authorize the connector.
+       * @returns {ConnectorObject}
+       */
+      this.setAuthorization = function (token) {
+        if (token === null || token === undefined) {
+          authorization = null;
+          return this;
+        }
+
+        if (typeof token !== "string" || token.trim().length < 10) {
+          throw Error("[GenAIApp] - Invalid authorization token provided.");
+        }
+
+        authorization = token.trim();
+        return this;
+      };
+
+      /**
+       * Sets the approval requirement for the connector.
+       * @param {"never"|"domain"|"always"} approval - The approval requirement.
+       * @returns {ConnectorObject}
+       */
+      this.setRequireApproval = function (approval) {
+        const allowedValues = ["never", "domain", "always"];
+        if (approval === undefined || approval === null) {
+          requireApproval = "never";
+          return this;
+        }
+
+        if (allowedValues.indexOf(approval) === -1) {
+          throw Error("[GenAIApp] - Invalid requireApproval value. Use 'never', 'domain', or 'always'.");
+        }
+
+        requireApproval = approval;
+        return this;
+      };
+
+      /**
+       * Returns the JSON representation for the connector.
+       * @returns {Object}
+       */
+      this._toJson = function () {
+        if (!serverUrl && !connectorId) {
+          throw Error("[GenAIApp] - Please configure the connector using useServerUrl() or setConnectorId().");
+        }
+
+        const connector = {
+          type: "mcp",
+          require_approval: requireApproval
+        };
+
+        if (serverDescription) {
+          connector.server_description = serverDescription;
+        }
+
+        if (serverUrl) {
+          connector.server_url = serverUrl;
+          connector.server_label = serverLabel || "custom_mcp";
+        }
+        else {
+          connector.connector_id = connectorId;
+          connector.server_label = serverLabel || connectorId;
+        }
+
+        if (authorization) {
+          connector.authorization = authorization;
+        }
+
+        return connector;
       };
     }
   }
@@ -2059,6 +2199,14 @@ const GenAIApp = (function () {
      */
     newFunction: function () {
       return new FunctionObject();
+    },
+
+    /**
+     * Create a new connector.
+     * @returns {ConnectorObject} - A new Connector instance.
+     */
+    newConnector: function () {
+      return new ConnectorObject();
     },
 
     /**
