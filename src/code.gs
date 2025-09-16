@@ -1017,7 +1017,7 @@ const GenAIApp = (function () {
        * @param {string} label - The label to assign to the connector.
        * @returns {ConnectorObject}
        */
-      this.setServerLabel = function (label) {
+      this.setLabel = function (label) {
         if (typeof label !== "string" || label.trim() === "") {
           throw Error("[GenAIApp] - Please provide a non-empty server label.");
         }
@@ -1030,7 +1030,7 @@ const GenAIApp = (function () {
        * @param {string|null} description - The description to assign.
        * @returns {ConnectorObject}
        */
-      this.setServerDescription = function (description) {
+      this.setDescription = function (description) {
         if (typeof description !== "string") {
           throw Error("[GenAIApp] - The server description must be a string.");
         }
