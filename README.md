@@ -184,6 +184,15 @@ const gmailConnector = GenAIApp.newConnector()
   .setRequireApproval('domain');
 
 chat.addMCP(gmailConnector);
+
+const customConnector = GenAIApp.newConnector()
+  .setLabel('Salesforce CRM')
+  .setDescription('Query opportunity data from Salesforce via MCP proxy')
+  .setServerUrl('https://mcp.example.com/salesforce')
+  .setAuthorization('Bearer ' + SALESFORCE_MCP_TOKEN)
+  .setRequireApproval('always');
+
+chat.addMCP(customConnector);
 ```
 
 - **Google Workspace connectors:** Call `.setConnectorId("gmail" | "calendar" | "drive")` to use Google-managed connectors
@@ -367,6 +376,31 @@ Logger.log(summary);
 
 In this example the Gmail connector gives the model controlled access to your inbox. The `requireApproval('domain')` setting
 ensures end users in your domain must approve access before the connector is used.
+
+### Example 7 : Connect to a Custom MCP Server with setServerUrl()
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const chat = GenAIApp.newChat();
+chat.addMessage('Check the latest closed-won opportunities and report total revenue.');
+
+const salesforceConnector = GenAIApp.newConnector()
+  .setLabel('Salesforce CRM')
+  .setDescription('Internal MCP service that proxies Salesforce data')
+  .setServerUrl('https://mcp.example.com/salesforce')
+  .setAuthorization('Bearer ' + SALESFORCE_MCP_TOKEN)
+  .setRequireApproval('always');
+
+chat.addMCP(salesforceConnector);
+
+const report = chat.run({ model: 'gpt-4.1' });
+Logger.log(report);
+```
+
+The `setServerUrl()` method points the connector to your MCP gateway, while `setAuthorization()` injects a bearer token or API
+key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
+authorize every connector invocation.
 
 ## Contributing
 
