@@ -584,9 +584,17 @@ const GenAIApp = (function () {
         let payload = {
           model: model,
           max_output_tokens: max_tokens,
+          tools: []
         };
+        if (model.startsWith('o') || model.includes("gpt-5")) {
+          payload.reasoning = {
+            "effort": reasoning_effort
+          }
+        }
 
-        if (previous_response_id) payload.previous_response_id = previous_response_id;
+        if (previous_response_id) {
+          payload.previous_response_id = previous_response_id;
+        }
 
         let systemInstructions = "";
         const userMessages = [];
@@ -598,10 +606,10 @@ const GenAIApp = (function () {
             userMessages.push(message);
           }
         }
-
         if (systemInstructions !== "") {
           payload.instructions = systemInstructions;
         }
+        payload.input = userMessages;
 
         if (globalMetadata && Object.keys(globalMetadata).length > 0) {
           Object.assign(messageMetadata, globalMetadata);
@@ -624,33 +632,15 @@ const GenAIApp = (function () {
         }
 
         if (mcpConnectors.length > 0) {
-          payload.tools = payload.tools || [];
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
-
-          let inputString = '';
-          userMessages.forEach(m => {
-            inputString += m.content + '\n';
-          });
-          payload.input = inputString;
-        } else {
-          payload.input = userMessages;
-          if (model.startsWith('o') || model.includes("gpt-5")) {
-            payload.reasoning = {
-              "effort": reasoning_effort
-            }
-          }
         }
 
-
-
         if (browsing) {
-          payload.tools = payload.tools || [];
           payload.tools.push({
             type: "web_search"
           });
-
           if (restrictSearch) {
             messages.push({
               role: "user", // upon testing, this instruction has better results with user role instead of system
@@ -665,10 +655,7 @@ const GenAIApp = (function () {
             vector_store_ids: Object.keys(addedVectorStores),
             max_num_results: maxNumOfChunks
           };
-
-          payload.tools = payload.tools || [];
           payload.tools.push(fileSearchTool);
-
           payload.include = ["file_search_call.results"];
         }
         return payload;
