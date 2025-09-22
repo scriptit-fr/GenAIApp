@@ -486,69 +486,62 @@ const GenAIApp = (function () {
           }
         }
 
-        if (tools.length > 0) {
-          // Check if AI model wanted to call a function
-          if (model.includes("gemini")) {
-            if (responseMessage?.parts?.some(p => p?.functionCall)) {
-              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
-              // check if endWithResults or onlyReturnArguments
-              if (contents[contents.length - 1].role == "model") {
-                if (contents[contents.length - 1].parts.text == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
+        // Check if AI model wanted to call a function
+        let newCallNeeded = false;
+        if (model.includes("gemini")) {
+          if (responseMessage?.parts?.some(p => p?.functionCall)) {
+            contents = _handleGeminiToolCalls(responseMessage, tools, contents);
+            // check if endWithResults or onlyReturnArguments
+            if (contents[contents.length - 1].role == "model") {
+              if (contents[contents.length - 1].parts.text == "endWithResult") {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
                 }
-                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return contents[contents.length - 2].parts
-                    .find(p => p && p.functionCall)
-                    ?.functionCall.args;
+                // Do not return anything specific as the goal is simply to end here.
+                return "OK";
+              }
+              else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                 }
+                // return the argument(s) of the last function called
+                return contents[contents.length - 2].parts
+                  .find(p => p && p.functionCall)
+                  ?.functionCall.args;
               }
             }
-            else {
-              // if no function has been found, stop here
-              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-              return part?.text || null;
-            }
+            newCallNeeded = true;
           }
-          else {
-            const functionCalls = responseMessage.filter(item => item.type === "function_call");
-            if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
-              // check if endWithResults or onlyReturnArguments
-              if (messages[messages.length - 1].role == "system") {
-                if (messages[messages.length - 1].content == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
+        }
+        else {
+          const functionCalls = responseMessage.filter(item => item.type === "function_call");
+          if (functionCalls.length > 0) {
+            messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
+            // check if endWithResults or onlyReturnArguments
+            if (messages[messages.length - 1].role == "system") {
+              if (messages[messages.length - 1].content == "endWithResult") {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
                 }
-                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return _parseResponse(messages[messages.length - 3].arguments);
-                }
+                // Do not return anything specific as the goal is simply to end here.
+                return "OK";
               }
-              // Use the previous_response_id parameter to pass reasoning items from previous responses
-              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-              previous_response_id = response_id;
+              else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                }
+                // return the argument(s) of the last function called
+                return _parseResponse(messages[messages.length - 3].arguments);
+              }
             }
-            else {
-              // if no function has been found, stop here
-              const messageItem = responseMessage?.find?.(item => item.type === "message");
-              return messageItem?.content?.find(part => part?.text)?.text || null;
-            }
+            // Use the previous_response_id parameter to pass reasoning items from previous responses
+            // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+            // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+            previous_response_id = response_id;
+            newCallNeeded = true;
           }
+        }
+        if (newCallNeeded) {
           if (advancedParametersObject) {
             return this.run(advancedParametersObject);
           }
@@ -556,16 +549,20 @@ const GenAIApp = (function () {
             return this.run();
           }
         }
+
+        // If no function called, no need to call back the AI API with the result, output final response
+        if (model.includes("gemini")) {
+          // Get the LAST part with text (ignoring thoughts)
+          return responseMessage?.parts
+            ?.filter(p => !p.thought && p.text)
+            .at(-1)?.text || null;
+        }
         else {
-          if (model.includes("gemini")) {
-            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-            return part?.text || null;
-          }
-          else {
-            return responseMessage
-              .find(item => item.type === "message")?.content
-              ?.find(part => part?.text)?.text || null;
-          }
+          // Get the LAST message content text
+          return responseMessage.slice().reverse()
+            .find(m => m.type === "message")
+            ?.content.find(c => c.type === "output_text")
+            ?.text || null;
         }
       }
 
