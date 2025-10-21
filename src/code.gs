@@ -1072,7 +1072,7 @@ const GenAIApp = (function () {
         }
 
         connectorId = connectorIds[normalizedConnector];
-        serverLabel = serverLabels[normalizedConnector];
+        serverLabel = serverLabel || serverLabels[normalizedConnector];
         return this;
       };
 
