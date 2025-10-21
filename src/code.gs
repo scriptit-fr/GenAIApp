@@ -1011,7 +1011,7 @@ const GenAIApp = (function () {
 
       /**
        * Sets the optional description for the connector.
-       * @param {string|null} description - The description to assign.
+       * @param {string} description - The description to assign.
        * @returns {ConnectorObject}
        */
       this.setDescription = function (description) {
