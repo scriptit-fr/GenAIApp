@@ -16,6 +16,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
   - [Add Image (Optional)](#add-image-optional)
   - [Add File to Chat (optional)](#add-file-to-chat-optional)
+  - [Add MCP Connector (optional)](#add-mcp-connector-optional)
   - [Running the Chat](#running-the-chat)
   - [FunctionObject Class](#functionobject-class)
     - [Creating a Function](#creating-a-function)
@@ -28,6 +29,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 3: Retrieve Structured Data Instead of Raw Text with onlyReturnArguments](#example-3--retrieve-structured-data-instead-of-raw-text-with-onlyreturnargument)
   - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
   - [Example 5: Describe an Image](#example-5--describe-an-image)
+  - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -35,6 +37,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Chat](#chat)
   - [Function Object](#function-object)
   - [Vector Store Object](#vector-store-object)
+  - [Connector Object](#connector-object)
 
 
 ## Features
@@ -45,6 +48,8 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 - **Function Calling:** Enable the chat to call predefined functions and utilize their results in conversations.
 - **Vector Store Search:** Retrieve knowledge from OpenAI vector stores for a better contextual response.
 - **Document Analysis:** Analyze documents from Google Drive with support for various formats.
+- **MCP Connectors:** Attach Google Workspace or custom Model Context Protocol connectors to securely retrieve additional context
+  during a conversation.
 
 ## Prerequisites
 
@@ -165,6 +170,40 @@ You can include the contents of a Google Drive file or a Blob in your conversati
 // Add a Google Drive file to the chat context using its Drive file ID
 chat.addFile('your-google-drive-file-id');
 ```
+
+### Add MCP Connector (optional)
+
+Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as Gmail,
+Calendar, Drive, or your own custom MCP server.
+
+```javascript
+const chat = GenAIApp.newChat();
+
+const gmailConnector = GenAIApp.newConnector()
+  .setConnectorId('gmail')
+  .setRequireApproval('domain');
+
+chat.addMCP(gmailConnector);
+
+const customConnector = GenAIApp.newConnector()
+  .setLabel('Salesforce CRM')
+  .setDescription('Query opportunity data from Salesforce via MCP proxy')
+  .setServerUrl('https://mcp.example.com/salesforce')
+  .setAuthorization('Bearer ' + SALESFORCE_MCP_TOKEN)
+  .setRequireApproval('always');
+
+chat.addMCP(customConnector);
+```
+
+- **Google Workspace connectors:** Call `.setConnectorId("gmail" | "calendar" | "drive")` to use Google-managed connectors
+  authenticated with your script's OAuth token by default.
+- **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, and `.setServerUrl("https://...")`,
+  and optionally `.setAuthorization()` if the server expects a bearer token or API key.
+- **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the
+  model calls the connector.
+
+> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-4.1`,
+> `o4-mini`, `o3`, or `gpt-5`).
 
 ### Running the Chat
 
@@ -306,7 +345,7 @@ const ticket = "Hello, could you check the status of my subscription under custo
 
 ### Example 5 : Describe an Image
 
-To have the chat model describe an image: 
+To have the chat model describe an image:
 
 ```javascript
 const chat = GenAIApp.newChat();
@@ -316,6 +355,52 @@ const response = chat.run();
 Logger.log(response);
 ```
 This will use the selected model to provide a description of the image at the specified URL.
+
+### Example 6 : Extend a Chat with an MCP Connector
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const chat = GenAIApp.newChat();
+chat.addMessage('Search my latest unread Gmail message and summarize it.');
+
+const gmailConnector = GenAIApp.newConnector()
+  .setConnectorId('gmail')
+  .setRequireApproval('domain');
+
+chat.addMCP(gmailConnector);
+
+const summary = chat.run({ model: 'gpt-4.1' });
+Logger.log(summary);
+```
+
+In this example the Gmail connector gives the model controlled access to your inbox. The `requireApproval('domain')` setting
+ensures end users in your domain must approve access before the connector is used.
+
+### Example 7 : Connect to a Custom MCP Server with setServerUrl()
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const chat = GenAIApp.newChat();
+chat.addMessage('Check the latest closed-won opportunities and report total revenue.');
+
+const salesforceConnector = GenAIApp.newConnector()
+  .setLabel('Salesforce CRM')
+  .setDescription('Internal MCP service that proxies Salesforce data')
+  .setServerUrl('https://mcp.example.com/salesforce')
+  .setAuthorization('Bearer ' + SALESFORCE_MCP_TOKEN)
+  .setRequireApproval('always');
+
+chat.addMCP(salesforceConnector);
+
+const report = chat.run({ model: 'gpt-4.1' });
+Logger.log(report);
+```
+
+The `setServerUrl()` method points the connector to your MCP gateway, while `setAuthorization()` injects a bearer token or API
+key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
+authorize every connector invocation.
 
 ## Contributing
 
@@ -331,6 +416,7 @@ The **GenAIApp** library is licensed under the Apache License, Version 2.0. You 
 
 - `newChat()`: Create a new `Chat` instance.
 - `newFunction()`: Create a new `FunctionObject`.
+- `newConnector()`: Create a new `ConnectorObject` for MCP integrations.
 - `newVectorStore()`: Create a new `VectorStoreObject`.
 - `setOpenAIAPIKey(apiKey)`: Set the OpenAI API key.
 - `setGeminiAPIKey(apiKey)`: Set the Gemini API key.
@@ -355,6 +441,7 @@ A `Chat` represents a conversation with the model.
 - `disableLogs(bool)`: Disable library logs.
 - `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
+- `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
 - `retrieveLastResponseId()`: Get the last response ID.
 - `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
@@ -385,6 +472,17 @@ A `VectorStoreObject` represents an OpenAI vector store.
 - `listFiles()`: List files attached to the store.
 - `deleteFile(fileId)`: Delete a file from the store.
 - `deleteVectorStore()`: Delete the vector store.
+
+### Connector Object
+
+A `ConnectorObject` represents a Google Workspace or custom MCP connector that can be attached to an OpenAI chat request.
+
+- `setLabel(label)`: Set the identifier used in the chat payload (required for custom servers).
+- `setDescription(description)`: Provide an optional description visible to the model.
+- `setServerUrl(url)`: Use a custom MCP server hosted at the provided HTTPS URL.
+- `setConnectorId('gmail'|'calendar'|'drive')`: Reference a Google Workspace MCP connector by its predefined ID.
+- `setAuthorization(token)`: Override the default OAuth token (for example, supply `Bearer ...`).
+- `setRequireApproval('never'|'domain'|'always')`: Control whether the connector requires user approval before execution.
 
 ---
 
