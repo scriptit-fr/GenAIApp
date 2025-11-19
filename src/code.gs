@@ -47,7 +47,7 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
-      let model = "gpt-5"; // default 
+      let model = "gpt-5.1"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
@@ -374,7 +374,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -398,7 +398,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.startsWith("o") || model.includes("gemini") || model.includes("gpt-5")) && browsing && max_tokens < 10000) {
+        if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
           console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
@@ -486,62 +486,69 @@ const GenAIApp = (function () {
           }
         }
 
-        // Check if AI model wanted to call a function
-        let newCallNeeded = false;
-        if (model.includes("gemini")) {
-          if (responseMessage?.parts?.some(p => p?.functionCall)) {
-            contents = _handleGeminiToolCalls(responseMessage, tools, contents);
-            // check if endWithResults or onlyReturnArguments
-            if (contents[contents.length - 1].role == "model") {
-              if (contents[contents.length - 1].parts.text == "endWithResult") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
+        if (tools.length > 0) {
+          // Check if AI model wanted to call a function
+          if (model.includes("gemini")) {
+            if (responseMessage?.parts?.some(p => p?.functionCall)) {
+              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
+              // check if endWithResults or onlyReturnArguments
+              if (contents[contents.length - 1].role == "model") {
+                if (contents[contents.length - 1].parts.text == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
                 }
-                // Do not return anything specific as the goal is simply to end here.
-                return "OK";
-              }
-              else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  return contents[contents.length - 2].parts
+                    .find(p => p && p.functionCall)
+                    ?.functionCall.args;
                 }
-                // return the argument(s) of the last function called
-                return contents[contents.length - 2].parts
-                  .find(p => p && p.functionCall)
-                  ?.functionCall.args;
-              }
-            }
-            newCallNeeded = true;
-          }
-        }
-        else {
-          const functionCalls = responseMessage.filter(item => item.type === "function_call");
-          if (functionCalls.length > 0) {
-            messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
-            // check if endWithResults or onlyReturnArguments
-            if (messages[messages.length - 1].role == "system") {
-              if (messages[messages.length - 1].content == "endWithResult") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                }
-                // Do not return anything specific as the goal is simply to end here.
-                return "OK";
-              }
-              else if (messages[messages.length - 1].content == "onlyReturnArguments") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                }
-                // return the argument(s) of the last function called
-                return _parseResponse(messages[messages.length - 3].arguments);
               }
             }
-            // Use the previous_response_id parameter to pass reasoning items from previous responses
-            // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-            // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-            previous_response_id = response_id;
-            newCallNeeded = true;
+            else {
+              // if no function has been found, stop here
+              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+              return part?.text || null;
+            }
           }
-        }
-        if (newCallNeeded) {
+          else {
+            const functionCalls = responseMessage.filter(item => item.type === "function_call");
+            if (functionCalls.length > 0) {
+              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
+              // check if endWithResults or onlyReturnArguments
+              if (messages[messages.length - 1].role == "system") {
+                if (messages[messages.length - 1].content == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
+                }
+                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  return _parseResponse(messages[messages.length - 3].arguments);
+                }
+              }
+              // Use the previous_response_id parameter to pass reasoning items from previous responses
+              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              previous_response_id = response_id;
+            }
+            else {
+              // if no function has been found, stop here
+              const messageItem = responseMessage?.find?.(item => item.type === "message");
+              return messageItem?.content?.find(part => part?.text)?.text || null;
+            }
+          }
           if (advancedParametersObject) {
             return this.run(advancedParametersObject);
           }
@@ -549,20 +556,16 @@ const GenAIApp = (function () {
             return this.run();
           }
         }
-
-        // If no function called, no need to call back the AI API with the result, output final response
-        if (model.includes("gemini")) {
-          // Get the LAST part with text (ignoring thoughts)
-          return responseMessage?.parts
-            ?.filter(p => !p.thought && p.text)
-            .at(-1)?.text || null;
-        }
         else {
-          // Get the LAST message content text
-          return responseMessage.slice().reverse()
-            .find(m => m.type === "message")
-            ?.content.find(c => c.type === "output_text")
-            ?.text || null;
+          if (model.includes("gemini")) {
+            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+            return part?.text || null;
+          }
+          else {
+            return responseMessage
+              .find(item => item.type === "message")?.content
+              ?.find(part => part?.text)?.text || null;
+          }
         }
       }
 
@@ -583,7 +586,7 @@ const GenAIApp = (function () {
           max_output_tokens: max_tokens,
           tools: []
         };
-        if (model.startsWith('o') || model.includes("gpt-5")) {
+        if (model.startsWith('o') || model.startsWith("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
@@ -1072,7 +1075,7 @@ const GenAIApp = (function () {
         }
 
         connectorId = connectorIds[normalizedConnector];
-        serverLabel = serverLabel || serverLabels[normalizedConnector];
+        serverLabel = serverLabels[normalizedConnector];
         return this;
       };
 
