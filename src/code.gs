@@ -27,8 +27,6 @@ const GenAIApp = (function () {
 
   let verbose = true;
 
-  let response_id;
-
   const apiBaseUrl = "https://api.openai.com";
   let privateInstanceBaseUrl;
 
@@ -47,7 +45,7 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
-      let model = "gpt-5.1"; // default 
+      let model = "gpt-5.2"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
@@ -319,7 +317,7 @@ const GenAIApp = (function () {
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
-        return response_id;
+        return previous_response_id;
       };
 
       /**
@@ -374,7 +372,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -462,9 +460,8 @@ const GenAIApp = (function () {
         else {
           throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
         }
-
-        if (Array.isArray(responseMessage)) {
-          const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+        if (Array.isArray(responseMessage.output)) {
+          const fileSearchCall = responseMessage.output.filter(item => item.type === "file_search_call");
           if (fileSearchCall.length > 0) {
             // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
             // https://platform.openai.com/docs/guides/tools-file-search
@@ -486,62 +483,69 @@ const GenAIApp = (function () {
           }
         }
 
-        // Check if AI model wanted to call a function
-        let newCallNeeded = false;
-        if (model.includes("gemini")) {
-          if (responseMessage?.parts?.some(p => p?.functionCall)) {
-            contents = _handleGeminiToolCalls(responseMessage, tools, contents);
-            // check if endWithResults or onlyReturnArguments
-            if (contents[contents.length - 1].role == "model") {
-              if (contents[contents.length - 1].parts.text == "endWithResult") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
+        if (tools.length > 0) {
+          // Check if AI model wanted to call a function
+          if (model.includes("gemini")) {
+            if (responseMessage?.parts?.some(p => p?.functionCall)) {
+              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
+              // check if endWithResults or onlyReturnArguments
+              if (contents[contents.length - 1].role == "model") {
+                if (contents[contents.length - 1].parts.text == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
                 }
-                // Do not return anything specific as the goal is simply to end here.
-                return "OK";
-              }
-              else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  return contents[contents.length - 2].parts
+                    .find(p => p && p.functionCall)
+                    ?.functionCall.args;
                 }
-                // return the argument(s) of the last function called
-                return contents[contents.length - 2].parts
-                  .find(p => p && p.functionCall)
-                  ?.functionCall.args;
-              }
-            }
-            newCallNeeded = true;
-          }
-        }
-        else {
-          const functionCalls = responseMessage.filter(item => item.type === "function_call");
-          if (functionCalls.length > 0) {
-            messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
-            // check if endWithResults or onlyReturnArguments
-            if (messages[messages.length - 1].role == "system") {
-              if (messages[messages.length - 1].content == "endWithResult") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                }
-                // Do not return anything specific as the goal is simply to end here.
-                return "OK";
-              }
-              else if (messages[messages.length - 1].content == "onlyReturnArguments") {
-                if (verbose) {
-                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                }
-                // return the argument(s) of the last function called
-                return _parseResponse(messages[messages.length - 3].arguments);
               }
             }
-            // Use the previous_response_id parameter to pass reasoning items from previous responses
-            // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-            // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-            previous_response_id = response_id;
-            newCallNeeded = true;
+            else {
+              // if no function has been found, stop here
+              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+              return part?.text || null;
+            }
           }
-        }
-        if (newCallNeeded) {
+          else {
+            const functionCalls = responseMessage.output.filter(item => item.type === "function_call");
+            if (functionCalls.length > 0) {
+              messages = _handleOpenAIToolCalls(responseMessage.output, tools, messages);
+              // check if endWithResults or onlyReturnArguments
+              if (messages[messages.length - 1].role == "system") {
+                if (messages[messages.length - 1].content == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
+                }
+                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  return _parseResponse(messages[messages.length - 3].arguments);
+                }
+              }
+              // Use the previous_response_id parameter to pass reasoning items from previous responses
+              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              previous_response_id = responseMessage.id;
+            }
+            else {
+              // if no function has been found, stop here
+              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
+              return messageItem?.content?.find(part => part?.text)?.text || null;
+            }
+          }
           if (advancedParametersObject) {
             return this.run(advancedParametersObject);
           }
@@ -549,20 +553,17 @@ const GenAIApp = (function () {
             return this.run();
           }
         }
-
-        // If no function called, no need to call back the AI API with the result, output final response
-        if (model.includes("gemini")) {
-          // Get the LAST part with text (ignoring thoughts)
-          return responseMessage?.parts
-            ?.filter(p => !p.thought && p.text)
-            .at(-1)?.text || null;
-        }
         else {
-          // Get the LAST message content text
-          return responseMessage.slice().reverse()
-            .find(m => m.type === "message")
-            ?.content.find(c => c.type === "output_text")
-            ?.text || null;
+          if (model.includes("gemini")) {
+            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+            return part?.text || null;
+          }
+          else {
+            return responseMessage
+              .output
+              .find(item => item.type === "message")?.content
+              ?.find(part => part?.text)?.text || null;
+          }
         }
       }
 
@@ -1072,7 +1073,7 @@ const GenAIApp = (function () {
         }
 
         connectorId = connectorIds[normalizedConnector];
-        serverLabel = serverLabel || serverLabels[normalizedConnector];
+        serverLabel = serverLabels[normalizedConnector];
         return this;
       };
 
@@ -1276,16 +1277,16 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
-   * and handles authentication, retries on rate limits and server errors, and response parsing.
-   * This function is designed for internal use and includes exponential backoff for retries.
-   *
-   * @private
-   * @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
-   * @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
-   * @returns {object} - The response message from the GenAI API.
-   * @throws {Error} If the API call fails after the maximum number of retries.
-   */
+* Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
+* and handles authentication, retries on rate limits and server errors, and response parsing.
+* This function is designed for internal use and includes exponential backoff for retries.
+*
+* @private
+* @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
+* @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
+* @returns {object} - The response message from the GenAI API.
+* @throws {Error} If the API call fails after the maximum number of retries.
+*/
   function _callGenAIApi(endpoint, payload) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
@@ -1350,8 +1351,7 @@ const GenAIApp = (function () {
           finish_reason = firstCandidate?.finishReason || null;
         }
         else {
-          responseMessage = parsedResponse.output;
-          response_id = parsedResponse.id;
+          responseMessage = parsedResponse;
           finish_reason = parsedResponse.status;
         }
         if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
