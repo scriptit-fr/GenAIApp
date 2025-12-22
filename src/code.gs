@@ -54,7 +54,6 @@ const GenAIApp = (function () {
       let knowledgeLink = [];
 
       let previous_response_id;
-      let previous_response_id_needed = false;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
@@ -455,15 +454,14 @@ const GenAIApp = (function () {
               }
             }
           }
-          responseMessage = this._callGenAIApi(endpointUrl, payload);
+          responseMessage = _callGenAIApi(endpointUrl, payload);
           numberOfAPICalls++;
         }
         else {
           throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
         }
-
-        if (Array.isArray(responseMessage)) {
-          const fileSearchCall = responseMessage.filter(item => item.type === "file_search_call");
+        if (Array.isArray(responseMessage.output)) {
+          const fileSearchCall = responseMessage.output.filter(item => item.type === "file_search_call");
           if (fileSearchCall.length > 0) {
             // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
             // https://platform.openai.com/docs/guides/tools-file-search
@@ -517,9 +515,9 @@ const GenAIApp = (function () {
             }
           }
           else {
-            const functionCalls = responseMessage.filter(item => item.type === "function_call");
+            const functionCalls = responseMessage.output.filter(item => item.type === "function_call");
             if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage, tools, messages);
+              messages = _handleOpenAIToolCalls(responseMessage.output, tools, messages);
               // check if endWithResults or onlyReturnArguments
               if (messages[messages.length - 1].role == "system") {
                 if (messages[messages.length - 1].content == "endWithResult") {
@@ -540,11 +538,11 @@ const GenAIApp = (function () {
               // Use the previous_response_id parameter to pass reasoning items from previous responses
               // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
               // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-              previous_response_id_needed = true;
+              previous_response_id = responseMessage.id;
             }
             else {
               // if no function has been found, stop here
-              const messageItem = responseMessage?.find?.(item => item.type === "message");
+              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
               return messageItem?.content?.find(part => part?.text)?.text || null;
             }
           }
@@ -562,131 +560,11 @@ const GenAIApp = (function () {
           }
           else {
             return responseMessage
+              .output
               .find(item => item.type === "message")?.content
               ?.find(part => part?.text)?.text || null;
           }
         }
-      }
-
-      /**
- * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
- * and handles authentication, retries on rate limits and server errors, and response parsing.
- * This function is designed for internal use and includes exponential backoff for retries.
- *
- * @private
- * @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
- * @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
- * @returns {object} - The response message from the GenAI API.
- * @throws {Error} If the API call fails after the maximum number of retries.
- */
-      this._callGenAIApi = function (endpoint, payload) {
-        let authMethod = 'Bearer ' + openAIKey;
-        if (endpoint.includes("google")) {
-          if (geminiKey) {
-            // Header name different for Google API key
-            authMethod = null;
-          }
-          else {
-            authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
-          }
-        }
-        const maxRetries = 5;
-        let retries = 0;
-        let success = false;
-
-        let responseMessage, finish_reason;
-        while (retries < maxRetries && !success) {
-          const headers = {
-            'Content-Type': 'application/json',
-          };
-          if (authMethod) {
-            headers['Authorization'] = authMethod;
-          }
-          else if (geminiKey) {
-            // use an HTTP header instead of including the API key in the query parameters.
-            headers['x-goog-api-key'] = geminiKey;
-          }
-          const options = {
-            method: 'post',
-            headers: headers,
-            payload: JSON.stringify(payload),
-            muteHttpExceptions: true
-          };
-
-          let response;
-          // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
-          if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
-            response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
-          }
-          else {
-            try {
-              response = UrlFetchApp.fetch(endpoint, options);
-            }
-            catch (err) {
-              if (verbose) {
-                console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
-              }
-              const delay = Math.pow(2, retries) * 1000;
-              Utilities.sleep(delay);
-              retries++;
-              continue;
-            }
-          }
-          const responseCode = response.getResponseCode();
-
-          if (responseCode === 200) {
-            // The request was successful, exit the loop.
-            const parsedResponse = JSON.parse(response.getContentText());
-            if (endpoint.includes("google")) {
-              const firstCandidate = parsedResponse.candidates?.[0];
-              responseMessage = firstCandidate?.content || null;
-              finish_reason = firstCandidate?.finishReason || null;
-            }
-            else {
-              responseMessage = parsedResponse.output;
-              previous_response_id = parsedResponse.id;
-              finish_reason = parsedResponse.status;
-            }
-            if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
-              console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
-            }
-            success = true;
-          }
-          else if (responseCode === 429) {
-            console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
-            // Rate limit reached, wait before retrying.
-            const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
-            Utilities.sleep(delay);
-            retries++;
-          }
-          else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
-            // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
-            // https://platform.openai.com/docs/guides/error-codes/api-errors
-            const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
-            Utilities.sleep(delay);
-            retries++;
-            if (verbose) {
-              console.warn(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}, retrying (${retries}/${maxRetries})`);
-            }
-          }
-          else {
-            // The request failed for another reason, log the error and exit the loop.
-            console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
-            break;
-          }
-        }
-
-        if (!success) {
-          throw new Error(`[GenAIApp] - Failed to call ${payload.model} after ${retries} retries.`);
-        }
-
-        if (verbose) {
-          Logger.log({
-            message: `[GenAIApp] - Got response from ${payload.model}`,
-            responseMessage: responseMessage
-          });
-        }
-        return responseMessage;
       }
 
       /**
@@ -1396,6 +1274,126 @@ const GenAIApp = (function () {
         };
       };
     }
+  }
+
+  /**
+* Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
+* and handles authentication, retries on rate limits and server errors, and response parsing.
+* This function is designed for internal use and includes exponential backoff for retries.
+*
+* @private
+* @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
+* @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
+* @returns {object} - The response message from the GenAI API.
+* @throws {Error} If the API call fails after the maximum number of retries.
+*/
+  function _callGenAIApi(endpoint, payload) {
+    let authMethod = 'Bearer ' + openAIKey;
+    if (endpoint.includes("google")) {
+      if (geminiKey) {
+        // Header name different for Google API key
+        authMethod = null;
+      }
+      else {
+        authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
+      }
+    }
+    const maxRetries = 5;
+    let retries = 0;
+    let success = false;
+
+    let responseMessage, finish_reason;
+    while (retries < maxRetries && !success) {
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (authMethod) {
+        headers['Authorization'] = authMethod;
+      }
+      else if (geminiKey) {
+        // use an HTTP header instead of including the API key in the query parameters.
+        headers['x-goog-api-key'] = geminiKey;
+      }
+      const options = {
+        method: 'post',
+        headers: headers,
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+
+      let response;
+      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
+      if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+      }
+      else {
+        try {
+          response = UrlFetchApp.fetch(endpoint, options);
+        }
+        catch (err) {
+          if (verbose) {
+            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
+          }
+          const delay = Math.pow(2, retries) * 1000;
+          Utilities.sleep(delay);
+          retries++;
+          continue;
+        }
+      }
+      const responseCode = response.getResponseCode();
+
+      if (responseCode === 200) {
+        // The request was successful, exit the loop.
+        const parsedResponse = JSON.parse(response.getContentText());
+        if (endpoint.includes("google")) {
+          const firstCandidate = parsedResponse.candidates?.[0];
+          responseMessage = firstCandidate?.content || null;
+          finish_reason = firstCandidate?.finishReason || null;
+        }
+        else {
+          responseMessage = parsedResponse;
+          finish_reason = parsedResponse.status;
+        }
+        if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
+          console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
+        }
+        success = true;
+      }
+      else if (responseCode === 429) {
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
+        // Rate limit reached, wait before retrying.
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+        Utilities.sleep(delay);
+        retries++;
+      }
+      else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
+        // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
+        // https://platform.openai.com/docs/guides/error-codes/api-errors
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+        Utilities.sleep(delay);
+        retries++;
+        if (verbose) {
+          console.warn(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}, retrying (${retries}/${maxRetries})`);
+        }
+      }
+      else {
+        // The request failed for another reason, log the error and exit the loop.
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        break;
+      }
+    }
+
+    if (!success) {
+      throw new Error(`[GenAIApp] - Failed to call ${payload.model} after ${retries} retries.`);
+    }
+
+    if (verbose) {
+      Logger.log({
+        message: `[GenAIApp] - Got response from ${payload.model}`,
+        responseMessage: responseMessage
+      });
+    }
+    return responseMessage;
   }
 
   /**
