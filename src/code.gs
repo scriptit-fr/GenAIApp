@@ -403,7 +403,9 @@ const GenAIApp = (function () {
           let knowledge = "";
           knowledgeLink.forEach(url => {
             const urlContent = _urlFetch(url);
-            knowledge += `${url}: \n\n ${urlContent}\n\n`;
+            if (urlContent) {
+                 knowledge += `${url}: \n\n ${urlContent}\n\n`;
+            }
           })
           if (!knowledge) throw Error(`[GenAIApp] - Failed to fetch knowledge links.`);
           
@@ -414,6 +416,7 @@ const GenAIApp = (function () {
           knowledgeLink = [];
         }
 
+        // Construction du Payload
         let payload = this._buildOpenAIPayload();
 
         let responseMessage;
@@ -453,16 +456,31 @@ const GenAIApp = (function () {
             
             messages.push(message);
 
+            // OPTIMISATION : On calcule les définitions une seule fois avant la boucle
+            const toolDefinitions = tools.map(t => t.function._toJson());
+
             for (const toolCall of message.tool_calls) {
                 const functionName = toolCall.function.name;
-                const args = JSON.parse(toolCall.function.arguments);
+                
+                let args;
+                try {
+                    args = JSON.parse(toolCall.function.arguments);
+                } catch (e) {
+                    console.warn(`[GenAIApp] - Failed to parse arguments for function ${functionName}: ${e.message}`);
+                    messages.push({
+                        tool_call_id: toolCall.id,
+                        role: "tool",
+                        name: functionName,
+                        content: JSON.stringify({ error: "Invalid JSON arguments", details: e.message })
+                    });
+                    continue; 
+                }
                 
                 let argsOrder = [];
                 let endWithResult = false;
                 let onlyReturnArguments = false;
 
-                for (const t in tools) {
-                    const currentFunction = tools[t].function._toJson();
+                for (const currentFunction of toolDefinitions) {
                     if (currentFunction.name == functionName) {
                         argsOrder = currentFunction.argumentsInRightOrder;
                         endWithResult = currentFunction.endingFunction;
@@ -564,14 +582,17 @@ const GenAIApp = (function () {
         }
 
         if (tools.length > 0) {
-          const toolsPayload = tools.map(tool => ({
-            type: "function",
-            function: {
-                name: tool.function._toJson().name,
-                description: tool.function._toJson().description,
-                parameters: tool.function._toJson().parameters
-            }
-          }));
+          const toolsPayload = tools.map(tool => {
+            const fnDef = tool.function._toJson();
+            return {
+              type: "function",
+              function: {
+                  name: fnDef.name,
+                  description: fnDef.description,
+                  parameters: fnDef.parameters
+              }
+            };
+          });
           payload.tools = toolsPayload;
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
@@ -584,7 +605,7 @@ const GenAIApp = (function () {
             payload.tools.push(connector._toJson());
           });
         }
-      
+
         return payload;
       };
 
@@ -1232,8 +1253,13 @@ const GenAIApp = (function () {
     let success = false;
     let responseMessage, finish_reason;
 
-    const payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
-    const modelName = payloadObj.model || "unknown-model";
+    let modelName = "unknown-model";
+    try {
+        const payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        modelName = payloadObj.model || "unknown-model";
+    } catch (e) {
+      console.log(e);
+    }
 
     while (retries < maxRetries && !success) {
       const headers = {
@@ -1277,15 +1303,8 @@ const GenAIApp = (function () {
 
       if (responseCode === 200) {
         const parsedResponse = JSON.parse(response.getContentText());
-        if (endpoint.includes("google") && !endpoint.includes("openapi") && !endpoint.includes("generativelanguage")) {
-          const firstCandidate = parsedResponse.candidates?.[0];
-          responseMessage = firstCandidate?.content || null;
-          finish_reason = firstCandidate?.finishReason || null;
-        }
-        else {
-          responseMessage = parsedResponse;
-          finish_reason = parsedResponse.choices?.[0]?.finish_reason;
-        }
+        responseMessage = parsedResponse;
+        finish_reason = parsedResponse.choices?.[0]?.finish_reason;
 
         if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
           console.warn(`[GenAIApp] - Response from ${modelName} truncated (insufficient tokens). Try chat.run({max_tokens: 4000+}).`);
