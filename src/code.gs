@@ -430,10 +430,18 @@ const GenAIApp = (function () {
           
           if (model.includes("gemini")) {
             if (geminiKey) {
+              // AI Studio (Clé API)
               endpointUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
             }
             else {
-              endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/endpoints/openapi/chat/completions`;
+              // Vertex AI (Google Cloud)
+              if (region) {
+                // Endpoint region
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/endpoints/openapi/chat/completions`;
+              } else {
+                // Endpoint Global 
+                endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/endpoints/openapi/chat/completions`;
+              }
               
               if (!payload.model.startsWith("google/")) {
                   payload.model = "google/" + payload.model;
@@ -456,7 +464,6 @@ const GenAIApp = (function () {
             
             messages.push(message);
 
-            // OPTIMISATION : On calcule les définitions une seule fois avant la boucle
             const toolDefinitions = tools.map(t => t.function._toJson());
 
             for (const toolCall of message.tool_calls) {
