@@ -48,7 +48,7 @@ const GenAIApp = (function () {
       let model = "gpt-5.2"; // default 
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
-      let max_tokens = 1000;
+      let max_tokens = 4000;
       let browsing = false;
       let reasoning_effort = "medium";
       let knowledgeLink = [];
@@ -372,7 +372,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3-pro-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -380,192 +380,141 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
+        // 1. Initialisation
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
         reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
 
+        // 2. Vérification des clés
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
-            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
+            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth.");
           }
-        }
-        else {
+        } else {
           if (!openAIKey) {
-            throw Error("[GenAIApp] - Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
+            throw Error("[GenAIApp] - Please set your OpenAI API key.");
           }
         }
 
+        // 3. Warning Browsing
         if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
-          console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
+          console.warn(`[GenAIApp] - Browsing enabled with low max_tokens. Response might be truncated.`);
         }
 
+        // 4. Gestion Knowledge (Format Standard System Message)
         if (knowledgeLink.length > 0) {
           let knowledge = "";
           knowledgeLink.forEach(url => {
             const urlContent = _urlFetch(url);
             knowledge += `${url}: \n\n ${urlContent}\n\n`;
           })
-          if (!knowledge) {
-            throw Error(`[GenAIApp] - The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
-          }
+          if (!knowledge) throw Error(`[GenAIApp] - Failed to fetch knowledge links.`);
+          
           messages.push({
             role: "system",
             content: `Information to help with your response : ${knowledge}`
           });
-          contents.push({
-            role: "user",
-            parts: {
-              text: `Information to help with your response : ${knowledge}`
-            }
-          })
           knowledgeLink = [];
         }
 
-        let payload;
-        if (model.includes("gemini")) {
-          payload = this._buildGeminiPayload(advancedParametersObject);
-        }
-        else {
-          payload = this._buildOpenAIPayload();
-        }
+        // 5. Construction du Payload (Format STANDARD OpenAI)
+        // C'est ici que ça change : on utilise la nouvelle fonction standardisée
+        let payload = this._buildOpenAIPayload();
 
         let responseMessage;
+        
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = apiBaseUrl + "/v1/responses";
+          // URL par défaut (OpenAI)
+          let endpointUrl = apiBaseUrl + "/v1/chat/completions";
+          
+          // Support instance privée (Azure/Proxy) - adaptation au standard
           if (privateInstanceBaseUrl) {
-            endpointUrl = privateInstanceBaseUrl + "/v1/responses?api-version=preview";
+            endpointUrl = privateInstanceBaseUrl + "/v1/chat/completions?api-version=preview";
           }
+          
+          // Aiguillage Gemini (Mode Compatibilité OpenAI)
           if (model.includes("gemini")) {
             if (geminiKey) {
-              // Public endpoint / Generative Language API
-              // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+              // AI Studio (API Key)
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
             }
             else {
-              // Enterprise endpoint / Vertex AI API
-              // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
-              // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (region) {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
-              }
-              else {
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+              // Vertex AI (Google Cloud)
+              endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/endpoints/openapi/chat/completions`;
+              
+              // Vertex AI exige le préfixe "google/" dans le nom du modèle
+              if (!payload.model.startsWith("google/")) {
+                  payload.model = "google/" + payload.model;
               }
             }
           }
+          
+          // Appel API
           responseMessage = _callGenAIApi(endpointUrl, payload);
           numberOfAPICalls++;
         }
         else {
-          throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
-        }
-        if (Array.isArray(responseMessage.output)) {
-          const fileSearchCall = responseMessage.output.filter(item => item.type === "file_search_call");
-          if (fileSearchCall.length > 0) {
-            // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
-            // https://platform.openai.com/docs/guides/tools-file-search
-            retrievedAttributes = [];
-            const retrievedChunks = fileSearchCall.flatMap(call =>
-              Array.isArray(call?.results) ? call.results : []
-            );
-            if (verbose) {
-              console.log(`[GenAIApp] - File search performed: retrieved ${retrievedChunks.length} chunks (max_num_results=${maxNumOfChunks}).`);
-            }
-            for (const chunk of retrievedChunks) {
-              if (chunk?.attributes != null) {
-                retrievedAttributes.push(chunk.attributes);
-              }
-            }
-            if (onlyChunks) {
-              return retrievedChunks;
-            }
-          }
+          throw new Error(`[GenAIApp] - Too many calls to API: ${numberOfAPICalls}`);
         }
 
-        if (tools.length > 0) {
-          // Check if AI model wanted to call a function
-          if (model.includes("gemini")) {
-            if (responseMessage?.parts?.some(p => p?.functionCall)) {
-              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
-              // check if endWithResults or onlyReturnArguments
-              if (contents[contents.length - 1].role == "model") {
-                if (contents[contents.length - 1].parts.text == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
+        // 6. Traitement de la réponse (Format Standard 'choices')
+        const message = responseMessage?.choices?.[0]?.message;
+        
+        if (!message) return null;
+
+        // Gestion du Tool Calling (Standard OpenAI)
+        if (message.tool_calls && message.tool_calls.length > 0) {
+            
+            messages.push(message); // On stocke la réponse de l'assistant
+
+            for (const toolCall of message.tool_calls) {
+                const functionName = toolCall.function.name;
+                const args = JSON.parse(toolCall.function.arguments);
+                
+                let argsOrder = [];
+                let endWithResult = false;
+                let onlyReturnArguments = false;
+
+                // Recherche de la définition de la fonction
+                for (const t in tools) {
+                    const currentFunction = tools[t].function._toJson();
+                    if (currentFunction.name == functionName) {
+                        argsOrder = currentFunction.argumentsInRightOrder;
+                        endWithResult = currentFunction.endingFunction;
+                        onlyReturnArguments = currentFunction.onlyArgs;
+                        break;
+                    }
                 }
-                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return contents[contents.length - 2].parts
-                    .find(p => p && p.functionCall)
-                    ?.functionCall.args;
+
+                if (onlyReturnArguments) return args;
+
+                if (verbose) console.log(`[GenAIApp] - function ${functionName}() called.`);
+
+                let functionResponse = _callFunction(functionName, args, argsOrder);
+                
+                if (typeof functionResponse != "string") {
+                   functionResponse = JSON.stringify(functionResponse);
                 }
-              }
+
+                if (endWithResult) return "OK";
+
+                // Ajout du résultat au format Tool
+                messages.push({
+                    tool_call_id: toolCall.id,
+                    role: "tool",
+                    name: functionName,
+                    content: functionResponse
+                });
             }
-            else {
-              // if no function has been found, stop here
-              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-              return part?.text || null;
-            }
-          }
-          else {
-            const functionCalls = responseMessage.output.filter(item => item.type === "function_call");
-            if (functionCalls.length > 0) {
-              messages = _handleOpenAIToolCalls(responseMessage.output, tools, messages);
-              // check if endWithResults or onlyReturnArguments
-              if (messages[messages.length - 1].role == "system") {
-                if (messages[messages.length - 1].content == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
-                }
-                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return _parseResponse(messages[messages.length - 3].arguments);
-                }
-              }
-              // Use the previous_response_id parameter to pass reasoning items from previous responses
-              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-              previous_response_id = responseMessage.id;
-            }
-            else {
-              // if no function has been found, stop here
-              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
-              return messageItem?.content?.find(part => part?.text)?.text || null;
-            }
-          }
-          if (advancedParametersObject) {
-            return this.run(advancedParametersObject);
-          }
-          else {
-            return this.run();
-          }
+
+            // Récursion
+            if (advancedParametersObject) return this.run(advancedParametersObject);
+            else return this.run();
         }
-        else {
-          if (model.includes("gemini")) {
-            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-            return part?.text || null;
-          }
-          else {
-            return responseMessage
-              .output
-              .find(item => item.type === "message")?.content
-              ?.find(part => part?.text)?.text || null;
-          }
-        }
-      }
+
+        return message.content || null;
+      };
 
       /**
        * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
@@ -581,83 +530,90 @@ const GenAIApp = (function () {
       this._buildOpenAIPayload = function () {
         let payload = {
           model: model,
-          max_output_tokens: max_tokens,
-          tools: []
+          messages: []
         };
+
+        // Gestion intelligente des Tokens (GPT-5/o1/o3 vs Standard)
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
-          payload.reasoning = {
-            "effort": reasoning_effort
-          }
+          payload.max_completion_tokens = max_tokens;
+          payload.reasoning_effort = reasoning_effort;
+        } 
+        else {
+          payload.max_tokens = max_tokens;
         }
+
+        // Conversion et nettoyage des messages
+        const cleanMessages = messages.map(msg => {
+            let content = msg.content;
+            
+            // Gestion Contenu Complexe (Images/Fichiers)
+            if (Array.isArray(content)) {
+                content = content.map(item => {
+                    // Conversion format propriétaire -> Standard OpenAI
+                    if (item.type === "input_image") {
+                        return {
+                            type: "image_url",
+                            image_url: { url: item.image_url }
+                        };
+                    }
+                    if (item.type === "input_file") {
+                         return { type: "text", text: `[File: ${item.filename}]` };
+                    }
+                    return item;
+                });
+            }
+
+            // Sanitisation : Content ne doit jamais être null (Erreur 400 sinon)
+            if (content === null || content === undefined) {
+                content = "";
+            }
+
+            const messageObj = {
+                role: msg.role,
+                content: content
+            };
+
+            // Transfert des infos de Tool Calling (Critique pour le contexte)
+            if (msg.tool_calls) messageObj.tool_calls = msg.tool_calls;
+            if (msg.tool_call_id) messageObj.tool_call_id = msg.tool_call_id;
+            if (msg.name) messageObj.name = msg.name;
+
+            return messageObj;
+        });
+
+        payload.messages = cleanMessages;
 
         if (previous_response_id) {
-          payload.previous_response_id = previous_response_id;
-        }
-
-        let systemInstructions = "";
-        const userMessages = [];
-        for (const message of messages) {
-          if (message.role === "system") {
-            systemInstructions += message.content + "\n";
-          }
-          else {
-            userMessages.push(message);
-          }
-        }
-        if (systemInstructions !== "") {
-          payload.instructions = systemInstructions;
-        }
-        payload.input = userMessages;
-
-        if (globalMetadata && Object.keys(globalMetadata).length > 0) {
-          Object.assign(messageMetadata, globalMetadata);
-          payload.metadata = messageMetadata;
+             payload.previous_response_id = previous_response_id;
         }
 
         if (tools.length > 0) {
-          // the user has added functions, enable function calling
           const toolsPayload = tools.map(tool => ({
             type: "function",
-            name: tool.function._toJson().name,
-            description: tool.function._toJson().description,
-            parameters: tool.function._toJson().parameters,
+            function: {
+                name: tool.function._toJson().name,
+                description: tool.function._toJson().description,
+                parameters: tool.function._toJson().parameters
+            }
           }));
           payload.tools = toolsPayload;
-
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
           }
         }
-
+        
         if (mcpConnectors.length > 0) {
           mcpConnectors.forEach(connector => {
+            if (!payload.tools) payload.tools = [];
             payload.tools.push(connector._toJson());
           });
         }
 
-        if (browsing) {
-          payload.tools.push({
-            type: "web_search"
-          });
-          if (restrictSearch) {
-            messages.push({
-              role: "user", // upon testing, this instruction has better results with user role instead of system
-              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-            });
-          }
-        }
-
-        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
-          const fileSearchTool = {
-            type: "file_search",
-            vector_store_ids: Object.keys(addedVectorStores),
-            max_num_results: maxNumOfChunks
-          };
-          payload.tools.push(fileSearchTool);
-          payload.include = ["file_search_call.results"];
-        }
-        return payload;
-      }
+        // Note: 'browsing' via web_search n'est pas standard OpenAI/Google Vertex.
+        // Si vous l'utilisez, assurez-vous que votre proxy le supporte, sinon cela sera ignoré.
+        
+        return payload; // On retourne l'Objet (pas une string)
+      };
 
       /**
        * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
@@ -1277,52 +1233,60 @@ const GenAIApp = (function () {
   }
 
   /**
-* Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
-* and handles authentication, retries on rate limits and server errors, and response parsing.
-* This function is designed for internal use and includes exponential backoff for retries.
-*
-* @private
-* @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
-* @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
-* @returns {object} - The response message from the GenAI API.
-* @throws {Error} If the API call fails after the maximum number of retries.
-*/
+  * Makes an API call to the specified GenAI endpoint (either OpenAI or Google) with a payload
+  * and handles authentication, retries on rate limits and server errors, and response parsing.
+  * This function is designed for internal use and includes exponential backoff for retries.
+  *
+  * @private
+  * @param {string} endpoint - The API endpoint URL to call, e.g., OpenAI or Google GenAI endpoint.
+  * @param {Object} payload - The request payload to send in JSON format, including request data like max_tokens.
+  * @returns {object} - The response message from the GenAI API.
+  * @throws {Error} If the API call fails after the maximum number of retries.
+  */
   function _callGenAIApi(endpoint, payload) {
     let authMethod = 'Bearer ' + openAIKey;
+    
+    // 1. Gestion de l'authentification (Google vs OpenAI)
     if (endpoint.includes("google")) {
       if (geminiKey) {
-        // Header name different for Google API key
-        authMethod = null;
+        authMethod = null; // API Key gérée via header x-goog-api-key
       }
       else {
         authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
       }
     }
+    
     const maxRetries = 5;
     let retries = 0;
     let success = false;
-
     let responseMessage, finish_reason;
+
+    // Pour les logs d'erreur, on récupère le nom du modèle proprement
+    // Si payload est un objet, on prend .model, sinon on parse
+    const payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const modelName = payloadObj.model || "unknown-model";
+
     while (retries < maxRetries && !success) {
       const headers = {
         'Content-Type': 'application/json',
       };
+      
       if (authMethod) {
         headers['Authorization'] = authMethod;
       }
       else if (geminiKey) {
-        // use an HTTP header instead of including the API key in the query parameters.
         headers['x-goog-api-key'] = geminiKey;
       }
+
       const options = {
         method: 'post',
         headers: headers,
-        payload: JSON.stringify(payload),
+        // CORRECTION : On s'assure de stringify seulement si c'est un objet
+        payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
         muteHttpExceptions: true
       };
 
       let response;
-      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
       if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
         response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
       }
@@ -1332,7 +1296,7 @@ const GenAIApp = (function () {
         }
         catch (err) {
           if (verbose) {
-            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
+            console.warn(`[GenAIApp] - Network error calling ${modelName}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
           }
           const delay = Math.pow(2, retries) * 1000;
           Utilities.sleep(delay);
@@ -1340,61 +1304,63 @@ const GenAIApp = (function () {
           continue;
         }
       }
+
       const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
-        // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
-        if (endpoint.includes("google")) {
+
+        // --- CORRECTION MAJEURE ICI ---
+        // On ne parse en mode "Google Native" (candidates) que si ce n'est PAS l'endpoint OpenAPI
+        // Cela permet à Gemini 3 (via OpenAPI) de passer dans le 'else' et de renvoyer l'objet standard.
+        if (endpoint.includes("google") && !endpoint.includes("openapi") && !endpoint.includes("generativelanguage")) {
+          // Format Google Legacy (Gemini 1.5 via API classique)
           const firstCandidate = parsedResponse.candidates?.[0];
           responseMessage = firstCandidate?.content || null;
           finish_reason = firstCandidate?.finishReason || null;
         }
         else {
+          // Format Standard OpenAI (GPT, Gemini 3 via Vertex OpenAPI, Gemini via AI Studio)
+          // On renvoie TOUT l'objet parsedResponse, car this.run s'attend à trouver .choices
           responseMessage = parsedResponse;
-          finish_reason = parsedResponse.status;
+          finish_reason = parsedResponse.choices?.[0]?.finish_reason;
         }
+
         if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
-          console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
+          console.warn(`[GenAIApp] - Response from ${modelName} truncated (insufficient tokens). Try chat.run({max_tokens: 4000+}).`);
         }
         success = true;
       }
       else if (responseCode === 429) {
-        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
-        // Rate limit reached, wait before retrying.
-        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+        console.warn(`[GenAIApp] - Rate limit reached for ${modelName}, retrying...`);
+        const delay = Math.pow(2, retries) * 1000;
         Utilities.sleep(delay);
         retries++;
       }
-      else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
-        // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
-        // https://platform.openai.com/docs/guides/error-codes/api-errors
-        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
+      else if (responseCode >= 500) {
+        // Erreurs serveur (500, 502, 503) -> Retry
+        const delay = Math.pow(2, retries) * 1000;
         Utilities.sleep(delay);
         retries++;
-        if (verbose) {
-          console.warn(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}, retrying (${retries}/${maxRetries})`);
-        }
+        if (verbose) console.warn(`[GenAIApp] - Server error ${responseCode}, retrying...`);
       }
       else {
-        // The request failed for another reason, log the error and exit the loop.
-        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        // Erreur client (400, 401, 404...) -> Stop
+        console.error(`[GenAIApp] - Request to ${modelName} failed with response code ${responseCode} - ${response.getContentText()}`);
         break;
       }
     }
 
     if (!success) {
-      throw new Error(`[GenAIApp] - Failed to call ${payload.model} after ${retries} retries.`);
+      throw new Error(`[GenAIApp] - Failed to call ${modelName} after ${retries} retries.`);
     }
 
     if (verbose) {
-      Logger.log({
-        message: `[GenAIApp] - Got response from ${payload.model}`,
-        responseMessage: responseMessage
-      });
+      // On loggue un succès simple pour ne pas polluer la console avec l'objet JSON entier
+      Logger.log(`[GenAIApp] - Got success response from ${modelName}`);
     }
     return responseMessage;
-  }
+  };
 
   /**
    * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling, 
