@@ -380,13 +380,11 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
-        // 1. Initialisation
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
         reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
 
-        // 2. Vérification des clés
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
             throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth.");
@@ -397,12 +395,10 @@ const GenAIApp = (function () {
           }
         }
 
-        // 3. Warning Browsing
         if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
           console.warn(`[GenAIApp] - Browsing enabled with low max_tokens. Response might be truncated.`);
         }
 
-        // 4. Gestion Knowledge (Format Standard System Message)
         if (knowledgeLink.length > 0) {
           let knowledge = "";
           knowledgeLink.forEach(url => {
@@ -418,39 +414,30 @@ const GenAIApp = (function () {
           knowledgeLink = [];
         }
 
-        // 5. Construction du Payload (Format STANDARD OpenAI)
-        // C'est ici que ça change : on utilise la nouvelle fonction standardisée
         let payload = this._buildOpenAIPayload();
 
         let responseMessage;
         
         if (numberOfAPICalls <= maximumAPICalls) {
-          // URL par défaut (OpenAI)
           let endpointUrl = apiBaseUrl + "/v1/chat/completions";
           
-          // Support instance privée (Azure/Proxy) - adaptation au standard
           if (privateInstanceBaseUrl) {
             endpointUrl = privateInstanceBaseUrl + "/v1/chat/completions?api-version=preview";
           }
           
-          // Aiguillage Gemini (Mode Compatibilité OpenAI)
           if (model.includes("gemini")) {
             if (geminiKey) {
-              // AI Studio (API Key)
               endpointUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
             }
             else {
-              // Vertex AI (Google Cloud)
               endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/endpoints/openapi/chat/completions`;
               
-              // Vertex AI exige le préfixe "google/" dans le nom du modèle
               if (!payload.model.startsWith("google/")) {
                   payload.model = "google/" + payload.model;
               }
             }
           }
           
-          // Appel API
           responseMessage = _callGenAIApi(endpointUrl, payload);
           numberOfAPICalls++;
         }
@@ -458,15 +445,13 @@ const GenAIApp = (function () {
           throw new Error(`[GenAIApp] - Too many calls to API: ${numberOfAPICalls}`);
         }
 
-        // 6. Traitement de la réponse (Format Standard 'choices')
         const message = responseMessage?.choices?.[0]?.message;
         
         if (!message) return null;
 
-        // Gestion du Tool Calling (Standard OpenAI)
         if (message.tool_calls && message.tool_calls.length > 0) {
             
-            messages.push(message); // On stocke la réponse de l'assistant
+            messages.push(message);
 
             for (const toolCall of message.tool_calls) {
                 const functionName = toolCall.function.name;
@@ -476,7 +461,6 @@ const GenAIApp = (function () {
                 let endWithResult = false;
                 let onlyReturnArguments = false;
 
-                // Recherche de la définition de la fonction
                 for (const t in tools) {
                     const currentFunction = tools[t].function._toJson();
                     if (currentFunction.name == functionName) {
@@ -499,7 +483,6 @@ const GenAIApp = (function () {
 
                 if (endWithResult) return "OK";
 
-                // Ajout du résultat au format Tool
                 messages.push({
                     tool_call_id: toolCall.id,
                     role: "tool",
@@ -508,7 +491,6 @@ const GenAIApp = (function () {
                 });
             }
 
-            // Récursion
             if (advancedParametersObject) return this.run(advancedParametersObject);
             else return this.run();
         }
@@ -533,7 +515,6 @@ const GenAIApp = (function () {
           messages: []
         };
 
-        // Gestion intelligente des Tokens (GPT-5/o1/o3 vs Standard)
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
           payload.max_completion_tokens = max_tokens;
           payload.reasoning_effort = reasoning_effort;
@@ -542,14 +523,11 @@ const GenAIApp = (function () {
           payload.max_tokens = max_tokens;
         }
 
-        // Conversion et nettoyage des messages
         const cleanMessages = messages.map(msg => {
             let content = msg.content;
             
-            // Gestion Contenu Complexe (Images/Fichiers)
             if (Array.isArray(content)) {
                 content = content.map(item => {
-                    // Conversion format propriétaire -> Standard OpenAI
                     if (item.type === "input_image") {
                         return {
                             type: "image_url",
@@ -563,7 +541,6 @@ const GenAIApp = (function () {
                 });
             }
 
-            // Sanitisation : Content ne doit jamais être null (Erreur 400 sinon)
             if (content === null || content === undefined) {
                 content = "";
             }
@@ -573,7 +550,6 @@ const GenAIApp = (function () {
                 content: content
             };
 
-            // Transfert des infos de Tool Calling (Critique pour le contexte)
             if (msg.tool_calls) messageObj.tool_calls = msg.tool_calls;
             if (msg.tool_call_id) messageObj.tool_call_id = msg.tool_call_id;
             if (msg.name) messageObj.name = msg.name;
@@ -608,11 +584,8 @@ const GenAIApp = (function () {
             payload.tools.push(connector._toJson());
           });
         }
-
-        // Note: 'browsing' via web_search n'est pas standard OpenAI/Google Vertex.
-        // Si vous l'utilisez, assurez-vous que votre proxy le supporte, sinon cela sera ignoré.
-        
-        return payload; // On retourne l'Objet (pas une string)
+      
+        return payload;
       };
 
       /**
@@ -1245,11 +1218,9 @@ const GenAIApp = (function () {
   */
   function _callGenAIApi(endpoint, payload) {
     let authMethod = 'Bearer ' + openAIKey;
-    
-    // 1. Gestion de l'authentification (Google vs OpenAI)
     if (endpoint.includes("google")) {
       if (geminiKey) {
-        authMethod = null; // API Key gérée via header x-goog-api-key
+        authMethod = null;
       }
       else {
         authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
@@ -1261,8 +1232,6 @@ const GenAIApp = (function () {
     let success = false;
     let responseMessage, finish_reason;
 
-    // Pour les logs d'erreur, on récupère le nom du modèle proprement
-    // Si payload est un objet, on prend .model, sinon on parse
     const payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
     const modelName = payloadObj.model || "unknown-model";
 
@@ -1281,7 +1250,6 @@ const GenAIApp = (function () {
       const options = {
         method: 'post',
         headers: headers,
-        // CORRECTION : On s'assure de stringify seulement si c'est un objet
         payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
         muteHttpExceptions: true
       };
@@ -1309,19 +1277,12 @@ const GenAIApp = (function () {
 
       if (responseCode === 200) {
         const parsedResponse = JSON.parse(response.getContentText());
-
-        // --- CORRECTION MAJEURE ICI ---
-        // On ne parse en mode "Google Native" (candidates) que si ce n'est PAS l'endpoint OpenAPI
-        // Cela permet à Gemini 3 (via OpenAPI) de passer dans le 'else' et de renvoyer l'objet standard.
         if (endpoint.includes("google") && !endpoint.includes("openapi") && !endpoint.includes("generativelanguage")) {
-          // Format Google Legacy (Gemini 1.5 via API classique)
           const firstCandidate = parsedResponse.candidates?.[0];
           responseMessage = firstCandidate?.content || null;
           finish_reason = firstCandidate?.finishReason || null;
         }
         else {
-          // Format Standard OpenAI (GPT, Gemini 3 via Vertex OpenAPI, Gemini via AI Studio)
-          // On renvoie TOUT l'objet parsedResponse, car this.run s'attend à trouver .choices
           responseMessage = parsedResponse;
           finish_reason = parsedResponse.choices?.[0]?.finish_reason;
         }
@@ -1338,14 +1299,12 @@ const GenAIApp = (function () {
         retries++;
       }
       else if (responseCode >= 500) {
-        // Erreurs serveur (500, 502, 503) -> Retry
         const delay = Math.pow(2, retries) * 1000;
         Utilities.sleep(delay);
         retries++;
         if (verbose) console.warn(`[GenAIApp] - Server error ${responseCode}, retrying...`);
       }
       else {
-        // Erreur client (400, 401, 404...) -> Stop
         console.error(`[GenAIApp] - Request to ${modelName} failed with response code ${responseCode} - ${response.getContentText()}`);
         break;
       }
@@ -1356,7 +1315,6 @@ const GenAIApp = (function () {
     }
 
     if (verbose) {
-      // On loggue un succès simple pour ne pas polluer la console avec l'objet JSON entier
       Logger.log(`[GenAIApp] - Got success response from ${modelName}`);
     }
     return responseMessage;
