@@ -530,12 +530,18 @@ const GenAIApp = (function () {
                   // Do not return anything specific as the goal is simply to end here.
                   return "OK";
                 }
-                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
                   if (verbose) {
                     console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                   }
-                  // return the argument(s) of the last function called
-                  return _parseResponse(messages[messages.length - 3].arguments);
+                  const prevParts = contents[contents.length - 2]?.parts;
+                  if (Array.isArray(prevParts)) {
+                    return prevParts.find(p => p && p.functionCall)?.functionCall.args;
+                  } 
+                  else if (prevParts?.functionCall) {
+                     return prevParts.functionCall.args;
+                  }
+                  return null;
                 }
               }
               // Use the previous_response_id parameter to pass reasoning items from previous responses
