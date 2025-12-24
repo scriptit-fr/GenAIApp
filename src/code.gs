@@ -387,141 +387,188 @@ const GenAIApp = (function () {
 
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
-            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth.");
+            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
           }
-        } else {
+        }
+        else {
           if (!openAIKey) {
-            throw Error("[GenAIApp] - Please set your OpenAI API key.");
+            throw Error("[GenAIApp] - Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
           }
         }
 
         if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
-          console.warn(`[GenAIApp] - Browsing enabled with low max_tokens. Response might be truncated.`);
+          console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
         if (knowledgeLink.length > 0) {
           let knowledge = "";
           knowledgeLink.forEach(url => {
             const urlContent = _urlFetch(url);
-            if (urlContent) {
-                 knowledge += `${url}: \n\n ${urlContent}\n\n`;
-            }
+            knowledge += `${url}: \n\n ${urlContent}\n\n`;
           })
-          if (!knowledge) throw Error(`[GenAIApp] - Failed to fetch knowledge links.`);
-          
+          if (!knowledge) {
+            throw Error(`[GenAIApp] - The webpage of at least one of the URLs didn't respond, please change the url of the addKnowledgeLink() function.`);
+          }
           messages.push({
             role: "system",
             content: `Information to help with your response : ${knowledge}`
           });
+          contents.push({
+            role: "user",
+            parts: {
+              text: `Information to help with your response : ${knowledge}`
+            }
+          })
           knowledgeLink = [];
         }
 
-        // Construction du Payload
-        let payload = this._buildOpenAIPayload();
+        let payload;
+        if (model.includes("gemini")) {
+          payload = this._buildGeminiPayload(advancedParametersObject);
+        }
+        else {
+          payload = this._buildOpenAIPayload();
+        }
 
         let responseMessage;
-        
         if (numberOfAPICalls <= maximumAPICalls) {
-          let endpointUrl = apiBaseUrl + "/v1/chat/completions";
-          
+          let endpointUrl = apiBaseUrl + "/v1/responses";
           if (privateInstanceBaseUrl) {
-            endpointUrl = privateInstanceBaseUrl + "/v1/chat/completions?api-version=preview";
+            endpointUrl = privateInstanceBaseUrl + "/v1/responses?api-version=preview";
           }
-          
           if (model.includes("gemini")) {
-            if (geminiKey) {
-              // AI Studio (Clé API)
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
+            if (model === 'gemini-3-pro-preview') {
+              endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+            }  
+            else if (geminiKey) {
+              // Public endpoint / Generative Language API
+              // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
             }
             else {
-              // Vertex AI (Google Cloud)
+              // Enterprise endpoint / Vertex AI API
+              // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
+              // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
               if (region) {
-                // Endpoint region
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/endpoints/openapi/chat/completions`;
-              } else {
-                // Endpoint Global 
-                endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/endpoints/openapi/chat/completions`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
               }
-              
-              if (!payload.model.startsWith("google/")) {
-                  payload.model = "google/" + payload.model;
+              else {
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
             }
           }
-          
           responseMessage = _callGenAIApi(endpointUrl, payload);
           numberOfAPICalls++;
         }
         else {
-          throw new Error(`[GenAIApp] - Too many calls to API: ${numberOfAPICalls}`);
+          throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
         }
-
-        const message = responseMessage?.choices?.[0]?.message;
-        
-        if (!message) return null;
-
-        if (message.tool_calls && message.tool_calls.length > 0) {
-            
-            messages.push(message);
-
-            const toolDefinitions = tools.map(t => t.function._toJson());
-
-            for (const toolCall of message.tool_calls) {
-                const functionName = toolCall.function.name;
-                
-                let args;
-                try {
-                    args = JSON.parse(toolCall.function.arguments);
-                } catch (e) {
-                    console.warn(`[GenAIApp] - Failed to parse arguments for function ${functionName}: ${e.message}`);
-                    messages.push({
-                        tool_call_id: toolCall.id,
-                        role: "tool",
-                        name: functionName,
-                        content: JSON.stringify({ error: "Invalid JSON arguments", details: e.message })
-                    });
-                    continue; 
-                }
-                
-                let argsOrder = [];
-                let endWithResult = false;
-                let onlyReturnArguments = false;
-
-                for (const currentFunction of toolDefinitions) {
-                    if (currentFunction.name == functionName) {
-                        argsOrder = currentFunction.argumentsInRightOrder;
-                        endWithResult = currentFunction.endingFunction;
-                        onlyReturnArguments = currentFunction.onlyArgs;
-                        break;
-                    }
-                }
-
-                if (onlyReturnArguments) return args;
-
-                if (verbose) console.log(`[GenAIApp] - function ${functionName}() called.`);
-
-                let functionResponse = _callFunction(functionName, args, argsOrder);
-                
-                if (typeof functionResponse != "string") {
-                   functionResponse = JSON.stringify(functionResponse);
-                }
-
-                if (endWithResult) return "OK";
-
-                messages.push({
-                    tool_call_id: toolCall.id,
-                    role: "tool",
-                    name: functionName,
-                    content: functionResponse
-                });
+        if (Array.isArray(responseMessage.output)) {
+          const fileSearchCall = responseMessage.output.filter(item => item.type === "file_search_call");
+          if (fileSearchCall.length > 0) {
+            // In case of file search, handle the possible use of onlyReturnChunks() and store files attributes
+            // https://platform.openai.com/docs/guides/tools-file-search
+            retrievedAttributes = [];
+            const retrievedChunks = fileSearchCall.flatMap(call =>
+              Array.isArray(call?.results) ? call.results : []
+            );
+            if (verbose) {
+              console.log(`[GenAIApp] - File search performed: retrieved ${retrievedChunks.length} chunks (max_num_results=${maxNumOfChunks}).`);
             }
-
-            if (advancedParametersObject) return this.run(advancedParametersObject);
-            else return this.run();
+            for (const chunk of retrievedChunks) {
+              if (chunk?.attributes != null) {
+                retrievedAttributes.push(chunk.attributes);
+              }
+            }
+            if (onlyChunks) {
+              return retrievedChunks;
+            }
+          }
         }
 
-        return message.content || null;
-      };
+        if (tools.length > 0) {
+          // Check if AI model wanted to call a function
+          if (model.includes("gemini")) {
+            if (responseMessage?.parts?.some(p => p?.functionCall)) {
+              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
+              // check if endWithResults or onlyReturnArguments
+              if (contents[contents.length - 1].role == "model") {
+                if (contents[contents.length - 1].parts.text == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
+                }
+                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  const lastPart = contents[contents.length - 1].parts;
+                  return lastPart.functionCall?.args || 
+                         contents[contents.length - 2].parts.find(p => p && p.functionCall)?.functionCall.args;
+                }
+              }
+            }
+            else {
+              // if no function has been found, stop here
+              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+              return part?.text || null;
+            }
+          }
+          else {
+            const functionCalls = responseMessage.output.filter(item => item.type === "function_call");
+            if (functionCalls.length > 0) {
+              messages = _handleOpenAIToolCalls(responseMessage.output, tools, messages);
+              // check if endWithResults or onlyReturnArguments
+              if (messages[messages.length - 1].role == "system") {
+                if (messages[messages.length - 1].content == "endWithResult") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
+                  }
+                  // Do not return anything specific as the goal is simply to end here.
+                  return "OK";
+                }
+                else if (messages[messages.length - 1].content == "onlyReturnArguments") {
+                  if (verbose) {
+                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
+                  }
+                  // return the argument(s) of the last function called
+                  return _parseResponse(messages[messages.length - 3].arguments);
+                }
+              }
+              // Use the previous_response_id parameter to pass reasoning items from previous responses
+              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              previous_response_id = responseMessage.id;
+            }
+            else {
+              // if no function has been found, stop here
+              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
+              return messageItem?.content?.find(part => part?.text)?.text || null;
+            }
+          }
+          if (advancedParametersObject) {
+            return this.run(advancedParametersObject);
+          }
+          else {
+            return this.run();
+          }
+        }
+        else {
+          if (model.includes("gemini")) {
+            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
+            return part?.text || null;
+          }
+          else {
+            return responseMessage
+              .output
+              .find(item => item.type === "message")?.content
+              ?.find(part => part?.text)?.text || null;
+          }
+        }
+      }
 
       /**
        * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
@@ -537,84 +584,83 @@ const GenAIApp = (function () {
       this._buildOpenAIPayload = function () {
         let payload = {
           model: model,
-          messages: []
+          max_output_tokens: max_tokens,
+          tools: []
         };
-
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
-          payload.max_completion_tokens = max_tokens;
-          payload.reasoning_effort = reasoning_effort;
-        } 
-        else {
-          payload.max_tokens = max_tokens;
+          payload.reasoning = {
+            "effort": reasoning_effort
+          }
         }
 
-        const cleanMessages = messages.map(msg => {
-            let content = msg.content;
-            
-            if (Array.isArray(content)) {
-                content = content.map(item => {
-                    if (item.type === "input_image") {
-                        return {
-                            type: "image_url",
-                            image_url: { url: item.image_url }
-                        };
-                    }
-                    if (item.type === "input_file") {
-                         return { type: "text", text: `[File: ${item.filename}]` };
-                    }
-                    return item;
-                });
-            }
-
-            if (content === null || content === undefined) {
-                content = "";
-            }
-
-            const messageObj = {
-                role: msg.role,
-                content: content
-            };
-
-            if (msg.tool_calls) messageObj.tool_calls = msg.tool_calls;
-            if (msg.tool_call_id) messageObj.tool_call_id = msg.tool_call_id;
-            if (msg.name) messageObj.name = msg.name;
-
-            return messageObj;
-        });
-
-        payload.messages = cleanMessages;
-
         if (previous_response_id) {
-             payload.previous_response_id = previous_response_id;
+          payload.previous_response_id = previous_response_id;
+        }
+
+        let systemInstructions = "";
+        const userMessages = [];
+        for (const message of messages) {
+          if (message.role === "system") {
+            systemInstructions += message.content + "\n";
+          }
+          else {
+            userMessages.push(message);
+          }
+        }
+        if (systemInstructions !== "") {
+          payload.instructions = systemInstructions;
+        }
+        payload.input = userMessages;
+
+        if (globalMetadata && Object.keys(globalMetadata).length > 0) {
+          Object.assign(messageMetadata, globalMetadata);
+          payload.metadata = messageMetadata;
         }
 
         if (tools.length > 0) {
-          const toolsPayload = tools.map(tool => {
-            const fnDef = tool.function._toJson();
-            return {
-              type: "function",
-              function: {
-                  name: fnDef.name,
-                  description: fnDef.description,
-                  parameters: fnDef.parameters
-              }
-            };
-          });
+          // the user has added functions, enable function calling
+          const toolsPayload = tools.map(tool => ({
+            type: "function",
+            name: tool.function._toJson().name,
+            description: tool.function._toJson().description,
+            parameters: tool.function._toJson().parameters,
+          }));
           payload.tools = toolsPayload;
+
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
           }
         }
-        
+
         if (mcpConnectors.length > 0) {
           mcpConnectors.forEach(connector => {
-            if (!payload.tools) payload.tools = [];
             payload.tools.push(connector._toJson());
           });
         }
 
+        if (browsing) {
+          payload.tools.push({
+            type: "web_search"
+          });
+          if (restrictSearch) {
+            messages.push({
+              role: "user", // upon testing, this instruction has better results with user role instead of system
+              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+            });
+          }
+        }
+
+        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+          const fileSearchTool = {
+            type: "file_search",
+            vector_store_ids: Object.keys(addedVectorStores),
+            max_num_results: maxNumOfChunks
+          };
+          payload.tools.push(fileSearchTool);
+          payload.include = ["file_search_call.results"];
+        }
         return payload;
-      };
+      }
 
       /**
        * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
@@ -1248,46 +1294,38 @@ const GenAIApp = (function () {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
       if (geminiKey) {
+        // Header name different for Google API key
         authMethod = null;
       }
       else {
         authMethod = 'Bearer ' + ScriptApp.getOAuthToken();
       }
     }
-    
     const maxRetries = 5;
     let retries = 0;
     let success = false;
+
     let responseMessage, finish_reason;
-
-    let modelName = "unknown-model";
-    try {
-        const payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        modelName = payloadObj.model || "unknown-model";
-    } catch (e) {
-      console.log(e);
-    }
-
     while (retries < maxRetries && !success) {
       const headers = {
         'Content-Type': 'application/json',
       };
-      
       if (authMethod) {
         headers['Authorization'] = authMethod;
       }
       else if (geminiKey) {
+        // use an HTTP header instead of including the API key in the query parameters.
         headers['x-goog-api-key'] = geminiKey;
       }
-
       const options = {
         method: 'post',
         headers: headers,
-        payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+        payload: JSON.stringify(payload),
         muteHttpExceptions: true
       };
 
       let response;
+      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
       if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
         response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
       }
@@ -1297,7 +1335,7 @@ const GenAIApp = (function () {
         }
         catch (err) {
           if (verbose) {
-            console.warn(`[GenAIApp] - Network error calling ${modelName}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
+            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
           }
           const delay = Math.pow(2, retries) * 1000;
           Utilities.sleep(delay);
@@ -1305,46 +1343,61 @@ const GenAIApp = (function () {
           continue;
         }
       }
-
       const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
+        // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
-        responseMessage = parsedResponse;
-        finish_reason = parsedResponse.choices?.[0]?.finish_reason;
-
+        if (endpoint.includes("google")) {
+          const firstCandidate = parsedResponse.candidates?.[0];
+          responseMessage = firstCandidate?.content || null;
+          finish_reason = firstCandidate?.finishReason || null;
+        }
+        else {
+          responseMessage = parsedResponse;
+          finish_reason = parsedResponse.status;
+        }
         if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
-          console.warn(`[GenAIApp] - Response from ${modelName} truncated (insufficient tokens). Try chat.run({max_tokens: 4000+}).`);
+          console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
       }
       else if (responseCode === 429) {
-        console.warn(`[GenAIApp] - Rate limit reached for ${modelName}, retrying...`);
-        const delay = Math.pow(2, retries) * 1000;
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
+        // Rate limit reached, wait before retrying.
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
       }
-      else if (responseCode >= 500) {
-        const delay = Math.pow(2, retries) * 1000;
+      else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
+        // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
+        // https://platform.openai.com/docs/guides/error-codes/api-errors
+        const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
-        if (verbose) console.warn(`[GenAIApp] - Server error ${responseCode}, retrying...`);
+        if (verbose) {
+          console.warn(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}, retrying (${retries}/${maxRetries})`);
+        }
       }
       else {
-        console.error(`[GenAIApp] - Request to ${modelName} failed with response code ${responseCode} - ${response.getContentText()}`);
+        // The request failed for another reason, log the error and exit the loop.
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
         break;
       }
     }
 
     if (!success) {
-      throw new Error(`[GenAIApp] - Failed to call ${modelName} after ${retries} retries.`);
+      throw new Error(`[GenAIApp] - Failed to call ${payload.model} after ${retries} retries.`);
     }
 
     if (verbose) {
-      Logger.log(`[GenAIApp] - Got success response from ${modelName}`);
+      Logger.log({
+        message: `[GenAIApp] - Got response from ${payload.model}`,
+        responseMessage: responseMessage
+      });
     }
     return responseMessage;
-  };
+  }
 
   /**
    * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling, 
@@ -1365,6 +1418,12 @@ const GenAIApp = (function () {
     contents.push(responseMessage);
 
     const parts = (responseMessage && responseMessage.parts) || [];
+    const functionResponseParts = [];
+
+    let endWithResult = false;
+    let onlyReturnArguments = false;
+    let argsToReturn = null;
+
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] || {};
       if (!part.functionCall || !part.functionCall.name) continue;
@@ -1373,15 +1432,16 @@ const GenAIApp = (function () {
       const functionArgs = part.functionCall.args;
 
       let argsOrder = [];
-      let endWithResult = false;
-      let onlyReturnArguments = false;
 
       for (const t in tools) {
         const currentFunction = tools[t].function._toJson();
         if (currentFunction.name == functionName) {
           argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
-          endWithResult = currentFunction.endingFunction;
-          onlyReturnArguments = currentFunction.onlyArgs;
+          if (currentFunction.endingFunction) endWithResult = true;
+          if (currentFunction.onlyArgs) {
+            onlyReturnArguments = true;
+            argsToReturn = functionArgs;
+          }
           break;
         }
       }
@@ -1391,7 +1451,8 @@ const GenAIApp = (function () {
         contents.push({
           "role": "model",
           "parts": {
-            text: "onlyReturnArguments"
+            text: "onlyReturnArguments",
+            functionCall: { args: argsToReturn }
           }
         });
         return contents;
@@ -1410,28 +1471,33 @@ const GenAIApp = (function () {
         }
       }
 
-      // Append result of the function execution to contents
-      // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
+      // Store result to be sent back in a single message later
+      functionResponseParts.push({
+        functionResponse: {
+          name: functionName,
+          response: { name: functionName, content: functionResponse }
+        }
+      });
+    }
+
+    // Append result of the function execution to contents
+    // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
+    if (functionResponseParts.length > 0) {
       contents.push({
         role: 'user',
-        parts: [{
-          functionResponse: {
-            name: functionName,
-            response: { functionResponse }
-          }
-        }]
+        parts: functionResponseParts
       });
+    }
 
-      if (endWithResult) {
-        // User defined that if this function has been called, we do not call back the AI endpoint.
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "endWithResult"
-          }
-        });
-        return contents;
-      }
+    if (endWithResult) {
+      // User defined that if this function has been called, we do not call back the AI endpoint.
+      contents.push({
+        "role": "model",
+        "parts": {
+          text: "endWithResult"
+        }
+      });
+      return contents;
     }
     return contents;
   }
