@@ -582,6 +582,7 @@ const GenAIApp = (function () {
         let payload = {
           model: model,
           max_output_tokens: max_tokens,
+          parallel_tool_calls: true,
           tools: []
         };
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
@@ -630,12 +631,16 @@ const GenAIApp = (function () {
         }
 
         if (mcpConnectors.length > 0) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
         }
 
         if (browsing) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
           payload.tools.push({
             type: "web_search"
           });
@@ -648,6 +653,8 @@ const GenAIApp = (function () {
         }
 
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
           const fileSearchTool = {
             type: "file_search",
             vector_store_ids: Object.keys(addedVectorStores),
