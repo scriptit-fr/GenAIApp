@@ -1374,9 +1374,9 @@ const GenAIApp = (function () {
         try { errJson = JSON.parse(response.getContentText()); } catch (e) { }
         const errCode = errJson?.error?.code;
         if (errCode === "context_length_exceeded") {
-          console.warn(`[GenAIApp] - Context length exceeded when calling ${payload.model} with MCP connectors, retrying (${retries}/${maxRetries}).`);
           // No need to wait before retrying
           retries++;
+          console.warn(`[GenAIApp] - Context length exceeded when calling ${payload.model} with MCP connectors, retrying (${retries}/${maxRetries}).`);
           // No payload changes, no shrinking: exact same request again.
           continue;
         }
@@ -1385,11 +1385,11 @@ const GenAIApp = (function () {
         break;
       }
       else if (responseCode === 429) {
-        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
         // Rate limit reached, wait before retrying.
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, retrying (${retries}/${maxRetries}).`);
       }
       else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
         // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
