@@ -1309,6 +1309,8 @@ const GenAIApp = (function () {
     let retries = 0;
     let success = false;
 
+    const hasMcpConnectors = !!payload && Array.isArray(payload.tools) && payload.tools.some(t => t && t.type === "mcp");
+
     let responseMessage, finish_reason;
     while (retries < maxRetries && !success) {
       const headers = {
@@ -1365,6 +1367,22 @@ const GenAIApp = (function () {
           console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
+      }
+      else if (responseCode === 400 && hasMcpConnectors) {
+        // Retry on context_length_exceeded ONLY when MCP connectors are present.
+        let errJson = null;
+        try { errJson = JSON.parse(response.getContentText()); } catch (e) { }
+        const errCode = errJson?.error?.code;
+        if (errCode === "context_length_exceeded") {
+          console.warn(`[GenAIApp] - Context length exceeded when calling ${payload.model} with MCP connectors, retrying (${retries}/${maxRetries}).`);
+          // No need to wait before retrying
+          retries++;
+          // No payload changes, no shrinking: exact same request again.
+          continue;
+        }
+        // If it's a different 400, fall through to the generic error handler below.
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        break;
       }
       else if (responseCode === 429) {
         console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
