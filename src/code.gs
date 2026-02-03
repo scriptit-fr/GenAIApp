@@ -1309,6 +1309,8 @@ const GenAIApp = (function () {
     let retries = 0;
     let success = false;
 
+    const hasMcpConnectors = !!payload && Array.isArray(payload.tools) && payload.tools.some(t => t && t.type === "mcp");
+
     let responseMessage, finish_reason;
     while (retries < maxRetries && !success) {
       const headers = {
@@ -1366,12 +1368,28 @@ const GenAIApp = (function () {
         }
         success = true;
       }
+      else if (responseCode === 400 && hasMcpConnectors) {
+        // Retry on context_length_exceeded ONLY when MCP connectors are present.
+        let errJson = null;
+        try { errJson = JSON.parse(response.getContentText()); } catch (e) { }
+        const errCode = errJson?.error?.code;
+        if (errCode === "context_length_exceeded") {
+          // No need to wait before retrying
+          retries++;
+          console.warn(`[GenAIApp] - Context length exceeded when calling ${payload.model} with MCP connectors, retrying (${retries}/${maxRetries}).`);
+          // No payload changes, no shrinking: exact same request again.
+          continue;
+        }
+        // If it's a different 400, fall through to the generic error handler below.
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        break;
+      }
       else if (responseCode === 429) {
-        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
         // Rate limit reached, wait before retrying.
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, retrying (${retries}/${maxRetries}).`);
       }
       else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
         // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
