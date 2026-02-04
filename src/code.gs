@@ -1029,7 +1029,7 @@ const GenAIApp = (function () {
        * Sets the Google Cloud Storage bucket used by the RAG Corpus
        * when Google is the provider.
        *
-       * @param {string} bucketAdress - The GCS bucket address (eg: gs://my-bucket or gs://my-bucket/path)
+       * @param {string} bucketAddress - The GCS bucket address (eg: gs://my-bucket or gs://my-bucket/path)
        */
       this.setBucketName = function (bucketAddress) {
         bucket = bucketAddress;
@@ -2204,7 +2204,7 @@ const GenAIApp = (function () {
    * @returns {string} RAG Corpus ID
    * @throws {Error} If corpus creation fails
    */
-  function _createRagCorpus(ragCorpusName,description) {
+  function _createRagCorpus(ragCorpusName, description) {
     const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora`;
     
     const payload = {
@@ -2324,7 +2324,7 @@ const GenAIApp = (function () {
     const response = UrlFetchApp.fetch(url, options);
 
     if (response.getResponseCode() !== 200) {
-      Logger.log(`[GenAIApp] - Failed to retrieve RAG corpus. Status: ${statusCode}, Response: ${contentText}`);
+      Logger.log(`[GenAIApp] - Failed to retrieve RAG corpus.`);
       return null;
     }
     const result = JSON.parse(response.getContentText());
@@ -2767,7 +2767,6 @@ const GenAIApp = (function () {
    *
    * @param {string} ragId - The unique identifier of the RAG Corpus
    * @param {string} fileId - The unique identifier of the RagFile to delete
-   * @returns {string} RAG Corpus ID
    * @throws {Error} If deletion fails
    */
   function _deleteFileInRagCorpus(ragId, fileId) {
@@ -2910,7 +2909,7 @@ const GenAIApp = (function () {
 
       uploadFile(blob,bucket) {
         if(!bucket) {
-          throw new Error("[GenAIApp] - bucketName is requiered for Google RAG provider");
+          throw new Error("[GenAIApp] - bucketName is required for Google RAG provider");
         }
         const fileName = blob?.getName()?.trim() || `rag/${Utilities.getUuid()}`;
         return _uploadFileToBucket(blob, fileName, bucket)
