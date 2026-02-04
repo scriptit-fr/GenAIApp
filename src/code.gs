@@ -814,14 +814,20 @@ const GenAIApp = (function () {
        *
        * @private
        * @param {Object} advancedParametersObject - An object with optional advanced parameters, 
-       *                                            such as function call preferences.
+       * such as function call preferences.
        * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
-       *                     generation configuration, and available tools.
+       * generation configuration, and available tools.
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
+        // Create a clean copy of contents to remove unsupported fields (like groundingMetadata)
+        const cleanContents = contents.map(msg => ({
+          role: msg.role,
+          parts: msg.parts
+        }));
+
         const payload = {
-          'contents': contents,
+          'contents': cleanContents,
           'model': model,
           'generationConfig': {
             maxOutputTokens: max_tokens,
@@ -842,7 +848,6 @@ const GenAIApp = (function () {
         }
 
         if (tools.length > 0) {
-          // the user has added functions, enable function calling
           const payloadTools = Object.keys(tools).map(t => {
             const toolFunction = tools[t].function._toJson();
 
@@ -858,25 +863,19 @@ const GenAIApp = (function () {
             };
           });
 
-          payload.tools = [{
+          payload.tools.push({
             functionDeclarations: payloadTools
-          }];
+          });
         }
 
         if (browsing) {
-          tools.push({
-            google_search: "",
-          });
-          payload.tools.push({
-            url_context: {}
-          });
           payload.tools.push({
             google_search: {}
           });
         }
 
         const ragCorpusIds = Object.keys(addedVectorStores);
-        
+
         if (ragCorpusIds?.length > 0 && numberOfAPICalls < 1 && !!gcpProjectId) {
           payload.tools.push({
             retrieval: {
