@@ -718,6 +718,7 @@ const GenAIApp = (function () {
         let payload = {
           model: model,
           max_output_tokens: max_tokens,
+          parallel_tool_calls: true,
           tools: []
         };
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
@@ -778,12 +779,30 @@ const GenAIApp = (function () {
         }
 
         if (mcpConnectors.length > 0) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
         }
 
+        if (browsing) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
+          payload.tools.push({
+            type: "web_search"
+          });
+          if (restrictSearch) {
+            messages.push({
+              role: "user", // upon testing, this instruction has better results with user role instead of system
+              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+            });
+          }
+        }
+
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+          // Parallel function calling is not possible when using built-in tools.
+          payload.parallel_tool_calls = false;
           const fileSearchTool = {
             type: "file_search",
             vector_store_ids: Object.keys(addedVectorStores),
@@ -1506,6 +1525,8 @@ const GenAIApp = (function () {
     let retries = 0;
     let success = false;
 
+    const hasMcpConnectors = !!payload && Array.isArray(payload.tools) && payload.tools.some(t => t && t.type === "mcp");
+
     let responseMessage, finish_reason;
     while (retries < maxRetries && !success) {
       const headers = {
@@ -1566,12 +1587,28 @@ const GenAIApp = (function () {
         }
         success = true;
       }
+      else if (responseCode === 400 && hasMcpConnectors) {
+        // Retry on context_length_exceeded ONLY when MCP connectors are present.
+        let errJson = null;
+        try { errJson = JSON.parse(response.getContentText()); } catch (e) { }
+        const errCode = errJson?.error?.code;
+        if (errCode === "context_length_exceeded") {
+          // No need to wait before retrying
+          retries++;
+          console.warn(`[GenAIApp] - Context length exceeded when calling ${payload.model} with MCP connectors, retrying (${retries}/${maxRetries}).`);
+          // No payload changes, no shrinking: exact same request again.
+          continue;
+        }
+        // If it's a different 400, fall through to the generic error handler below.
+        console.error(`[GenAIApp] - Request to ${payload.model} failed with response code ${responseCode} - ${response.getContentText()}`);
+        break;
+      }
       else if (responseCode === 429) {
-        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, will automatically retry in a few seconds.`);
         // Rate limit reached, wait before retrying.
         const delay = Math.pow(2, retries) * 1000; // Delay in milliseconds, starting at 1 second.
         Utilities.sleep(delay);
         retries++;
+        console.warn(`[GenAIApp] - Rate limit reached when calling ${payload.model}, retrying (${retries}/${maxRetries}).`);
       }
       else if (responseCode === 503 || responseCode === 500 || responseCode === 502) {
         // The server is temporarily unavailable, or an issue occured on OpenAI servers. wait before retrying.
