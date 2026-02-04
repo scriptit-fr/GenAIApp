@@ -711,7 +711,7 @@ const GenAIApp = (function () {
        *
        * @private
        * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
-       *                     for OpenAI's API.
+       * for OpenAI's API.
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
       this._buildOpenAIPayload = function () {
@@ -721,6 +721,7 @@ const GenAIApp = (function () {
           parallel_tool_calls: true,
           tools: []
         };
+
         if (model.startsWith('o') || model.startsWith("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
@@ -731,21 +732,19 @@ const GenAIApp = (function () {
           payload.previous_response_id = previous_response_id;
         }
 
-        if (browsing) {
-          payload.tools.push({
-            type: "web_search"
+        // Use a local copy to avoid mutating the global 'messages' array
+        let localMessages = [...messages];
+
+        if (browsing && restrictSearch) {
+          localMessages.push({
+            role: "user",
+            content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
           });
-          if (restrictSearch) {
-            messages.push({
-              role: "user", // upon testing, this instruction has better results with user role instead of system
-              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-            });
-          }
         }
 
         let systemInstructions = "";
         const userMessages = [];
-        for (const message of messages) {
+        for (const message of localMessages) {
           if (message.role === "system") {
             systemInstructions += message.content + "\n";
           }
@@ -753,6 +752,7 @@ const GenAIApp = (function () {
             userMessages.push(message);
           }
         }
+
         if (systemInstructions !== "") {
           payload.instructions = systemInstructions;
         }
@@ -764,7 +764,6 @@ const GenAIApp = (function () {
         }
 
         if (tools.length > 0) {
-          // the user has added functions, enable function calling
           const toolsPayload = tools.map(tool => ({
             type: "function",
             name: tool.function._toJson().name,
@@ -792,16 +791,9 @@ const GenAIApp = (function () {
           payload.tools.push({
             type: "web_search"
           });
-          if (restrictSearch) {
-            messages.push({
-              role: "user", // upon testing, this instruction has better results with user role instead of system
-              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-            });
-          }
         }
 
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
-          // Parallel function calling is not possible when using built-in tools.
           payload.parallel_tool_calls = false;
           const fileSearchTool = {
             type: "file_search",
@@ -811,6 +803,7 @@ const GenAIApp = (function () {
           payload.tools.push(fileSearchTool);
           payload.include = ["file_search_call.results"];
         }
+        
         return payload;
       }
 
