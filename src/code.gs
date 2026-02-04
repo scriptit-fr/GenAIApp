@@ -22,6 +22,7 @@ const GenAIApp = (function () {
   let geminiKey = "";
   let gcpProjectId = "";
   let region = "";
+  let ragRegion = "europe-west4";
 
   let restrictSearch;
 
@@ -112,12 +113,27 @@ const GenAIApp = (function () {
           const response = UrlFetchApp.fetch(imageInput);
           const blob = response.getBlob();
           const base64Image = Utilities.base64Encode(blob.getBytes());
+          let mimeType = blob.getContentType();
+          if (!mimeType || !mimeType.startsWith("image/")) {
+            const lower = imageInput.toLowerCase();
+            if (lower.endsWith(".png")) {
+              mimeType = "image/png";
+            } else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+              mimeType = "image/jpeg";
+            } else if (lower.endsWith(".webp")) {
+              mimeType = "image/webp";
+            } else if (lower.endsWith(".gif")) {
+              mimeType = "image/gif";
+            } else {
+              throw new Error("Failed to identify a valid image MIME type. Please check the file format for Gemini.");
+            }
+          }
           contents.push({
             role: "user",
             parts: [
               {
-                inline_data: {
-                  mime_type: blob.getContentType(),
+                inlineData: {
+                  mimeType: mimeType,
                   data: base64Image
                 }
               }
@@ -372,7 +388,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3-flash-preview" | "gemini-3-pro-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -421,6 +437,13 @@ const GenAIApp = (function () {
           })
           knowledgeLink = [];
         }
+        
+        // Gemini does not support using images together with vector stores (RAG) yet.
+        // Images must be analyzed first and replaced with text before RAG processing.
+        const ragCorpusIds = Object.keys(addedVectorStores);
+        if (ragCorpusIds.length > 0 && model.includes("gemini")) {
+          contents = this._convertImagesToText(contents);
+        }
 
         let payload;
         if (model.includes("gemini")) {
@@ -446,16 +469,19 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (region) {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+              // Gemini 3 and non-regional calls must use the global Vertex AI endpoint
+              if (model.includes("gemini-3") || !region) {
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
               else {
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
               }
             }
           }
+
           responseMessage = _callGenAIApi(endpointUrl, payload);
           numberOfAPICalls++;
+
         }
         else {
           throw new Error(`[GenAIApp] - Too many calls to genAI API: ${numberOfAPICalls}`);
@@ -479,6 +505,22 @@ const GenAIApp = (function () {
             }
             if (onlyChunks) {
               return retrievedChunks;
+            }
+          }
+        }
+
+        if (model.includes("gemini")) {
+          const groundingChunks = responseMessage?.groundingMetadata?.groundingChunks || [];
+          if (groundingChunks.length > 0) {
+            retrievedAttributes = [];
+            for (const chunk of groundingChunks) {
+              const t = chunk?.retrievedContext?.title;
+              if (t) {
+                retrievedAttributes.push({title: t});
+              }
+            }
+            if (onlyChunks) {
+              return groundingChunks;
             }
           }
         }
@@ -568,6 +610,100 @@ const GenAIApp = (function () {
       }
 
       /**
+       * Replaces all image parts in a Gemini conversation with a text description
+       * generated by Gemini 3 Pro Preview (Vertex AI Vision).
+       *
+       * - Detects images (inlineData / fileData) across all messages
+       * - Sends them to Gemini Vision for analysis
+       * - Removes images from the conversation
+       * - Appends a new message containing the image analysis
+       *
+       * @param {Array<Object>} currentContents
+       *   Gemini conversation contents.
+       *
+       * @returns {Array<Object>}
+       *   Updated contents with images removed and a text analysis appended.
+       */
+      this._convertImagesToText = function (currentContents) {
+        if (!currentContents || currentContents.length === 0) return currentContents;
+
+        const hasImages = currentContents.some(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.some(p => p.inlineData || p.fileData);
+        });
+        
+        if (!hasImages) return currentContents;
+
+        if (typeof verbose !== 'undefined' && verbose) {
+          console.log("[GenAIApp] - Images detected. Converting to text description...");
+        }
+
+        const imageParts = currentContents.flatMap(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.filter(p => p.inlineData || p.fileData);
+        });
+        
+        if (imageParts.length === 0) return currentContents;
+
+        const descriptionPayload = {
+          contents: [{
+            role: "user",
+            parts: [
+              ...imageParts,
+              { text: "Analyze these images for a technical support request. Transcribe any error messages, logs, code snippets, or visible UI text exactly. Describe the visual context briefly." }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000
+          }
+        };
+
+        const options = {
+          method: 'post',
+          contentType: 'application/json',
+          headers: {
+            'Authorization': 'Bearer ' + ScriptApp.getOAuthToken()
+          },
+          payload: JSON.stringify(descriptionPayload),
+          muteHttpExceptions: true
+      };
+
+        const modelForVision = "gemini-3-pro-preview";
+        const endpoint = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${modelForVision}:generateContent`;
+
+        const response = UrlFetchApp.fetch(endpoint, options);
+        const result = JSON.parse(response.getContentText());
+        
+        let description = "";
+        if (result?.candidates?.[0]?.content?.parts?.[0]?.text) {
+          description = result.candidates[0].content.parts[0].text
+        } else if (result?.parts?.[0]?.text) {
+          description = result.parts[0].text;
+        } else {
+          description = "Image analysis returned no text.";
+        }
+
+        let newContents = JSON.parse(JSON.stringify(currentContents));
+        newContents.forEach(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : [c.parts];
+          c.parts = parts.filter(p => !p.inlineData && !p.fileData);
+        });
+
+        newContents = newContents.filter(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.length > 0;
+        });
+
+        newContents.push({
+          role: "user",
+          parts: [{ text: `IMAGE ANALYSIS:\n${description}` }]
+        });  
+
+        return newContents;
+      }
+
+      /**
        * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
        * tool-specific configurations for browsing, image description, and assistant functionalities. 
        * Configures tool choices based on recent interactions, message content, and options in 
@@ -594,6 +730,18 @@ const GenAIApp = (function () {
           payload.previous_response_id = previous_response_id;
         }
 
+        if (browsing) {
+          payload.tools.push({
+            type: "web_search"
+          });
+          if (restrictSearch) {
+            messages.push({
+              role: "user", // upon testing, this instruction has better results with user role instead of system
+              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
+            });
+          }
+        }
+
         let systemInstructions = "";
         const userMessages = [];
         for (const message of messages) {
@@ -609,9 +757,9 @@ const GenAIApp = (function () {
         }
         payload.input = userMessages;
 
-        if (globalMetadata && Object.keys(globalMetadata).length > 0) {
-          Object.assign(messageMetadata, globalMetadata);
-          payload.metadata = messageMetadata;
+        const finalMetadata = Object.assign({}, globalMetadata || {}, messageMetadata || {});
+        if (Object.keys(finalMetadata).length > 0) {
+          payload.metadata = finalMetadata;
         }
 
         if (tools.length > 0) {
@@ -622,7 +770,7 @@ const GenAIApp = (function () {
             description: tool.function._toJson().description,
             parameters: tool.function._toJson().parameters,
           }));
-          payload.tools = toolsPayload;
+          payload.tools.push(...toolsPayload);
 
           if (!payload.tool_choice) {
             payload.tool_choice = 'auto';
@@ -633,18 +781,6 @@ const GenAIApp = (function () {
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
-        }
-
-        if (browsing) {
-          payload.tools.push({
-            type: "web_search"
-          });
-          if (restrictSearch) {
-            messages.push({
-              role: "user", // upon testing, this instruction has better results with user role instead of system
-              content: `You are only able to search for information on ${restrictSearch}, restrict your search to this website only.`
-            });
-          }
         }
 
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
@@ -724,6 +860,21 @@ const GenAIApp = (function () {
           });
           payload.tools.push({
             google_search: {}
+          });
+        }
+
+        const ragCorpusIds = Object.keys(addedVectorStores);
+        
+        if (ragCorpusIds?.length > 0 && numberOfAPICalls < 1 && !!gcpProjectId) {
+          payload.tools.push({
+            retrieval: {
+              vertex_rag_store: {
+                rag_resources: ragCorpusIds.map(ragId => ({
+                  rag_corpus: `projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}`
+                })),
+                similarityTopK: maxNumOfChunks || 5
+              }
+            }
           });
         }
 
@@ -813,12 +964,16 @@ const GenAIApp = (function () {
  * Class representing an Open AI Vector Store.
  */
   class VectorStoreObject {
-    constructor() {
+    constructor(provider = "openai") {
       let name = "";
       let description = "";
       let id = null;
       let max_chunk_size = 800;
       let chunk_overlap = 400;
+      let bucket = null;
+      let providerType = provider;
+
+      const rag = _resolveRagProvider(provider);
 
       /**
        * Sets the vector store's name
@@ -848,8 +1003,19 @@ const GenAIApp = (function () {
       this.setChunkingStrategy = function (maxChunkSize, chunkOverlap) {
         max_chunk_size = maxChunkSize;
         chunk_overlap = chunkOverlap;
-        return this
+        return this;
       }
+
+      /**
+       * Sets the Google Cloud Storage bucket used by the RAG Corpus
+       * when Google is the provider.
+       *
+       * @param {string} bucketAdress - The GCS bucket address (eg: gs://my-bucket or gs://my-bucket/path)
+       */
+      this.setBucketName = function (bucketAddress) {
+        bucket = bucketAddress;
+        return this;
+      };
 
       /**
        * Creates the Open AI vector store. A name must be assigned before calling this function.
@@ -858,7 +1024,7 @@ const GenAIApp = (function () {
       this.createVectorStore = function () {
         if (!name) throw new Error("[GenAIApp] - Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
         try {
-          id = _createOpenAiVectorStore(name);
+          id = rag.createVectorStore(name);
         }
         catch (e) {
           console.error(`Error creating the vector store : ${e}`);
@@ -873,7 +1039,7 @@ const GenAIApp = (function () {
        */
       this.initializeFromId = function (vectorStoreId) {
         try {
-          const vectorStoreName = _retrieveVectorStoreInformation(vectorStoreId);
+          const vectorStoreName = rag.retrieveVectorStoreInformation(vectorStoreId);
           name = vectorStoreName;
           id = vectorStoreId;
         }
@@ -892,6 +1058,14 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Returns the providers of the vector store.
+       * @returns {('google'|'openai')} - The vector store provider name. 
+       */
+      this.getProvider = function() {
+        return providerType;
+      };
+
+      /**
        * Uploads a file to Open AI storage and attaches it to the vector store.
        * @param {Blob} blob - File to upload.
        * @param {Object} attributes - The JSON object containing the attributes to attach to the vector store. Per Open AI's documentation, must contain a max of 16 key-value pairs (both strings, up to 64 characters for keys, and up to 500 characters for values).
@@ -900,8 +1074,8 @@ const GenAIApp = (function () {
       this.uploadAndAttachFile = function (blob, attributes = {}) {
         if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
         try {
-          const uploadedFileId = _uploadFileToOpenAIStorage(blob);
-          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes, max_chunk_size, chunk_overlap);
+          const uploadedFileId = rag.uploadFile(blob, bucket);
+          const attachedFileId = rag.attachFile(uploadedFileId, id, attributes, max_chunk_size, chunk_overlap);
           return attachedFileId;
         }
         catch (e) {
@@ -913,13 +1087,43 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Uploads and attaches multiple files to the vector store.
+       *
+       * @param {Blob[]} blobs
+       * @param {Object[]} [attributesList]
+       * @returns {Array} File IDs (OpenAI file objects or Google ragFileIds)
+       */
+      this.uploadAndAttachFiles = function (blobs, attributesList = []) {
+        if (!id) {
+          throw new Error("[GenAIApp] - Vector store must be created or initialized before attaching files.");
+        }
+
+        if (typeof rag.attachFilesBatch !== "function") {
+          const results = [];
+          for (let i = 0; i < blobs.length; i++) {
+            const attrs = attributesList[i] || {};
+            results.push(this.uploadAndAttachFile(blobs[i], attrs));
+          }
+          return results;
+        }
+
+        const gcsUris = [];
+        for (const blob of blobs) {
+          const gcsPath = rag.uploadFile(blob, bucket);
+          gcsUris.push(gcsPath.startsWith("gs://") ? gcsPath : `gs://${gcsPath}`);
+        }
+
+        return rag.attachFilesBatch(gcsUris, id ,max_chunk_size, chunk_overlap);
+      };
+
+      /**
        * Lists the files attached to the vector store.
        * @returns {Array} - An array containing the files attached to the vector store.
        */
       this.listFiles = function () {
         if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
         try {
-          const listedFiles = _listFilesInVectorStore(id);
+          const listedFiles = rag.listFiles(id);
           return listedFiles;
         }
         catch (e) {
@@ -938,7 +1142,7 @@ const GenAIApp = (function () {
         if (!fileId) throw new Error("[GenAIApp] - Please pass an Open AI storage file ID to the deleteFile(fileId) function. You can retrieve the file ID through the Open AI Files API or directly through the platform.");
         if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before deleting files.");
         try {
-          const deleteId = _deleteFileInVectorStore(id, fileId);
+          const deleteId = rag.deleteFile(id, fileId, bucket);
           return deleteId;
         }
         catch (e) {
@@ -958,7 +1162,7 @@ const GenAIApp = (function () {
       this.deleteVectorStore = function () {
         if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before being deleted.");
         try {
-          const deleteId = _deleteVectorStore(id);
+          const deleteId = rag.deleteVectorStore(id);
           id = null;
           return deleteId;
         }
@@ -1348,6 +1552,9 @@ const GenAIApp = (function () {
         if (endpoint.includes("google")) {
           const firstCandidate = parsedResponse.candidates?.[0];
           responseMessage = firstCandidate?.content || null;
+          if (responseMessage && typeof responseMessage === "object") {
+            responseMessage.groundingMetadata = firstCandidate?.groundingMetadata || null;
+          }
           finish_reason = firstCandidate?.finishReason || null;
         }
         else {
@@ -1415,6 +1622,9 @@ const GenAIApp = (function () {
     contents.push(responseMessage);
 
     const parts = (responseMessage && responseMessage.parts) || [];
+    const responseParts = [];
+    let shouldEndWithResult = false;
+
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] || {};
       if (!part.functionCall || !part.functionCall.name) continue;
@@ -1447,6 +1657,10 @@ const GenAIApp = (function () {
         return contents;
       }
 
+      if (endWithResult) {
+        shouldEndWithResult = true;
+      }
+
       let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
       if (verbose) {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
@@ -1462,27 +1676,32 @@ const GenAIApp = (function () {
 
       // Append result of the function execution to contents
       // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
-      contents.push({
-        role: 'user',
-        parts: [{
-          functionResponse: {
-            name: functionName,
-            response: { functionResponse }
-          }
-        }]
+      responseParts.push({
+        functionResponse: {
+          name: functionName,
+          response: { functionResponse }
+        }
       });
-
-      if (endWithResult) {
-        // User defined that if this function has been called, we do not call back the AI endpoint.
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "endWithResult"
-          }
-        });
-        return contents;
-      }
     }
+
+    // Append all function results in a single turn
+    if (responseParts.length > 0) {
+      contents.push({
+        role: 'function',
+        parts: responseParts
+      });
+    }
+
+    if (shouldEndWithResult) {
+      // User defined that if this function has been called, we do not call back the AI endpoint.
+      contents.push({
+        "role": "model",
+        "parts": {
+          text: "endWithResult"
+        }
+      });
+    }
+
     return contents;
   }
 
@@ -1863,6 +2082,42 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Retrieves a RagFile ID from a GCS URI in a given RAG corpus.
+   *
+   * @param {string} ragId - The RAG corpus ID
+   * @param {string} gcsUri - GCS URI (gs://bucket/path/file.ext)
+   * @returns {string|null} RagFile ID if found, otherwise null
+   */
+  function _getRagFileIdFromGcsUri(ragId, gcsUri) {
+    if (!gcsUri.startsWith("gs://")) {
+      gcsUri = `gs://${gcsUri}`;
+    }
+
+    const ragFiles = _listFilesInRagCorpus(ragId);
+
+    for (const ragFile of ragFiles) {
+      const uris = ragFile?.gcsSource?.uris;
+      if (Array.isArray(uris) && uris.includes(gcsUri)) {
+        Logger.log({
+          message: "[GenAIApp] - Rag file found from GCS URI",
+          ragId,
+          gcsUri,
+          fileId: ragFile.name.split("/").pop()
+        });
+        return ragFile.name.split("/").pop();
+      }
+    }
+
+    Logger.log({
+      message: "[GenAIApp] - No Rag file found for GCS URI",
+      ragId,
+      gcsUri
+    });
+
+    return null;
+  }
+
+  /**
    * Makes the API call to Open AI to create a new vector store.
    * 
    * @param {string} vectorStoreName - The vectorStoreName to help build the vector store's name.
@@ -1905,6 +2160,91 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Creates a RAG Corpus in Vertex AI and returns its ID.
+   *
+   * @param {string} [ragCorpusName] Display name of the RAG Corpus
+   * @param {string} [description] Optional description
+   * @returns {string} RAG Corpus ID
+   * @throws {Error} If corpus creation fails
+   */
+  function _createRagCorpus(ragCorpusName,description) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora`;
+    
+    const payload = {
+      display_name: ragCorpusName,
+      description: description ?? undefined
+    };
+
+    const options = {
+      method: 'post',
+      headers: {
+        'Authorization': 'Bearer ' + ScriptApp.getOAuthToken(),
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    }
+
+    const operationResponse = UrlFetchApp.fetch(url, options);
+    const operationResult = JSON.parse(operationResponse.getContentText());
+    if (operationResult?.name) {
+      const result = _waitForGoogleOperation(operationResult.name);
+      Logger.log({
+        message: `[GenAIApp] - Vector store successfully created.`,
+        id: result.split('ragCorpora/').pop()
+      });
+
+      return result.split('ragCorpora/').pop();
+
+    } else {
+      throw new Error(`[GenAIApp] - Failed to create RAG Corpus. Response: ${operationResult}`);
+    }
+  }
+
+  /**
+   * Waits for a Vertex AI long running operation to complete by polling the Operations API until done === true. 
+   * 
+   * @param {string} operationName Full operation URL or relative operation name
+   * @param {{ maxAttempts?: number, initialDelayMs?: number, maxDelayMs?: number }} options Polling configuration options
+   * @returns {string | undefined} Operation response name if available
+   * @throws {Error} If the operation finishes without a usable response
+   */
+  function _waitForGoogleOperation(operationName, { maxAttempts = 8, initialDelayMs = 1000, maxDelayMs = 15000 } = {}) {
+    const operationUrl = operationName.startsWith("https://")
+      ? operationName
+      : `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/${operationName}`;
+
+    Logger.log(`[GenAIApp] - Waiting for operation ${operationName}`);
+
+    let delay = initialDelayMs;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const options = {
+        method: "get",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      };
+
+      const response = UrlFetchApp.fetch(operationUrl, options);
+      const result = JSON.parse(response.getContentText());
+
+      if (result.done) {
+        if (result?.error) {
+          throw new Error(
+            `[GenAIApp] - Operation failed: ${result.error.message || JSON.stringify(result.error)}`
+          );
+        }
+        Logger.log(`[GenAIApp] - Operation done after ${attempt} attempts`);
+        return result?.response?.name;
+      }
+      Utilities.sleep(delay);
+      delay = Math.min(delay * 2, maxDelayMs);
+    }
+    throw new Error("[GenAIApp] - Operation did not complete within the allowed attempts");
+  }
+
+  /**
    * Retrieves information avout a specific Vector Store from Open AI's API.
    * 
    * @param {string} vectorStoreId - The Open AI API vector store Id.  
@@ -1926,6 +2266,42 @@ const GenAIApp = (function () {
       return result.name;
     }
   }
+
+  /**
+   * Retrieves information about a RAG corpus from Google Vertex AI.
+   *
+   * @param {string} ragId - The ID of the RAG corpus to retrieve.
+   * @returns {Object|null} The RAG corpus information if found, otherwise null.
+   */
+  function _retrieveRagCorpusInformation(ragId) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}`;
+    const options = {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + ScriptApp.getOAuthToken(),
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+
+    if (response.getResponseCode() !== 200) {
+      Logger.log(`[GenAIApp] - Failed to retrieve RAG corpus. Status: ${statusCode}, Response: ${contentText}`);
+      return null;
+    }
+    const result = JSON.parse(response.getContentText());
+
+    if (result?.displayName) {
+      Logger.log(
+        `[GenAIApp] - Successfully retrieved RAG corpus information from Google: ${JSON.stringify(result)}`
+      );
+      return result.displayName;
+    }
+    Logger.log('[GenAIApp] - RAG corpus not found or invalid response.');
+    return null;
+  }
+
 
   /**
    * Uploads a file to the Open AI storage.
@@ -1976,6 +2352,56 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Uploads a file to a Google Cloud Storage bucket.
+   *
+   * @param {GoogleAppsScript.Base.Blob} blob - The file blob to upload.
+   * @param {string} fileName - The destination file name in the bucket.
+   * @returns {string} filePath - The full path of the uploaded object (bucket/name).
+   */
+  function _uploadFileToBucket(blob, fileName, bucketName) {
+    const encodedName = encodeURIComponent(fileName);
+    const url = `https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${encodedName}`;
+
+    const options = {
+      method: 'post',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'Content-Type': blob.getContentType()
+      },
+      payload: blob.getBytes(),
+      muteHttpExceptions: true
+    };
+
+    try {
+      const response = UrlFetchApp.fetch(url, options);
+      const statusCode = response.getResponseCode();
+
+      if (statusCode >= 200 && statusCode < 300) {
+        const result = JSON.parse(response.getContentText());
+
+        if (!result || !result.bucket || !result.name) {
+          throw new Error(
+            `[GenAIApp] - Invalid GCS response: ${response.getContentText()}`
+          );
+        }
+        const filePath = `${result.bucket}/${result.name}`;
+        Logger.log({
+          message: '[GenAIApp] - File successfully uploaded to GCS',
+          id: filePath
+        });
+
+        return filePath;
+      }
+      console.error(`[GenAIApp] - Unexpected error: ${response.getContentText()} (Status Code: ${statusCode})`);
+      throw new Error(`[GenAIApp] - Failed to upload file. Status Code: ${statusCode}`);
+
+    } catch (e) {
+      console.error(`[GenAIApp] - An error occurred while uploading the file to GCS: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /**
    * Attaches a file to a specified vector store in OpenAI.
    *
    * @param {string} fileId - The unique identifier of the file to attach.
@@ -2011,6 +2437,141 @@ const GenAIApp = (function () {
     const data = JSON.parse(response.getContentText());
     return data;
   }
+
+  /**
+   * Imports a file from a GCS bucket into a Vertex AI RAG corpus
+   * and returns the created RagFile ID.
+   *
+   * @param {string} gcsPath - GCS path or URI (ex: gs://my-bucket/path/file.html)
+   * @param {string} vectorStoreID - RAG corpus ID
+   * @param {Object} attributes - JSON object with the attributes of the file (set of up to 16 key-value pairs).
+   * @param {number} maxChunkSize - Max chunk size in tokens
+   * @param {number} chunkOverlap - Chunk overlap in tokens
+   * @returns {string} RagFile ID
+   * @throws {Error} If import or resolution fails
+   */
+  function _importFileFromBucketToRagCorpus(gcsPath, vectorStoreID, attributes, maxChunkSize, chunkOverlap) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${vectorStoreID}/ragFiles:import`;
+
+    const gcsUri = gcsPath.startsWith("gs://") ? gcsPath : `gs://${gcsPath}`;
+
+    const payload = {
+      importRagFilesConfig: {
+        gcsSource: {
+          uris: [gcsUri]
+        },
+        ragFileChunkingConfig: {
+          chunkSize: maxChunkSize,
+          chunkOverlap: chunkOverlap
+        }
+      }
+    };
+
+    const options = {
+      method: "post",
+      contentType: "application/json",
+      headers: {
+        Authorization: "Bearer " + ScriptApp.getOAuthToken()
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const operationResponse = UrlFetchApp.fetch(url, options);
+    const operationResult = JSON.parse(operationResponse.getContentText());
+
+    if (!operationResult?.name) {
+      throw new Error("[GenAIApp] - RAG import failed: " + operationResponse.getContentText());
+    }
+
+    _waitForGoogleOperation(operationResult.name);
+
+    const ragFileId = _getRagFileIdFromGcsUri(vectorStoreID, gcsUri);
+
+    if (!ragFileId) {
+      throw new Error(
+        `[GenAIApp] - Import succeeded but RagFile not found for URI: ${gcsUri}`
+      );
+    }
+
+    Logger.log({
+      message: `[GenAIApp] - RAG file successfully imported`,
+      ragId: vectorStoreID,
+      ragFileId,
+      gcsUri
+    });
+
+    return ragFileId;
+  }
+
+  /**
+   * Imports multiple GCS files into a RAG corpus by batches of 25 max.
+   * Each batch is imported sequentially and waits for completion
+   * before sending the next one.
+   *
+   * @param {string[]} gcsUris
+   * @param {string} ragId
+   * @param {number} maxChunkSize
+   * @param {number} chunkOverlap
+   * @returns {string[]} RagFile IDs
+   */
+  function _importFilesFromBucketToRagCorpusBatch(gcsUris, ragId, maxChunkSize, chunkOverlap) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}/ragFiles:import`;
+    const MAX_BATCH_SIZE = 25;
+    const allRagFileIds = [];
+
+    for (let i = 0; i < gcsUris.length; i += MAX_BATCH_SIZE) {
+      const batch = gcsUris.slice(i, i + MAX_BATCH_SIZE);
+      const normalizedUris = batch.map(uri => uri.startsWith("gs://") ? uri : `gs://${uri}`);
+
+      const payload = {
+        importRagFilesConfig: {
+          gcsSource: { uris: normalizedUris },
+          ragFileChunkingConfig: { chunkSize: maxChunkSize, chunkOverlap: chunkOverlap }
+        }
+      };
+      const options = {
+        method: "post",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+
+      const response = UrlFetchApp.fetch(url, options);
+      const data = JSON.parse(response.getContentText());
+
+      if (!data?.name) {
+        throw new Error("[GenAIApp] - RAG batch import failed: " + response.getContentText());
+      }
+
+      _waitForGoogleOperation(data.name);
+
+      const ragFiles = _listFilesInRagCorpus(ragId);
+      const uriToId = new Map();
+
+      for (const ragFile of ragFiles) {
+        const uris = ragFile?.gcsSource?.uris;
+        if (Array.isArray(uris)) {
+          for (const uri of uris) {
+            uriToId.set(uri, ragFile.name.split("/").pop());
+          }
+        }
+      }
+      for (const uri of normalizedUris) {
+        const ragFileId = uriToId.get(uri);
+        if (!ragFileId) {
+          throw new Error(`[GenAIApp] - RagFile not found after import for ${uri}`);
+        }
+        allRagFileIds.push(ragFileId);
+      }
+
+      Logger.log(`[GenAIApp] - Imported batch ${Math.floor(i / MAX_BATCH_SIZE) + 1} (${normalizedUris.length} files)`);
+    }
+
+    return allRagFileIds;
+  }
+
 
   /**
    * Retrieves all file from a specified vector store in OpenAI.
@@ -2077,6 +2638,64 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Retrieves all files from a specified RAG corpus in Google Vertex AI.
+   *
+   * This function fetches RAG files in batches of 100 using pagination.
+   * It continues requesting additional pages while a nextPageToken is provided
+   * by the API. Each retrieved RAG file object is stored in an array.
+   *
+   * Authentication is handled via the Google Apps Script OAuth token.
+   *
+   * @param {string} ragId - The unique identifier of the RAG corpus from which to list files.
+   * @returns {Array} An array where each element is a RAG file object from the corpus.
+   * @throws {Error} Throws an error if there is an issue fetching RAG files from the corpus.
+   */
+  function _listFilesInRagCorpus(ragId) {
+    const baseUrl = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}/ragFiles`;
+    const files = [];
+    let pageToken = null;
+    let hasMoreFiles = true;
+
+    while (hasMoreFiles) {
+      try {
+        let url = `${baseUrl}?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+        const options = {
+          method: 'get',
+          contentType: 'application/json',
+          headers: {
+            Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+          },
+          muteHttpExceptions: true
+        }
+
+        const response = UrlFetchApp.fetch(url,options);
+        const data = JSON.parse(response.getContentText());
+
+        if (data?.ragFiles) {
+          data.ragFiles.forEach(file => {
+            files.push(file);
+          });
+
+          console.log(`[GenAIApp] - Fetched ${data.ragFiles.length} RAG files`);
+
+          if (data?.nextPageToken) {
+            pageToken = data.nextPageToken;
+          } else {
+            hasMoreFiles = false;
+          }
+        } else {
+          console.log('[GenAIApp - No RAG files found in the corpus]');
+          hasMoreFiles = false;
+        }
+      } catch(e) {
+        console.log(`[GenAIApp] - Error fetching RAG files: ${e.message}`);
+        hasMoreFiles = false;
+      }
+    }
+    return files;
+  }
+
+  /**
    * Deletes a file from a specified vector store in OpenAI.
    *
    * This function sends a DELETE request to the OpenAI API to remove a file from the specified vector store.
@@ -2103,6 +2722,44 @@ const GenAIApp = (function () {
     catch (error) {
       console.error(`[GenAIApp] - Failed to delete file with ID: ${fileId}`, error);
     }
+  }
+  
+  /**
+   * Deletes a specific file from a Vertex AI RAG Corpus
+   * and waits for the operation to complete.
+   *
+   * @param {string} ragId - The unique identifier of the RAG Corpus
+   * @param {string} fileId - The unique identifier of the RagFile to delete
+   * @returns {string} RAG Corpus ID
+   * @throws {Error} If deletion fails
+   */
+  function _deleteFileInRagCorpus(ragId, fileId) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}/ragFiles/${fileId}`;
+
+    const options = {
+      method: 'delete',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const operationResponse = UrlFetchApp.fetch(url, options);
+    const operationResult = JSON.parse(operationResponse.getContentText());
+
+    if (!operationResult?.name) {
+      console.error(`[GenAIApp] - Failed to delete RAG file. Response: ${operationResponse.getContentText()}`);
+      throw new Error('[GenAIApp] - Fail to delete RAG file');
+    }
+
+    _waitForGoogleOperation(operationResult.name);
+
+    Logger.log({
+      message: `[GenAIApp] - RAG file successfully deleted.`,
+      corpusId: ragId,
+      fileId: fileId
+    });
   }
 
   /**
@@ -2142,6 +2799,114 @@ const GenAIApp = (function () {
     }
   }
 
+  /**
+   * Deletes a specific RAG corpus from Google by its ID
+   * and waits for the operation to complete.
+   *
+   * @param {string} ragId - The unique identifier of the RAG corpus to delete
+   * @returns {string} RAG Corpus ID
+   * @throws {Error} If deletion fails
+   */
+  function _deleteRagCorpus(ragId) {
+    const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}`;
+
+    const options = {
+      method: 'delete',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'Content-Type': 'application/json'
+      },
+      muteHttpExceptions: true
+    };
+
+    const operationResponse = UrlFetchApp.fetch(url, options);
+    const operationResult = JSON.parse(operationResponse.getContentText());
+
+    if (!operationResult?.name) {
+      console.error(`[GenAIApp] - Failed to delete RAG Corpus. Response: ${operationResponse.getContentText()}`);
+      throw new Error('[GenAIApp] - Fail to delete RAG Corpus');
+    }
+
+    _waitForGoogleOperation(operationResult.name);
+
+    Logger.log({
+      message: `[GenAIApp] - RAG Corpus successfully deleted.`,
+      id: ragId
+    });
+
+    return ragId;
+  }
+
+
+  function _openAiRagAdapter() {
+    return {
+      createVectorStore: (name) =>
+        _createOpenAiVectorStore(name),
+
+      retrieveVectorStoreInformation: (id) =>
+        _retrieveVectorStoreInformation(id),
+
+      uploadFile: (blob) =>
+        _uploadFileToOpenAIStorage(blob),
+
+      attachFile: (fileId, vectorStoreId, attributes, maxChunk, overlap) =>
+        _attachFileToVectorStore(fileId, vectorStoreId, attributes, maxChunk, overlap),
+
+      listFiles: (vectorStoreId) =>
+        _listFilesInVectorStore(vectorStoreId),
+
+      deleteFile: (vectorStoreId, fileId) =>
+        _deleteFileInVectorStore(vectorStoreId, fileId),
+
+      deleteVectorStore: (vectorStoreId) =>
+        _deleteVectorStore(vectorStoreId)
+      };
+  } 
+
+  function _googleRagAdapter() {
+    return {
+      createVectorStore: (name) =>
+        _createRagCorpus(name),
+
+      retrieveVectorStoreInformation: (id) =>
+        _retrieveRagCorpusInformation(id),
+
+      uploadFile(blob,bucket) {
+        if(!bucket) {
+          throw new Error("[GenAIApp] - bucketName is requiered for Google RAG provider");
+        }
+        const fileName = blob?.getName()?.trim() || `rag/${Utilities.getUuid()}`;
+        return _uploadFileToBucket(blob, fileName, bucket)
+      },
+
+      attachFilesBatch: (gcsUris, vectorStoreId, maxChunk, overlap) =>
+       _importFilesFromBucketToRagCorpusBatch(gcsUris, vectorStoreId, maxChunk, overlap),
+
+      attachFile: (fileId, vectorStoreId, attributes, maxChunk, overlap) =>
+        _importFileFromBucketToRagCorpus(fileId, vectorStoreId, attributes, maxChunk, overlap),
+
+      listFiles: (vectorStoreId) =>
+        _listFilesInRagCorpus(vectorStoreId),
+
+      deleteFile(vectorStoreId, fileId) {
+        return _deleteFileInRagCorpus(vectorStoreId, fileId)
+      },
+
+      deleteVectorStore: (vectorStoreId) =>
+        _deleteRagCorpus(vectorStoreId)
+    };
+  }
+
+  function _resolveRagProvider(provider) {
+    switch (provider) {
+      case "google":
+        return _googleRagAdapter();
+      case "openai":
+      default:
+        return _openAiRagAdapter();
+    }
+  }
+
   return {
     /**
      * Create a new chat.
@@ -2171,8 +2936,8 @@ const GenAIApp = (function () {
      * Create a new Vector Store.
      * @returns {VectorStoreObject} - A new Vector Store instance.
      */
-    newVectorStore: function () {
-      return new VectorStoreObject();
+    newVectorStore: function (provider) {
+      return new VectorStoreObject(provider);
     },
 
     /**
