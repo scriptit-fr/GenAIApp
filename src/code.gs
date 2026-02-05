@@ -446,7 +446,7 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (!region || model.includes("gemini-3")) { // Gemini 3 requieres global endpoint when using Vertex AI API
+              if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
                 endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
               else {
