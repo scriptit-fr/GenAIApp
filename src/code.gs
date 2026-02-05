@@ -1505,7 +1505,7 @@ const GenAIApp = (function () {
     // Append all function results in a single turn
     if (responseParts.length > 0) {
       contents.push({
-        role: 'function',
+        role: 'user',
         parts: responseParts
       });
     }
