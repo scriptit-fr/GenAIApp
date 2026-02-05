@@ -372,7 +372,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3-pro-preview" | "gemini-3-flash-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -446,11 +446,11 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (region) {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+              if (region || model.includes("gemini-3")) { // Gemini 3 requieres global endpoint when using Vertex AI API
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
               else {
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
               }
             }
           }
