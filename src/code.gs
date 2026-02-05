@@ -372,7 +372,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3-pro-preview" | "gemini-3-flash-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -446,11 +446,11 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (region) {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+              if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
               else {
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
               }
             }
           }
@@ -1440,6 +1440,9 @@ const GenAIApp = (function () {
     contents.push(responseMessage);
 
     const parts = (responseMessage && responseMessage.parts) || [];
+    const responseParts = [];
+    let shouldEndWithResult = false;
+
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] || {};
       if (!part.functionCall || !part.functionCall.name) continue;
@@ -1472,6 +1475,10 @@ const GenAIApp = (function () {
         return contents;
       }
 
+      if (endWithResult) {
+        shouldEndWithResult = true;
+      }
+
       let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
       if (verbose) {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
@@ -1487,27 +1494,32 @@ const GenAIApp = (function () {
 
       // Append result of the function execution to contents
       // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
+      responseParts.push({
+        functionResponse: {
+          name: functionName,
+          response: { functionResponse }
+        }
+      });
+    }
+
+    // Append all function results in a single turn
+    if (responseParts.length > 0) {
       contents.push({
         role: 'user',
-        parts: [{
-          functionResponse: {
-            name: functionName,
-            response: { functionResponse }
-          }
-        }]
+        parts: responseParts
       });
-
-      if (endWithResult) {
-        // User defined that if this function has been called, we do not call back the AI endpoint.
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "endWithResult"
-          }
-        });
-        return contents;
-      }
     }
+
+    if (shouldEndWithResult) {
+      // User defined that if this function has been called, we do not call back the AI endpoint.
+      contents.push({
+        "role": "model",
+        "parts": {
+          text: "endWithResult"
+        }
+      });
+    }
+
     return contents;
   }
 
