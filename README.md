@@ -256,16 +256,74 @@ functionObject.addParameter("rating", "number", "The minimum rating of movies to
 
 ## VectorStoreObject Class
 
-### Retrieving Knowledge from an OpenAI Vector Store
+The `VectorStoreObject` class lets you create and use vector stores for Retrieval Augmented Generation (RAG).
+Vector stores allow the model to retrieve relevant information from your own documents during a chat.
 
-Retrieve contextual information from a specific OpenAI vector search :
+GenAIApp supports:
 
-```js
-const vectorStoreObject = GenAIApp.newVectorStore()
-  .initializeFromId("your-vector-store-id");
-chat.addVectorStore(vectorStoreObject);
+- OpenAI vector stores
+
+- Google Vertex AI RAG
+
+### Create a Vector Store
+
+By default, GenAIApp creates an OpenAI vector store.
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const vectorStore = GenAIApp.newVectorStore()
+  .setName("Support knowledge base")
+  .createVectorStore();
+
+const vectorStoreId = vectorStore.getId();
 ```
-To find out more : [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search)
+
+To use Google Vertex AI RAG instead, specify the provider and a GCS bucket:
+
+```javascript
+GenAIApp.setGeminiAuth("my-gcp-project-id", "europe-west4");
+
+const vectorStore = GenAIApp.newVectorStore("google")
+  .setName("Product documentation")
+  .setBucketName("gs://my-rag-bucket")
+  .createVectorStore();
+```
+
+### Upload Documents
+
+Documents are provided as `Blob` objects and are automatically chunked and embedded.
+
+```javascript
+const blob = /* any Blob (PDF, text, image, etc.) */;
+vectorStore.uploadAndAttachFile(blob);
+```
+
+You can also upload multiple documents at once:
+
+```javascript
+vectorStore.uploadAndAttachFiles([blob1, blob2]);
+```
+
+### Use a Vector Store in a Chat
+
+```javascript
+const chat = GenAIApp.newChat();
+
+chat
+  .addMessage("How do I reset my password?")
+  .addVectorStores(vectorStoreId);
+
+const answer = chat.run();
+Logger.log(answer);
+```
+
+### Optionnal Controls
+
+```javascript
+chat.setMaxChunks(5);        // Limit retrieved chunks
+chat.onlyReturnChunks(true); // Return raw chunks instead of a text answer
+```
 
 ## Examples
 
@@ -465,10 +523,13 @@ A `VectorStoreObject` represents an OpenAI vector store.
 - `setName(newName)`: Set the vector store name.
 - `setDescription(newDesc)`: Set the description.
 - `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure chunking before uploads.
+- `setBucketName(bucketAddress)`: Set the Google Cloud Storage bucket (Google RAG only).
 - `createVectorStore()`: Create the vector store.
 - `initializeFromId(vectorStoreId)`: Initialize from an existing vector store ID.
 - `getId()`: Get the vector store ID.
+- `getProvider()`: Get the underlying provider (`"openai"` or `"google"`).
 - `uploadAndAttachFile(blob, attributes)`: Upload a file and attach it to the store.
+- `uploadAndAttachFiles(blobs, attributesList)`: Upload and attach multiple files.
 - `listFiles()`: List files attached to the store.
 - `deleteFile(fileId)`: Delete a file from the store.
 - `deleteVectorStore()`: Delete the vector store.
