@@ -446,7 +446,7 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (region || model.includes("gemini-3")) { // Gemini 3 requieres global endpoint when using Vertex AI API
+              if (!region || model.includes("gemini-3")) { // Gemini 3 requieres global endpoint when using Vertex AI API
                 endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
               }
               else {
@@ -1440,6 +1440,9 @@ const GenAIApp = (function () {
     contents.push(responseMessage);
 
     const parts = (responseMessage && responseMessage.parts) || [];
+    const responseParts = [];
+    let shouldEndWithResult = false;
+
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] || {};
       if (!part.functionCall || !part.functionCall.name) continue;
@@ -1472,6 +1475,10 @@ const GenAIApp = (function () {
         return contents;
       }
 
+      if (endWithResult) {
+        shouldEndWithResult = true;
+      }
+
       let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
       if (verbose) {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
@@ -1487,27 +1494,32 @@ const GenAIApp = (function () {
 
       // Append result of the function execution to contents
       // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
-      contents.push({
-        role: 'user',
-        parts: [{
-          functionResponse: {
-            name: functionName,
-            response: { functionResponse }
-          }
-        }]
+      responseParts.push({
+        functionResponse: {
+          name: functionName,
+          response: { functionResponse }
+        }
       });
-
-      if (endWithResult) {
-        // User defined that if this function has been called, we do not call back the AI endpoint.
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "endWithResult"
-          }
-        });
-        return contents;
-      }
     }
+
+    // Append all function results in a single turn
+    if (responseParts.length > 0) {
+      contents.push({
+        role: 'function',
+        parts: responseParts
+      });
+    }
+
+    if (shouldEndWithResult) {
+      // User defined that if this function has been called, we do not call back the AI endpoint.
+      contents.push({
+        "role": "model",
+        "parts": {
+          text: "endWithResult"
+        }
+      });
+    }
+
     return contents;
   }
 
