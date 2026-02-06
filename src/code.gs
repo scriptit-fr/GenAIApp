@@ -759,7 +759,7 @@ const GenAIApp = (function () {
                 rag_resources: ragCorpusIds.map(ragId => ({
                   rag_corpus: `projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}`
                 })),
-                similarityTopK: maxNumOfChunks || 5
+                topK: maxNumOfChunks || 5
               }
             }
           });
@@ -858,9 +858,9 @@ const GenAIApp = (function () {
       let max_chunk_size = 800;
       let chunk_overlap = 400;
       let bucket = null;
-      let providerType = provider;
 
       const rag = _resolveRagProvider(provider);
+      let providerType = provider === 'openai' || provider === 'google' ? provider : 'openai';
 
       /**
        * Sets the vector store's name
@@ -998,12 +998,23 @@ const GenAIApp = (function () {
         }
 
         const gcsUris = [];
-        for (const blob of blobs) {
-          const gcsPath = rag.uploadFile(blob, bucket);
-          gcsUris.push(gcsPath.startsWith("gs://") ? gcsPath : `gs://${gcsPath}`);
+
+        for (let i = 0; i < blobs.length; i++) {
+          try {
+            const gcsPath = rag.uploadFile(blobs[i], bucket);
+            gcsUris.push(
+              gcsPath.startsWith("gs://") ? gcsPath : `gs://${gcsPath}`
+            );
+          } catch (error) {
+            Logger.log(`[GenAIApp] - Failed to upload file ${i} to GCS: ${error}`);
+          }
         }
 
-        return rag.attachFilesBatch(gcsUris, id ,max_chunk_size, chunk_overlap);
+        if (gcsUris.length === 0) {
+          throw new Error("[GenAIApp] - No files were successfully uploaded to GCS.");
+        }
+
+        return rag.attachFilesBatch(id, gcsUris, max_chunk_size, chunk_overlap);
       };
 
       /**
@@ -2097,6 +2108,9 @@ const GenAIApp = (function () {
     const operationResult = JSON.parse(operationResponse.getContentText());
     if (operationResult?.name) {
       const result = _waitForGoogleOperation(operationResult.name);
+      if (!result) {
+        throw new Error("[GenAIApp] - RAG Corpus creation completed but returned no resource name.");
+      }
       Logger.log({
         message: `[GenAIApp] - Vector store successfully created.`,
         id: result.split('ragCorpora/').pop()
@@ -2135,6 +2149,10 @@ const GenAIApp = (function () {
       };
 
       const response = UrlFetchApp.fetch(operationUrl, options);
+      const statusCode = response.getResponseCode();
+      if (statusCode < 200 || statusCode >= 300) {
+        throw new Error(`[GenAIApp] - Operation poll failed with status ${statusCode}: ${response.getContentText()}`);
+      }
       const result = JSON.parse(response.getContentText());
 
       if (result.done) {
@@ -2268,6 +2286,11 @@ const GenAIApp = (function () {
    * @returns {string} filePath - The full path of the uploaded object (bucket/name).
    */
   function _uploadFileToBucket(blob, fileName, bucketName) {
+    const cleanBucketName = bucketName
+      .replace(/^gs:\/\//, "")
+      .split("/")[0];
+
+    const encodedBucket = encodeURIComponent(cleanBucketName);
     const encodedName = encodeURIComponent(fileName);
     const url = `https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${encodedName}`;
 
@@ -2353,7 +2376,6 @@ const GenAIApp = (function () {
    *
    * @param {string} gcsPath - GCS path or URI (ex: gs://my-bucket/path/file.html)
    * @param {string} vectorStoreID - RAG corpus ID
-   * @param {Object} attributes - JSON object with the attributes of the file (set of up to 16 key-value pairs).
    * @param {number} maxChunkSize - Max chunk size in tokens
    * @param {number} chunkOverlap - Chunk overlap in tokens
    * @returns {string} RagFile ID
@@ -2427,18 +2449,25 @@ const GenAIApp = (function () {
   function _importFilesFromBucketToRagCorpusBatch(gcsUris, ragId, maxChunkSize, chunkOverlap) {
     const url = `https://${ragRegion}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}/ragFiles:import`;
     const MAX_BATCH_SIZE = 25;
-    const allRagFileIds = [];
+
+    const allNormalizedUris = [];
 
     for (let i = 0; i < gcsUris.length; i += MAX_BATCH_SIZE) {
       const batch = gcsUris.slice(i, i + MAX_BATCH_SIZE);
-      const normalizedUris = batch.map(uri => uri.startsWith("gs://") ? uri : `gs://${uri}`);
+      const normalizedUris = batch.map(uri =>
+        uri.startsWith("gs://") ? uri : `gs://${uri}`
+      );
 
       const payload = {
         importRagFilesConfig: {
           gcsSource: { uris: normalizedUris },
-          ragFileChunkingConfig: { chunkSize: maxChunkSize, chunkOverlap: chunkOverlap }
+          ragFileChunkingConfig: {
+            chunkSize: maxChunkSize,
+            chunkOverlap: chunkOverlap
+          }
         }
       };
+
       const options = {
         method: "post",
         contentType: "application/json",
@@ -2456,31 +2485,37 @@ const GenAIApp = (function () {
 
       _waitForGoogleOperation(data.name);
 
-      const ragFiles = _listFilesInRagCorpus(ragId);
-      const uriToId = new Map();
+      allNormalizedUris.push(...normalizedUris);
 
-      for (const ragFile of ragFiles) {
-        const uris = ragFile?.gcsSource?.uris;
-        if (Array.isArray(uris)) {
-          for (const uri of uris) {
-            uriToId.set(uri, ragFile.name.split("/").pop());
-          }
+      Logger.log(
+        `[GenAIApp] - Imported batch ${Math.floor(i / MAX_BATCH_SIZE) + 1} (${normalizedUris.length} files)`
+      );
+    }
+
+    const ragFiles = _listFilesInRagCorpus(ragId);
+    const uriToId = new Map();
+
+    for (const ragFile of ragFiles) {
+      const uris = ragFile?.gcsSource?.uris;
+      if (Array.isArray(uris)) {
+        for (const uri of uris) {
+          uriToId.set(uri, ragFile.name.split("/").pop());
         }
       }
-      for (const uri of normalizedUris) {
-        const ragFileId = uriToId.get(uri);
-        if (!ragFileId) {
-          throw new Error(`[GenAIApp] - RagFile not found after import for ${uri}`);
-        }
-        allRagFileIds.push(ragFileId);
-      }
+    }
 
-      Logger.log(`[GenAIApp] - Imported batch ${Math.floor(i / MAX_BATCH_SIZE) + 1} (${normalizedUris.length} files)`);
+    const allRagFileIds = [];
+
+    for (const uri of allNormalizedUris) {
+      const ragFileId = uriToId.get(uri);
+      if (!ragFileId) {
+        throw new Error(`[GenAIApp] - RagFile not found after import for ${uri}`);
+      }
+      allRagFileIds.push(ragFileId);
     }
 
     return allRagFileIds;
   }
-
 
   /**
    * Retrieves all file from a specified vector store in OpenAI.
@@ -2790,8 +2825,12 @@ const GenAIApp = (function () {
       attachFilesBatch: (gcsUris, vectorStoreId, maxChunk, overlap) =>
        _importFilesFromBucketToRagCorpusBatch(gcsUris, vectorStoreId, maxChunk, overlap),
 
-      attachFile: (fileId, vectorStoreId, attributes, maxChunk, overlap) =>
-        _importFileFromBucketToRagCorpus(fileId, vectorStoreId, maxChunk, overlap),
+      attachFile: (fileId, vectorStoreId, attributes, maxChunk, overlap) {
+        if (attributes && Object.keys(attributes).length > 0) {
+          console.warn("[GenAIApp] - File attributes are not supported by the Google RAG provider and will be ignored.");
+        }
+        _importFileFromBucketToRagCorpus(fileId, vectorStoreId, maxChunk, overlap)
+      },
 
       listFiles: (vectorStoreId) =>
         _listFilesInRagCorpus(vectorStoreId),
@@ -2810,7 +2849,9 @@ const GenAIApp = (function () {
       case "google":
         return _googleRagAdapter();
       case "openai":
+        return _openAiRagAdapter();
       default:
+        Logger.log(`[GenAIApp] - Unknown RAG provider "${provider}". Falling back to "openai".`);
         return _openAiRagAdapter();
     }
   }
