@@ -801,8 +801,6 @@ const GenAIApp = (function () {
           return parts.filter(p => p.inlineData || p.fileData);
         });
         
-        if (imageParts.length === 0) return currentContents;
-
         const descriptionPayload = {
           contents: [{
             role: "user",
@@ -828,9 +826,6 @@ const GenAIApp = (function () {
       };
 
         const endpoint = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${modelForVision}:generateContent`;
-        const response = UrlFetchApp.fetch(endpoint, options);
-        const result = JSON.parse(response.getContentText());
-        
         let description = "Image analysis returned no text.";
         try {
           const response = UrlFetchApp.fetch(endpoint, options);
@@ -847,7 +842,7 @@ const GenAIApp = (function () {
         
         let newContents = JSON.parse(JSON.stringify(currentContents));
         newContents.forEach(c => {
-          const parts = Array.isArray(c.parts) ? c.parts : [c.parts];
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
           c.parts = parts.filter(p => !p.inlineData && !p.fileData);
         });
 
@@ -2381,7 +2376,7 @@ const GenAIApp = (function () {
      */
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
-    }
+    },
 
     /**
      * Sets the prompt used to describe images when using Gemini with RAG.
