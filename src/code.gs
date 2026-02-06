@@ -217,7 +217,7 @@ const GenAIApp = (function () {
         contents.push({
           role: 'user',
           parts: [{
-            inline_data: {
+            inlineData: {
               mime_type: fileInfo.mimeType,
               data: blobToBase64
             }
@@ -847,7 +847,7 @@ const GenAIApp = (function () {
         let newContents = JSON.parse(JSON.stringify(currentContents));
         newContents.forEach(c => {
           const parts = Array.isArray(c.parts) ? c.parts : [c.parts];
-          c.parts = parts.filter(p => !p.inlineData && !p.inline_data && !p.fileData && !p.file_data);
+          c.parts = parts.filter(p => !p.inlineData && !p.fileData);
         });
 
         newContents = newContents.filter(c => {
