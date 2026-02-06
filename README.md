@@ -288,11 +288,20 @@ To use Google Vertex AI RAG instead, specify the provider and a GCS bucket:
 ```javascript
 GenAIApp.setGeminiAuth("my-gcp-project-id", "europe-west4");
 
+// RAG endpoints use a dedicated region (may differ from Gemini auth region)
+GenAIApp.setRagRegion("europe-west4");
+
 const vectorStore = GenAIApp.newVectorStore("google")
   .setName("Product documentation")
   .setBucketName("gs://my-rag-bucket")
   .createVectorStore();
 ```
+
+> ⚠️  **Warning:** `setGeminiAuth()` configures authentication and region for Gemini
+> model calls, while `setRagRegion()` controls the region used for Vertex AI RAG
+> operations. Since RAG is not available in all regions, these two values may
+> differ and should both be set explicitly when using Google Vertex AI RAG.
+
 
 ### Upload Documents
 

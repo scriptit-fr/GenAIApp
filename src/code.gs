@@ -2289,10 +2289,9 @@ const GenAIApp = (function () {
     const cleanBucketName = bucketName
       .replace(/^gs:\/\//, "")
       .split("/")[0];
-
     const encodedBucket = encodeURIComponent(cleanBucketName);
     const encodedName = encodeURIComponent(fileName);
-    const url = `https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${encodedName}`;
+    const url = `https://storage.googleapis.com/upload/storage/v1/b/${encodedBucket}/o?uploadType=media&name=${encodedName}`;
 
     const options = {
       method: 'post',
@@ -2825,11 +2824,11 @@ const GenAIApp = (function () {
       attachFilesBatch: (gcsUris, vectorStoreId, maxChunk, overlap) =>
        _importFilesFromBucketToRagCorpusBatch(gcsUris, vectorStoreId, maxChunk, overlap),
 
-      attachFile: (fileId, vectorStoreId, attributes, maxChunk, overlap) {
+      attachFile(fileId, vectorStoreId, attributes, maxChunk, overlap) {
         if (attributes && Object.keys(attributes).length > 0) {
           console.warn("[GenAIApp] - File attributes are not supported by the Google RAG provider and will be ignored.");
         }
-        _importFileFromBucketToRagCorpus(fileId, vectorStoreId, maxChunk, overlap)
+        return _importFileFromBucketToRagCorpus(fileId, vectorStoreId, maxChunk, overlap)
       },
 
       listFiles: (vectorStoreId) =>
@@ -2931,16 +2930,16 @@ const GenAIApp = (function () {
      */
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
-    }
+    },
     
-  /**
-   * Sets the region used for RAG (vector store) operations.
-   *
-   * Note: RAG is not available in all regions, so this may differ from the
-   * Gemini / Vertex AI project region set via setGeminiAuth().
-   *
-   * @param {string} region The region to use for RAG APIs.
-   */
+    /**
+     * Sets the region used for RAG (vector store) operations.
+     *
+     * Note: RAG is not available in all regions, so this may differ from the
+     * Gemini / Vertex AI project region set via setGeminiAuth().
+     *
+     * @param {string} region The region to use for RAG APIs.
+     */
     setRagRegion: function (region) {
       ragRegion = region;
     }
