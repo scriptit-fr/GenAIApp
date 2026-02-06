@@ -1,7 +1,7 @@
 const GPT_MODEL = "gpt-5.2";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-3-pro-preview";
-const GCP_PROJECT_ID = "support-add-on";
+const GCP_PROJECT_ID = "";
 const GCP_REGION = "us-central1";
 const RAG_REGION = "europe-west4";
 
