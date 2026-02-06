@@ -34,6 +34,7 @@ const GenAIApp = (function () {
   const addedVectorStores = {};
 
   const modelForVision = "gemini-3-pro-preview";
+  let promptForVision = "Describe the images, transcribe any visible text, and summarize the visual context.";
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
 
@@ -807,7 +808,7 @@ const GenAIApp = (function () {
             role: "user",
             parts: [
               ...imageParts,
-              { text: "Analyze these images for a technical support request. Transcribe any error messages, logs, code snippets, or visible UI text exactly. Describe the visual context briefly." }
+              { text: promptForVision}
             ]
           }],
           generationConfig: {
@@ -2381,5 +2382,19 @@ const GenAIApp = (function () {
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
     }
+
+    /**
+     * Sets the prompt used to describe images when using Gemini with RAG.
+     *
+     * Gemini does not support combining images and vector stores directly.
+     * When RAG is enabled, images are first analyzed and replaced with text
+     * using this prompt before querying the Gemini vector store.
+     *
+     * @param {string} prompt The prompt to use for image description.
+     */
+    setPromptForVision: function (prompt) {
+      promptForVision = prompt;
+    }
+
   }
 })();
