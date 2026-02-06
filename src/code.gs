@@ -910,6 +910,9 @@ const GenAIApp = (function () {
        */
       this.createVectorStore = function () {
         if (!name) throw new Error("[GenAIApp] - Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
+        if (providerType === "google" && !gcpProjectId) {
+          throw new Error("[GenAIApp] - Please set your GCP project auth using GenAIApp.setGeminiAuth(projectId, region) before creating a Google RAG vector store.");
+        }
         try {
           id = rag.createVectorStore(name);
         }
@@ -2887,6 +2890,18 @@ const GenAIApp = (function () {
      */
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
+    }
+    
+  /**
+   * Sets the region used for RAG (vector store) operations.
+   *
+   * Note: RAG is not available in all regions, so this may differ from the
+   * Gemini / Vertex AI project region set via setGeminiAuth().
+   *
+   * @param {string} region The region to use for RAG APIs.
+   */
+    setRagRegion: function (region) {
+      ragRegion = region;
     }
   }
 })();

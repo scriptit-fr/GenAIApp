@@ -522,7 +522,7 @@ A `FunctionObject` represents a function that can be called by the chat.
 
 ### Vector Store Object
 
-A `VectorStoreObject` represents an OpenAI vector store.
+A `VectorStoreObject` represents a vector store (OpenAI or Google Vertex AI RAG).
 
 - `setName(newName)`: Set the vector store name.
 - `setDescription(newDesc)`: Set the description.
