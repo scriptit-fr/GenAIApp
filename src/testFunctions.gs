@@ -1,6 +1,9 @@
 const GPT_MODEL = "gpt-4.1";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-2.5-pro";
+const GCP_PROJECT_ID = "YOUR_GCP_PROJECT_ID";
+const GCP_REGION = "europe-west4";
+const RAG_REGION = "europe-west4";
 
 // Run all tests
 function testAll() {
@@ -12,6 +15,7 @@ function testAll() {
   testKnowledgeLink();
   testVision();
   testMaximumAPICalls();
+  testGeminiVectorStoreRagPipeline();
 }
 
 
@@ -123,8 +127,137 @@ function testMaximumAPICalls() {
   });
 }
 
+function testGeminiVectorStoreRagPipeline() {
+  if (!GCP_PROJECT_ID) throw new Error("Set GCP_PROJECT_ID before running the RAG pipeline test.");
+
+  GenAIApp.setGeminiAuth(GCP_PROJECT_ID, GCP_REGION);
+  GenAIApp.setRagRegion(RAG_REGION);
+
+  const bucketName = createGcsBucket(GCP_PROJECT_ID, RAG_REGION);
+  const bucketUri = `gs://${bucketName}`;
+  let vectorStore;
+  let ragFileId;
+
+  try {
+    vectorStore = GenAIApp.newVectorStore("google")
+      .setName(`Gemini RAG pipeline ${new Date().toISOString()}`)
+      .setBucketName(bucketUri)
+      .createVectorStore();
+
+    const blob = Utilities.newBlob(
+      "The capital of France is Paris. The capital of Japan is Tokyo.",
+      "text/plain",
+      "rag-test.txt"
+    );
+    ragFileId = vectorStore.uploadAndAttachFile(blob);
+
+    const response = GenAIApp.newChat()
+      .addMessage("Using the provided documents, what is the capital of France?")
+      .addVectorStores(vectorStore.getId())
+      .run({ model: GEMINI_MODEL, max_tokens: 200 });
+
+    console.log(`Gemini RAG response:\n${response}`);
+
+    if (!response || !response.toLowerCase().includes("paris")) {
+      throw new Error("RAG validation failed: expected answer not found.");
+    }
+  } finally {
+    if (vectorStore && ragFileId) {
+      try {
+        vectorStore.deleteFile(ragFileId);
+      } catch (error) {
+        console.warn(`Failed to delete RAG file: ${error}`);
+      }
+    }
+    if (vectorStore) {
+      try {
+        vectorStore.deleteVectorStore();
+      } catch (error) {
+        console.warn(`Failed to delete RAG vector store: ${error}`);
+      }
+    }
+    if (bucketName) {
+      try {
+        deleteGcsBucketAndContents(bucketName);
+      } catch (error) {
+        console.warn(`Failed to delete GCS bucket: ${error}`);
+      }
+    }
+  }
+}
+
+function createGcsBucket(projectId, location) {
+  const bucketName = `genaiapp-rag-${Utilities.getUuid()}`.toLowerCase();
+  const url = `https://storage.googleapis.com/storage/v1/b?project=${encodeURIComponent(projectId)}`;
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    headers: {
+      Authorization: `Bearer ${ScriptApp.getOAuthToken()}`
+    },
+    payload: JSON.stringify({
+      name: bucketName,
+      location: location
+    }),
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error(`Failed to create bucket: ${response.getContentText()}`);
+  }
+  console.log(`Created bucket: ${bucketName}`);
+  return bucketName;
+}
+
+function deleteGcsBucketAndContents(bucketName) {
+  const token = ScriptApp.getOAuthToken();
+  let pageToken;
+
+  do {
+    const listUrl = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucketName)}/o${pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const listResponse = UrlFetchApp.fetch(listUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      muteHttpExceptions: true
+    });
+    const listStatus = listResponse.getResponseCode();
+    if (listStatus === 404) {
+      return;
+    }
+    if (listStatus < 200 || listStatus >= 300) {
+      throw new Error(`Failed to list bucket contents: ${listResponse.getContentText()}`);
+    }
+    const listData = JSON.parse(listResponse.getContentText());
+    const items = listData.items || [];
+    items.forEach(item => {
+      const deleteUrl = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(item.name)}`;
+      const deleteResponse = UrlFetchApp.fetch(deleteUrl, {
+        method: "delete",
+        headers: { Authorization: `Bearer ${token}` },
+        muteHttpExceptions: true
+      });
+      const deleteStatus = deleteResponse.getResponseCode();
+      if (deleteStatus < 200 || deleteStatus >= 300) {
+        throw new Error(`Failed to delete object ${item.name}: ${deleteResponse.getContentText()}`);
+      }
+    });
+    pageToken = listData.nextPageToken;
+  } while (pageToken);
+
+  const bucketDeleteUrl = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucketName)}`;
+  const bucketDeleteResponse = UrlFetchApp.fetch(bucketDeleteUrl, {
+    method: "delete",
+    headers: { Authorization: `Bearer ${token}` },
+    muteHttpExceptions: true
+  });
+  const bucketDeleteStatus = bucketDeleteResponse.getResponseCode();
+  if (bucketDeleteStatus < 200 || bucketDeleteStatus >= 300) {
+    throw new Error(`Failed to delete bucket: ${bucketDeleteResponse.getContentText()}`);
+  }
+  console.log(`Deleted bucket: ${bucketName}`);
+}
+
 // Weather function implementation
 function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
 }
-
