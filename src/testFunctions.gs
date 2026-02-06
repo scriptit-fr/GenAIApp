@@ -1,8 +1,8 @@
-const GPT_MODEL = "gpt-4.1";
+const GPT_MODEL = "gpt-5.2";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
-const GCP_PROJECT_ID = "YOUR_GCP_PROJECT_ID";
-const GCP_REGION = "europe-west4";
+const GEMINI_MODEL = "gemini-3-pro-preview";
+const GCP_PROJECT_ID = "support-add-on";
+const GCP_REGION = "us-central1";
 const RAG_REGION = "europe-west4";
 
 // Run all tests
@@ -151,12 +151,14 @@ function testGeminiVectorStoreRagPipeline() {
     );
     ragFileId = vectorStore.uploadAndAttachFile(blob);
 
-    const response = GenAIApp.newChat()
+    const chat = GenAIApp.newChat()
       .addMessage("Using the provided documents, what is the capital of France?")
-      .addVectorStores(vectorStore.getId())
-      .run({ model: GEMINI_MODEL, max_tokens: 200 });
-
+      .addVectorStores(vectorStore.getId());
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 10000 });
     console.log(`Gemini RAG response:\n${response}`);
+
+    console.log(`Files used:`);
+    console.log(chat.getAttributes());
 
     if (!response || !response.toLowerCase().includes("paris")) {
       throw new Error("RAG validation failed: expected answer not found.");

@@ -759,7 +759,7 @@ const GenAIApp = (function () {
                 rag_resources: ragCorpusIds.map(ragId => ({
                   rag_corpus: `projects/${gcpProjectId}/locations/${ragRegion}/ragCorpora/${ragId}`
                 })),
-                topK: maxNumOfChunks || 5
+                similarityTopK: maxNumOfChunks || 5
               }
             }
           });
@@ -1014,7 +1014,7 @@ const GenAIApp = (function () {
           throw new Error("[GenAIApp] - No files were successfully uploaded to GCS.");
         }
 
-        return rag.attachFilesBatch(id, gcsUris, max_chunk_size, chunk_overlap);
+        return rag.attachFilesBatch(gcsUris, id, max_chunk_size, chunk_overlap);
       };
 
       /**
@@ -2938,10 +2938,10 @@ const GenAIApp = (function () {
      * Note: RAG is not available in all regions, so this may differ from the
      * Gemini / Vertex AI project region set via setGeminiAuth().
      *
-     * @param {string} region The region to use for RAG APIs.
+     * @param {string} ragRegionValue The region to use for RAG APIs.
      */
-    setRagRegion: function (region) {
-      ragRegion = region;
+    setRagRegion: function (ragRegionValue) {
+      ragRegion = ragRegionValue;
     }
   }
 })();
