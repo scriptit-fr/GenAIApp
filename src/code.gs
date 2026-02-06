@@ -33,6 +33,8 @@ const GenAIApp = (function () {
   const globalMetadata = {};
   const addedVectorStores = {};
 
+  const modelForVision = "gemini-3-pro-preview";
+
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
 
   /**
@@ -114,14 +116,19 @@ const GenAIApp = (function () {
           const base64Image = Utilities.base64Encode(blob.getBytes());
           let mimeType = blob.getContentType();
           if (!mimeType || !mimeType.startsWith("image/")) {
-            const lower = imageInput.toLowerCase();
-            if (lower.endsWith(".png")) {
+            let pathname;
+            try {
+              pathname = new URL(imageInput).pathname.toLowerCase();
+            } catch {
+              pathname = imageInput.split("?")[0].split("#")[0].toLowerCase();
+            }
+            if (pathname.endsWith(".png")) {
               mimeType = "image/png";
-            } else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            } else if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) {
               mimeType = "image/jpeg";
-            } else if (lower.endsWith(".webp")) {
+            } else if (pathname.endsWith(".webp")) {
               mimeType = "image/webp";
-            } else if (lower.endsWith(".gif")) {
+            } else if (pathname.endsWith(".gif")) {
               mimeType = "image/gif";
             } else {
               throw new Error("Failed to identify a valid image MIME type. Please check the file format for Gemini.");
@@ -440,7 +447,7 @@ const GenAIApp = (function () {
         // Gemini does not support using images together with vector stores (RAG) yet.
         // Images must be analyzed first and replaced with text before RAG processing.
         const ragCorpusIds = Object.keys(addedVectorStores);
-        if (ragCorpusIds.length > 0 && model.includes("gemini")) {
+        if (ragCorpusIds.length > 0 && model.includes("gemini") && gcpProjectId) {
           contents = this._convertImagesToText(contents);
         }
 
@@ -784,7 +791,7 @@ const GenAIApp = (function () {
         
         if (!hasImages) return currentContents;
 
-        if (typeof verbose !== 'undefined' && verbose) {
+        if (verbose) {
           console.log("[GenAIApp] - Images detected. Converting to text description...");
         }
 
@@ -819,25 +826,28 @@ const GenAIApp = (function () {
           muteHttpExceptions: true
       };
 
-        const modelForVision = "gemini-3-pro-preview";
         const endpoint = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${modelForVision}:generateContent`;
-
         const response = UrlFetchApp.fetch(endpoint, options);
         const result = JSON.parse(response.getContentText());
         
-        let description = "";
-        if (result?.candidates?.[0]?.content?.parts?.[0]?.text) {
-          description = result.candidates[0].content.parts[0].text
-        } else if (result?.parts?.[0]?.text) {
-          description = result.parts[0].text;
-        } else {
-          description = "Image analysis returned no text.";
+        let description = "Image analysis returned no text.";
+        try {
+          const response = UrlFetchApp.fetch(endpoint, options);
+          const result = JSON.parse(response.getContentText());
+
+          if (result?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            description = result.candidates[0].content.parts[0].text;
+          } else if (result?.parts?.[0]?.text) {
+            description = result.parts[0].text;
+          }
+        } catch (error) {
+          Logger.log(`[GenAIApp] - Image analysis failed during Gemini Vision preprocessing: ${error}`);
         }
         
         let newContents = JSON.parse(JSON.stringify(currentContents));
         newContents.forEach(c => {
           const parts = Array.isArray(c.parts) ? c.parts : [c.parts];
-          c.parts = parts.filter(p => !p.inlineData && !p.fileData);
+          c.parts = parts.filter(p => !p.inlineData && !p.inline_data && !p.fileData && !p.file_data);
         });
 
         newContents = newContents.filter(c => {
