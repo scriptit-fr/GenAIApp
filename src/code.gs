@@ -63,28 +63,6 @@ const GenAIApp = (function () {
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
-      // Returns true for Blob-like objects exposing Apps Script Blob methods.
-      const isBlobLike = (x) =>
-        x &&
-        typeof x === "object" &&
-        typeof x.getBytes === "function" &&
-        typeof x.getContentType === "function";
-
-      // OpenAI-only helper: creates a Responses API input_file content object.
-      const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
-        type: "input_file",
-        file_data: `data:${mimeType};base64,${base64Data}`,
-        filename: filename
-      });
-
-      // OpenAI-only helper for Blob-like values returned by function calling.
-      const blobToResponseInputFileContent = (blob) =>
-        createOpenAIInputFileContent(
-          blob.getContentType(),
-          Utilities.base64Encode(blob.getBytes()),
-          blob.getName()
-        );
-
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
@@ -1749,6 +1727,28 @@ const GenAIApp = (function () {
       }
     }
   }
+
+  // Returns true for Blob-like objects exposing Apps Script Blob methods.
+  const isBlobLike = (x) =>
+    x &&
+    typeof x === "object" &&
+    typeof x.getBytes === "function" &&
+    typeof x.getContentType === "function";
+
+  // OpenAI-only helper: creates a Responses API input_file content object.
+  const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
+    type: "input_file",
+    file_data: `data:${mimeType};base64,${base64Data}`,
+    filename: filename
+  });
+
+  // OpenAI-only helper for Blob-like values returned by function calling.
+  const blobToResponseInputFileContent = (blob) =>
+    createOpenAIInputFileContent(
+      blob.getContentType(),
+      Utilities.base64Encode(blob.getBytes()),
+      blob.getName()
+    );
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
