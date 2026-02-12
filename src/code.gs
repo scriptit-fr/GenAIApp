@@ -63,6 +63,28 @@ const GenAIApp = (function () {
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
+      // Returns true for Blob-like objects exposing Apps Script Blob methods.
+      const isBlobLike = (x) =>
+        x &&
+        typeof x === "object" &&
+        typeof x.getBytes === "function" &&
+        typeof x.getContentType === "function";
+
+      // OpenAI-only helper: creates a Responses API input_file content object.
+      const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
+        type: "input_file",
+        file_data: `data:${mimeType};base64,${base64Data}`,
+        filename: filename
+      });
+
+      // OpenAI-only helper for Blob-like values returned by function calling.
+      const blobToResponseInputFileContent = (blob) =>
+        createOpenAIInputFileContent(
+          blob.getContentType(),
+          Utilities.base64Encode(blob.getBytes()),
+          blob.getName()
+        );
+
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
@@ -132,8 +154,7 @@ const GenAIApp = (function () {
             }]
           });
         }
-        else if (typeof imageInput.getBytes === 'function' &&
-          typeof imageInput.getContentType === 'function') {
+        else if (isBlobLike(imageInput)) {
           // the input is a Blob, to be handled by the addFile() method
           this.addFile(imageInput);
         }
@@ -157,8 +178,7 @@ const GenAIApp = (function () {
           fileInfo = this._getBlobFromGoogleDrive(fileInput);
           blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
         }
-        else if (typeof fileInput.getBytes === 'function' &&
-          typeof fileInput.getContentType === 'function') {
+        else if (isBlobLike(fileInput)) {
           // the input is a Blob
           const fileBytes = fileInput.getBytes();
           const fileSize = fileBytes.length;
@@ -182,9 +202,10 @@ const GenAIApp = (function () {
           contentObj.image_url = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
         }
         else {
-          contentObj.type = "input_file";
-          contentObj.file_data = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
-          contentObj.filename = fileInfo.fileName;
+          Object.assign(
+            contentObj,
+            createOpenAIInputFileContent(fileInfo.mimeType, blobToBase64, fileInfo.fileName)
+          );
         }
         messages.push({
           role: "user",
@@ -1573,22 +1594,8 @@ const GenAIApp = (function () {
 
             // handle array of blobs (or mixed arrays)
             if (Array.isArray(functionResponse)) {
-              // If it's an array and every element looks like a Blob, convert each to input_file
-              const isBlobLike = (x) =>
-                x &&
-                typeof x === "object" &&
-                typeof x.getBytes === "function" &&
-                typeof x.getContentType === "function";
-
               if (functionResponse.length > 0 && functionResponse.every(isBlobLike)) {
-                functionResponse = functionResponse.map((blob) => {
-                  const blobToBase64 = Utilities.base64Encode(blob.getBytes());
-                  return {
-                    type: "input_file",
-                    file_data: `data:${blob.getContentType()};base64,${blobToBase64}`,
-                    filename: blob.getName()
-                  };
-                });
+                functionResponse = functionResponse.map(blobToResponseInputFileContent);
               } else {
                 // non-blob arrays
                 functionResponse = JSON.stringify(functionResponse);
@@ -1597,14 +1604,8 @@ const GenAIApp = (function () {
             // single-object handling
             else {
               // check if response is a blob
-              if (typeof functionResponse.getBytes === 'function' &&
-                typeof functionResponse.getContentType === 'function') {
-                const blobToBase64 = Utilities.base64Encode(functionResponse.getBytes());
-                functionResponse = {
-                  type: "input_file",
-                  file_data: `data:${functionResponse.getContentType()};base64,${blobToBase64}`,
-                  filename: functionResponse.getName()
-                };
+              if (isBlobLike(functionResponse)) {
+                functionResponse = blobToResponseInputFileContent(functionResponse);
               }
               else {
                 functionResponse = JSON.stringify(functionResponse);
