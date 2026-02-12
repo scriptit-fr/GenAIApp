@@ -1583,7 +1583,7 @@ const GenAIApp = (function () {
             else {
               // check if response is a blob
               if (isBlobLike(functionResponse)) {
-                functionResponse = blobToResponseInputFileContent(functionResponse);
+                functionResponse = [blobToResponseInputFileContent(functionResponse)];
               }
               else {
                 functionResponse = JSON.stringify(functionResponse);
