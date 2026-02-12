@@ -183,7 +183,7 @@ const GenAIApp = (function () {
         }
         else {
           contentObj.type = "input_file";
-          contentObj.file_data = `data:application/pdf;base64,${blobToBase64}`;
+          contentObj.file_data = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
           contentObj.filename = fileInfo.fileName;
         }
         messages.push({
@@ -1570,7 +1570,46 @@ const GenAIApp = (function () {
         let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
         if (typeof functionResponse != "string") {
           if (typeof functionResponse == "object") {
-            functionResponse = JSON.stringify(functionResponse);
+
+            // handle array of blobs (or mixed arrays)
+            if (Array.isArray(functionResponse)) {
+              // If it's an array and every element looks like a Blob, convert each to input_file
+              const isBlobLike = (x) =>
+                x &&
+                typeof x === "object" &&
+                typeof x.getBytes === "function" &&
+                typeof x.getContentType === "function";
+
+              if (functionResponse.length > 0 && functionResponse.every(isBlobLike)) {
+                functionResponse = functionResponse.map((blob) => {
+                  const blobToBase64 = Utilities.base64Encode(blob.getBytes());
+                  return {
+                    type: "input_file",
+                    file_data: `data:${blob.getContentType()};base64,${blobToBase64}`,
+                    filename: blob.getName()
+                  };
+                });
+              } else {
+                // non-blob arrays
+                functionResponse = JSON.stringify(functionResponse);
+              }
+            }
+            // single-object handling
+            else {
+              // check if response is a blob
+              if (typeof functionResponse.getBytes === 'function' &&
+                typeof functionResponse.getContentType === 'function') {
+                const blobToBase64 = Utilities.base64Encode(functionResponse.getBytes());
+                functionResponse = {
+                  type: "input_file",
+                  file_data: `data:${functionResponse.getContentType()};base64,${blobToBase64}`,
+                  filename: functionResponse.getName()
+                };
+              }
+              else {
+                functionResponse = JSON.stringify(functionResponse);
+              }
+            }
           }
           else {
             functionResponse = String(functionResponse);
