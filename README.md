@@ -135,6 +135,10 @@ For more information :
 - [https://ai.google.dev/gemini-api/docs/function-calling](https://ai.google.dev/gemini-api/docs/function-calling)
 - [https://platform.openai.com/docs/guides/gpt/function-calling](https://platform.openai.com/docs/guides/gpt/function-calling)
 
+⚠️ **Limitation when returning files from function calls:** if your function returns one or more files (Blob values),
+the model can read the file content but cannot reliably read or repeat the original file names. If you need deterministic
+file naming in your app, keep the names in your own script-side metadata rather than asking the model to infer them.
+
 ### Enable web browsing (optional)
 
 If you want to allow the chat to perform web searches and fetch web pages, enable browsing on your chat instance:
