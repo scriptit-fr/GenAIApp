@@ -1769,6 +1769,8 @@ const GenAIApp = (function () {
   });
 
   // OpenAI-only helper for Blob-like values returned by function calling.
+  // Important: even if we send `filename`, current models cannot reliably read/quote
+  // the file names from these tool outputs; they mostly use file content.
   const blobToResponseInputFileContent = (blob) =>
     createOpenAIInputFileContent(
       blob.getContentType(),
@@ -1786,6 +1788,8 @@ const GenAIApp = (function () {
   });
 
   // Gemini-only helper for Blob-like values returned by function calling.
+  // Same limitation as OpenAI tool outputs: the model can use the file bytes, but
+  // should not be expected to read back the returned file names accurately.
   const blobToGeminiInlinePart = (blob) =>
     createGeminiInlinePart(
       blob.getContentType(),
