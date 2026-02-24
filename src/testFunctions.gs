@@ -92,7 +92,7 @@ function testFunctionCallingOnlyReturnArguments() {
 function testFunctionCallingReturnBlob() {
   const receiptGenerator = GenAIApp.newFunction()
     .setName("generateReceipt")
-    .setDescription("Generate a receipt as a text file")
+    .setDescription("Generate a receipt as a PDF file")
     .addParameter("customerName", "string", "The customer full name")
     .addParameter("amount", "number", "The billed amount");
 
@@ -159,7 +159,7 @@ function getWeather(cityName) {
 
 function generateReceipt(customerName, amount) {
   const content = `Receipt\nCustomer: ${customerName}\nAmount: €${amount}`;
-  return Utilities.newBlob(content, "text/plain", "receipt.txt");
+  return Utilities.newBlob(content, "application/pdf", "receipt.pdf");
 }
 
 function generateWelcomePack(employeeName) {
