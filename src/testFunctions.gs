@@ -8,6 +8,8 @@ function testAll() {
   testFunctionCalling();
   testFunctionCallingEndWithResult();
   testFunctionCallingOnlyReturnArguments();
+  testFunctionCallingReturnBlob();
+  testFunctionCallingReturnBlobArray();
   testBrowsing();
   testKnowledgeLink();
   testVision();
@@ -87,6 +89,33 @@ function testFunctionCallingOnlyReturnArguments() {
   });
 }
 
+function testFunctionCallingReturnBlob() {
+  const receiptGenerator = GenAIApp.newFunction()
+    .setName("generateReceipt")
+    .setDescription("Generate a receipt as a text file")
+    .addParameter("customerName", "string", "The customer full name")
+    .addParameter("amount", "number", "The billed amount");
+
+  runTestAcrossModels("Function return blob", chat => {
+    chat
+      .addMessage("Create a receipt for Jane Doe with an amount of 42.50 using generateReceipt")
+      .addFunction(receiptGenerator);
+  });
+}
+
+function testFunctionCallingReturnBlobArray() {
+  const packGenerator = GenAIApp.newFunction()
+    .setName("generateWelcomePack")
+    .setDescription("Generate a welcome package as several files")
+    .addParameter("employeeName", "string", "The employee full name");
+
+  runTestAcrossModels("Function return blob array", chat => {
+    chat
+      .addMessage("Generate a welcome pack for Alex Martin using generateWelcomePack")
+      .addFunction(packGenerator);
+  });
+}
+
 function testBrowsing() {
   runTestAcrossModels("Browsing", chat => {
     chat
@@ -128,3 +157,14 @@ function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
 }
 
+function generateReceipt(customerName, amount) {
+  const content = `Receipt\nCustomer: ${customerName}\nAmount: €${amount}`;
+  return Utilities.newBlob(content, "text/plain", "receipt.txt");
+}
+
+function generateWelcomePack(employeeName) {
+  return [
+    Utilities.newBlob(`Welcome ${employeeName}!`, "text/plain", "welcome.txt"),
+    Utilities.newBlob("Team contacts and onboarding steps.", "text/plain", "onboarding.txt")
+  ];
+}
