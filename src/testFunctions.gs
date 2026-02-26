@@ -1,6 +1,6 @@
-const GPT_MODEL = "gpt-4.1";
+const GPT_MODEL = "gpt-5.2";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3-pro-preview";
 
 // Run all tests
 function testAll() {
