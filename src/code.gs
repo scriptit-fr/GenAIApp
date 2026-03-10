@@ -1000,6 +1000,7 @@ const GenAIApp = (function () {
       let serverDescription = null;
       let serverUrl = null;
       let connectorId = null;
+      let allowedTools = null;
       let authorization = ScriptApp.getOAuthToken();
       let requireApproval = "never";
 
@@ -1123,6 +1124,28 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Sets the allowed mcp tools for the connector.
+       * @param {Array<string>} allowedToolsArray - Allowed mcp tools to be called.
+       * @returns {ConnectorObject}
+       */
+      this.setAllowedTools = function (allowedToolsArray) {
+        if (!Array.isArray(allowedToolsArray)) {
+          throw Error("[GenAIApp] - allowedTools must be an array.");
+        }
+
+        if (allowedToolsArray.length === 0) {
+          throw Error("[GenAIApp] - allowedTools array cannot be empty.");
+        }
+
+        if (!allowedToolsArray.every(tool => typeof tool === "string" && tool.trim() !== "")) {
+          throw Error("[GenAIApp] - All items in allowedTools must be non-empty strings.");
+        }
+
+        allowedTools = allowedToolsArray.map(tool => tool.trim());
+        return this;
+      }
+
+      /**
        * Returns the JSON representation for the connector.
        * @returns {Object}
        */
@@ -1147,6 +1170,10 @@ const GenAIApp = (function () {
         else {
           connector.connector_id = connectorId;
           connector.server_label = serverLabel || connectorId;
+        }
+
+        if (allowedTools) {
+          connector.allowed_tools = allowedTools;
         }
 
         if (authorization) {
