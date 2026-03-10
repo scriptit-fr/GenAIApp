@@ -1132,7 +1132,7 @@ const GenAIApp = (function () {
         if (!Array.isArray(allowedToolsArray)) {
           throw Error("[GenAIApp] - allowedTools must be an array.");
         }
-        
+
         if (allowedToolsArray.length === 0) {
           throw Error("[GenAIApp] - allowedTools array cannot be empty.");
         }
@@ -1141,7 +1141,7 @@ const GenAIApp = (function () {
           throw Error("[GenAIApp] - All items in allowedTools must be non-empty strings.");
         }
 
-        allowedTools = allowedToolsArray;
+        allowedTools = allowedToolsArray.map(tool => tool.trim());
         return this;
       }
 
