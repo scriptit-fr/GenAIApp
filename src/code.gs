@@ -1143,7 +1143,7 @@ const GenAIApp = (function () {
 
         allowedTools = allowedToolsArray.map(tool => tool.trim());
         return this;
-      }
+      };
 
       /**
        * Returns the JSON representation for the connector.
