@@ -460,7 +460,7 @@ A `Chat` represents a conversation with the model.
 - `disableLogs(bool)`: Disable library logs.
 - `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
 - `enableCompaction(enabled)`: Enable/disable OpenAI Responses API server-side compaction (`false` by default).
-- `setCompactionThreshold(threshold)`: Set the compaction threshold (`200000` by default).
+- `setCompactionThreshold(threshold)`: Set the compaction threshold (`10000` by default).
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
