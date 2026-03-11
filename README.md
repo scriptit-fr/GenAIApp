@@ -159,11 +159,12 @@ const chat = GenAIApp.newChat()
   .setCompactionThreshold(120000);
 ```
 
-If you only need default behavior, enabling compaction is enough (default threshold is `200000`):
+If you only need default behavior, enabling compaction is enough (default threshold is `10000`):
 
 ```js
 const chat = GenAIApp.newChat().enableCompaction(true);
 ```
+
 ### Give a web page as a knowledge base (optional)
 
 If you don't need the perform a web search and want to directly give a link for a web page you want the chat to read before performing any action, you can use the addKnowledgeLink(url) function.
@@ -171,6 +172,7 @@ If you don't need the perform a web search and want to directly give a link for 
 ```javascript
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
+
 ### Add Image (optional)
 
 To include an image in the conversation, use the `addImage()` method with a URL or a Blob.

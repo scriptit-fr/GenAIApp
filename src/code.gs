@@ -344,6 +344,9 @@ const GenAIApp = (function () {
        * @param {number} threshold - Token threshold that triggers compaction.
        */
       this.setCompactionThreshold = function (threshold) {
+        if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 1000) {
+          throw new Error('[GenAIApp] - compaction threshold must be a number with minimum value 1000 (tokens).');
+        }
         compaction_threshold = threshold;
         return this;
       };
