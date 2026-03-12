@@ -12,11 +12,15 @@ function testAll() {
   testKnowledgeLink();
   testVision();
   testMaximumAPICalls();
+  testAddFile();
+  testMetadataAndLogs();
+  testResponseIdTracking();
+  testVectorStoreLifecycle();
 }
 
 
 // Helper to set API keys and run tests across models
-function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
+function runTestAcrossModels(testName, setupFunction, runOptions = {}, afterRun) {
   // Set API keys once per batch
   GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
@@ -33,6 +37,9 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
     const options = { model: model.name, ...runOptions };
     const response = chat.run(options);
     console.log(`${testName} ${model.label}:\n${response}`);
+    if (afterRun) {
+      afterRun(chat, response, model);
+    }
   });
 }
 
@@ -106,7 +113,6 @@ function testKnowledgeLink() {
 function testVision() {
   runTestAcrossModels("Vision", chat => {
     chat
-      .enableVision(true)
       .addMessage("Describe the following image.")
       .addImage(
         "https://good-nature-blog-uploads.s3.amazonaws.com/uploads/2014/02/slide_336579_3401508_free-1200x640.jpg",
@@ -126,5 +132,80 @@ function testMaximumAPICalls() {
 // Weather function implementation
 function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
+}
+
+function testAddFile() {
+  const blob = Utilities.newBlob("Hello from a file", "text/plain", "hello.txt");
+  runTestAcrossModels("Add file", chat => {
+    chat
+      .addMessage("Read the file and summarize its content.")
+      .addFile(blob);
+  });
+}
+
+function testMetadataAndLogs() {
+  GenAIApp.setGlobalMetadata("suite", "tests");
+  const dummyFunction = GenAIApp.newFunction()
+    .setName("dummy")
+    .setDescription("A dummy function");
+
+  runTestAcrossModels(
+    "Metadata and logs",
+    chat => {
+      chat
+        .disableLogs(true)
+        .addMetadata("requestId", "12345")
+        .addMessage("Say hello")
+        .addFunction(dummyFunction);
+    },
+    {},
+    chat => {
+      console.log(`Messages: ${chat.getMessages()}`);
+      console.log(`Functions: ${chat.getFunctions()}`);
+    }
+  );
+}
+
+function testResponseIdTracking() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+  const models = [
+    { name: GPT_MODEL, label: "GPT" },
+    { name: REASONING_MODEL, label: "reasoning" },
+    { name: GEMINI_MODEL, label: "gemini" }
+  ];
+
+  models.forEach(model => {
+    const chat = GenAIApp.newChat();
+    chat.addMessage("Hello");
+    chat.run({ model: model.name });
+    const lastId = chat.retrieveLastResponseId();
+    chat.addMessage("Continue this conversation.");
+    if (lastId) {
+      chat.setPreviousResponseId(lastId);
+    }
+    const response = chat.run({ model: model.name });
+    console.log(`Response ID test ${model.label}:\n${response}`);
+  });
+}
+
+function testVectorStoreLifecycle() {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const blob = Utilities.newBlob("Vector store content", "text/plain", "vs.txt");
+
+  const store = GenAIApp.newVectorStore()
+    .setName("test-store-" + Date.now())
+    .setDescription("Temporary store for tests")
+    .createVectorStore();
+
+  const storeId = store.getId();
+  const fileId = store.uploadAndAttachFile(blob, { source: "test" });
+  const files = store.listFiles();
+  console.log(`Vector store files: ${JSON.stringify(files)}`);
+
+  store.deleteFile(fileId);
+  store.deleteVectorStore();
+  console.log(`Vector store ${storeId} cleaned up.`);
 }
 
