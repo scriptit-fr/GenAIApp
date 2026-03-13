@@ -193,12 +193,13 @@ const GenAIApp = (function () {
         // Gemini
         contents.push({
           role: 'user',
-          parts: [{
-            inline_data: {
-              mime_type: fileInfo.mimeType,
-              data: blobToBase64
-            }
-          }]
+          parts: [
+            createGeminiInlinePart(
+              fileInfo.mimeType,
+              blobToBase64,
+              fileInfo.fileName
+            )
+          ]
         });
         return this;
       };
@@ -1506,24 +1507,48 @@ const GenAIApp = (function () {
       }
 
       let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
+      
       if (verbose) {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
       }
-      if (typeof functionResponse != "string") {
-        if (typeof functionResponse == "object") {
-          functionResponse = JSON.stringify(functionResponse);
+
+      let jsonResponse = null;
+      let multimodalParts = [];
+      if (typeof functionResponse !== "string") {
+        if (typeof functionResponse === "object") {
+          
+          // handle array of blobs (or mixed arrays)
+          if (Array.isArray(functionResponse)) {
+            if (functionResponse.length > 0 && functionResponse.every(isBlobLike)) {
+              multimodalParts = functionResponse.map(blobToGeminiInlinePart);
+            } else { // non-blob arrays
+              jsonResponse = functionResponse;
+            }
+          } else {// single-object handling
+            // check if response is a blob
+            if (isBlobLike(functionResponse)) {
+              multimodalParts = [blobToGeminiInlinePart(functionResponse)];
+            } else {
+              jsonResponse = functionResponse;
+            }
+          }
+        } else {
+          jsonResponse = String(functionResponse);
         }
-        else {
-          functionResponse = String(functionResponse);
-        }
+      } else {
+        jsonResponse = functionResponse;
       }
 
-      // Append result of the function execution to contents
-      // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
+      // Build the tool response message following Gemini's official function calling spec.
+      // The result must be sent as a role "tool" message containing a functionResponse object.
+      // - JSON payload goes inside `response`
+      // - Binary/multimodal data (PDF, image, etc.) goes inside `parts` using inlineData
+      // https://ai.google.dev/gemini-api/docs/function-calling?example=weather#multimodal
       responseParts.push({
         functionResponse: {
           name: functionName,
-          response: { functionResponse }
+          response: jsonResponse ?? {},
+          ...(multimodalParts.length > 0 && { parts: multimodalParts })
         }
       });
     }
@@ -1531,7 +1556,7 @@ const GenAIApp = (function () {
     // Append all function results in a single turn
     if (responseParts.length > 0) {
       contents.push({
-        role: 'user',
+        role: "tool",
         parts: responseParts
       });
     }
@@ -1621,6 +1646,7 @@ const GenAIApp = (function () {
             functionResponse = String(functionResponse);
           }
         }
+
         if (verbose) {
           console.log(`[GenAIApp] - function ${functionName}() called by OpenAI.`);
         }
@@ -1770,12 +1796,34 @@ const GenAIApp = (function () {
   });
 
   // OpenAI-only helper for Blob-like values returned by function calling.
+  // Important: even if we send `filename`, current models cannot reliably read/quote
+  // the file names from these tool outputs; they mostly use file content.
   const blobToResponseInputFileContent = (blob) =>
     createOpenAIInputFileContent(
       blob.getContentType(),
       Utilities.base64Encode(blob.getBytes()),
       blob.getName()
     );
+
+  // Gemini-only helper: creates an inlineData part object.
+  const createGeminiInlinePart = (mimeType, base64Data, filename) => ({
+    inlineData: {
+      mimeType: mimeType,
+      displayName: filename,
+      data: base64Data
+    }
+  });
+
+  // Gemini-only helper for Blob-like values returned by function calling.
+  // Same limitation as OpenAI tool outputs: the model can use the file bytes, but
+  // should not be expected to read back the returned file names accurately.
+  const blobToGeminiInlinePart = (blob) =>
+    createGeminiInlinePart(
+      blob.getContentType(),
+      Utilities.base64Encode(blob.getBytes()),
+      blob.getName()
+    );
+
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
