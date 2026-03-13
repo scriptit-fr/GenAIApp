@@ -156,7 +156,7 @@ Use Responses API native compaction to let OpenAI compact long conversations aut
 ```js
 const chat = GenAIApp.newChat()
   .enableCompaction(true)
-  .setCompactionThreshold(120000);
+  .setCompactionThreshold(120000); // minimum: 1000
 ```
 
 If you only need default behavior, enabling compaction is enough (default threshold is `10000`):
@@ -460,7 +460,7 @@ A `Chat` represents a conversation with the model.
 - `disableLogs(bool)`: Disable library logs.
 - `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
 - `enableCompaction(enabled)`: Enable/disable OpenAI Responses API server-side compaction (`false` by default).
-- `setCompactionThreshold(threshold)`: Set the compaction threshold (`200000` by default).
+- `setCompactionThreshold(threshold)`: (`10000` by default, minimum `1000`; finite numbers only).
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
