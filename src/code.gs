@@ -316,7 +316,7 @@ const GenAIApp = (function () {
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
-        return previous_response_id;
+        return response_id;
       };
 
       /**
