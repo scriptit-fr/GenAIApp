@@ -52,6 +52,8 @@ const GenAIApp = (function () {
       let browsing = false;
       let reasoning_effort = "medium";
       let knowledgeLink = [];
+      let compaction_enabled = false;
+      let compaction_threshold = 10000;
 
       let previous_response_id;
 
@@ -329,6 +331,27 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Enable or disable server-side context compaction for OpenAI Responses API requests.
+       * @param {boolean} enabled - True to enable compaction.
+       */
+      this.enableCompaction = function (enabled) {
+        compaction_enabled = Boolean(enabled);
+        return this;
+      };
+
+      /**
+       * Set the token threshold used by OpenAI server-side compaction.
+       * @param {number} threshold - Token threshold that triggers compaction.
+       */
+      this.setCompactionThreshold = function (threshold) {
+        if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 1000) {
+          throw new Error('[GenAIApp] - compaction threshold must be a number with minimum value 1000 (tokens).');
+        }
+        compaction_threshold = threshold;
+        return this;
+      };
+
+      /**
        * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
        * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs 
        */
@@ -360,6 +383,8 @@ const GenAIApp = (function () {
           temperature: temperature,
           max_tokens: max_tokens,
           browsing: browsing,
+          compaction_enabled: compaction_enabled,
+          compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls
         };
@@ -635,6 +660,13 @@ const GenAIApp = (function () {
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
+        }
+
+        if (compaction_enabled) {
+          payload.context_management = [{
+            type: "compaction",
+            compact_threshold: compaction_threshold
+          }];
         }
 
         if (browsing) {
