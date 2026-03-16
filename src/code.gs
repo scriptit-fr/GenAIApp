@@ -566,8 +566,7 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
-              return messageItem?.content?.find(part => part?.text)?.text || null;
+              return _extractOpenAIResponseText(responseMessage?.output);
             }
           }
           if (advancedParametersObject) {
@@ -583,10 +582,7 @@ const GenAIApp = (function () {
             return part?.text || null;
           }
           else {
-            return responseMessage
-              .output
-              .find(item => item.type === "message")?.content
-              ?.find(part => part?.text)?.text || null;
+            return _extractOpenAIResponseText(responseMessage?.output);
           }
         }
       }
@@ -1693,6 +1689,38 @@ const GenAIApp = (function () {
       }
     }
     return messages;
+  }
+
+  /**
+   * Extracts assistant text from OpenAI Responses API output.
+   * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
+   * Falls back to the last available assistant message text when no explicit final answer exists.
+   *
+   * @private
+   * @param {Array} output - The `response.output` array returned by OpenAI.
+   * @returns {string|null} - The selected assistant text, or `null` if no text is found.
+   */
+  function _extractOpenAIResponseText(output) {
+    if (!Array.isArray(output)) {
+      return null;
+    }
+
+    const messageItems = output.filter(item => item?.type === "message");
+    if (messageItems.length === 0) {
+      return null;
+    }
+
+    const getText = (messageItem) => {
+      const textPart = messageItem?.content?.find(part => part?.text);
+      return textPart?.text || null;
+    };
+
+    const finalAnswerMessage = messageItems.find(item => item?.status === "final_answer");
+    if (finalAnswerMessage) {
+      return getText(finalAnswerMessage);
+    }
+
+    return getText(messageItems[messageItems.length - 1]);
   }
 
   /**
