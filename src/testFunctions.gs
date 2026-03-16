@@ -1,6 +1,6 @@
-const GPT_MODEL = "gpt-4.1";
+const GPT_MODEL = "gpt-5.2";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3-pro-preview";
 
 // Run all tests
 function testAll() {
@@ -8,6 +8,8 @@ function testAll() {
   testFunctionCalling();
   testFunctionCallingEndWithResult();
   testFunctionCallingOnlyReturnArguments();
+  testFunctionCallingReturnBlob();
+  testFunctionCallingReturnBlobArray();
   testBrowsing();
   testKnowledgeLink();
   testVision();
@@ -87,6 +89,33 @@ function testFunctionCallingOnlyReturnArguments() {
   });
 }
 
+function testFunctionCallingReturnBlob() {
+  const receiptGenerator = GenAIApp.newFunction()
+    .setName("generateReceipt")
+    .setDescription("Generate a receipt as a PDF file")
+    .addParameter("customerName", "string", "The customer full name")
+    .addParameter("amount", "number", "The billed amount");
+
+  runTestAcrossModels("Function return blob", chat => {
+    chat
+      .addMessage("Create a receipt for Jane Doe with an amount of 42.50 using generateReceipt")
+      .addFunction(receiptGenerator);
+  });
+}
+
+function testFunctionCallingReturnBlobArray() {
+  const packGenerator = GenAIApp.newFunction()
+    .setName("generateWelcomePack")
+    .setDescription("Generate a welcome package as several files")
+    .addParameter("employeeName", "string", "The employee full name");
+
+  runTestAcrossModels("Function return blob array", chat => {
+    chat
+      .addMessage("Generate a welcome pack for Alex Martin using generateWelcomePack")
+      .addFunction(packGenerator);
+  });
+}
+
 function testBrowsing() {
   runTestAcrossModels("Browsing", chat => {
     chat
@@ -128,3 +157,52 @@ function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
 }
 
+function _escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function _createSimplePdf(fileName, title, lines) {
+  const safeTitle = _escapeHtml(title);
+  const lineHtml = lines
+    .map(line => `<p style="margin: 0 0 6px;">${_escapeHtml(line)}</p>`)
+    .join("");
+
+  const html = `
+    <html>
+      <body style="font-family: Arial, sans-serif; padding: 16px; font-size: 12px;">
+        <h3 style="margin: 0 0 10px;">${safeTitle}</h3>
+        ${lineHtml}
+      </body>
+    </html>
+  `;
+
+  return HtmlService
+    .createHtmlOutput(html)
+    .getBlob()
+    .getAs("application/pdf")
+    .setName(fileName);
+}
+
+function generateReceipt(customerName, amount) {
+  return _createSimplePdf("receipt.pdf", "Receipt", [
+    `Customer: ${customerName}`,
+    `Amount: €${amount}`
+  ]);
+}
+
+function generateWelcomePack(employeeName) {
+  return [
+    _createSimplePdf("welcome.pdf", "Welcome", [
+      `Employee: ${employeeName}`,
+      "We are happy to have you on board."
+    ]),
+    _createSimplePdf("onboarding.pdf", "Onboarding", [
+      `Employee: ${employeeName}`,
+      "Step 1: Meet your team.",
+      "Step 2: Read the onboarding guide."
+    ])
+  ];
+}
