@@ -13,6 +13,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Adding Messages](#adding-messages)
   - [Adding Callable Functions to the Chat](#adding-callable-functions-to-the-chat)
   - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
+  - [Enable OpenAI server-side compaction (Optional)](#enable-openai-server-side-compaction-optional)
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
   - [Add Image (Optional)](#add-image-optional)
   - [Add File to Chat (optional)](#add-file-to-chat-optional)
@@ -147,6 +148,23 @@ If want to restrict your browsing to a specific web page, you can add as a secon
 ```javascript
   chat.enableBrowsing(true, "https://support.google.com");
 ```
+
+### Enable OpenAI server-side compaction (optional)
+
+Use Responses API native compaction to let OpenAI compact long conversations automatically.
+
+```js
+const chat = GenAIApp.newChat()
+  .enableCompaction(true)
+  .setCompactionThreshold(120000); // minimum: 1000
+```
+
+If you only need default behavior, enabling compaction is enough (default threshold is `10000`):
+
+```js
+const chat = GenAIApp.newChat().enableCompaction(true);
+```
+
 ### Give a web page as a knowledge base (optional)
 
 If you don't need the perform a web search and want to directly give a link for a web page you want the chat to read before performing any action, you can use the addKnowledgeLink(url) function.
@@ -154,6 +172,7 @@ If you don't need the perform a web search and want to directly give a link for 
 ```javascript
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
+
 ### Add Image (optional)
 
 To include an image in the conversation, use the `addImage()` method with a URL or a Blob.
@@ -440,6 +459,8 @@ A `Chat` represents a conversation with the model.
 - `getFunctions()`: Get the functions as a JSON string.
 - `disableLogs(bool)`: Disable library logs.
 - `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
+- `enableCompaction(enabled)`: Enable/disable OpenAI Responses API server-side compaction (`false` by default).
+- `setCompactionThreshold(threshold)`: Set the compaction threshold (`10000` by default, minimum `1000`; finite numbers only).
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
