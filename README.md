@@ -441,7 +441,11 @@ Logger.log(usage);
 
 if (usage && usage.input_tokens > INPUT_TOKEN_THRESHOLD) {
   const responseId = chat.retrieveLastResponseId();
-  Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
+  if (responseId != null) {
+    Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
+  } else {
+    Logger.log('High input token usage detected, but previous_response_id is unavailable.');
+  }
 }
 ```
 

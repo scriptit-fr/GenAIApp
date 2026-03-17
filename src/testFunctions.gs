@@ -144,7 +144,7 @@ ${JSON.stringify(usage)}`);
   }
 
   ["input_tokens", "output_tokens", "total_tokens"].forEach(field => {
-    if (typeof usage[field] !== "number") {
+    if (!Number.isFinite(usage[field])) {
       throw new Error(`Missing or invalid usage field: ${field}`);
     }
   });
@@ -154,4 +154,3 @@ ${JSON.stringify(usage)}`);
 function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
 }
-
