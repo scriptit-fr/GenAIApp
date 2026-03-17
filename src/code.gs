@@ -65,6 +65,8 @@ const GenAIApp = (function () {
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
 
+      this._lastUsage = null;
+
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
@@ -322,6 +324,14 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Returns token usage of the last OpenAI response.
+       * @returns {Object | null} The usage object of the latest OpenAI call, otherwise null.
+       */
+      this.getLastUsage = function () {
+        return this._lastUsage;
+      };
+
+      /**
        * Sets the previous response Id attribute for the chat (used by Open AI to keep track of conversations)
        * @param {string} previousResponseId - The id of the previous Chat GPT response.
        */
@@ -404,6 +414,8 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
+        this._lastUsage = null;
+
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
@@ -479,6 +491,9 @@ const GenAIApp = (function () {
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
+          if (responseMessage?.usage) {
+            this._lastUsage = responseMessage.usage;
+          }
           numberOfAPICalls++;
         }
         else {

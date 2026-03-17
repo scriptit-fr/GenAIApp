@@ -31,6 +31,8 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
   - [Example 5: Describe an Image](#example-5--describe-an-image)
   - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
+  - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
+  - [Example 8: Tracking Token Usage](#example-8--tracking-token-usage)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -421,6 +423,31 @@ The `setServerUrl()` method points the connector to your MCP gateway, while `set
 key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
 authorize every connector invocation.
 
+### Example 8 : Tracking Token Usage
+
+```javascript
+const INPUT_TOKEN_THRESHOLD = 1000;
+
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const chat = GenAIApp.newChat();
+chat.addMessage('Summarize the main benefits of server-side context compaction in two bullet points.');
+
+const response = chat.run({ model: 'gpt-4.1' });
+Logger.log(response);
+
+const usage = chat.getLastUsage();
+Logger.log(usage);
+
+if (usage && usage.input_tokens > INPUT_TOKEN_THRESHOLD) {
+  const responseId = chat.retrieveLastResponseId();
+  Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
+}
+```
+
+Use `getLastUsage()` right after `run()` to inspect input/output/total token usage for your latest OpenAI call.
+
+
 ## Contributing
 
 Contributions are welcome! If you find any bugs, have feature requests, or want to contribute code, please submit an issue or pull request on this [GitHub repository](https://github.com/scriptit-fr/GenAIApp).
@@ -465,6 +492,7 @@ A `Chat` represents a conversation with the model.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
 - `retrieveLastResponseId()`: Get the last response ID.
+- `getLastUsage()`: Get the token usage from the last OpenAI API response.
 - `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
