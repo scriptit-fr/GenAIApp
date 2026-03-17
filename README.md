@@ -496,7 +496,7 @@ A `Chat` represents a conversation with the model.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
 - `retrieveLastResponseId()`: Get the last response ID.
-- `getLastUsage()`: Get the token usage from the last OpenAI API response.
+- `getLastUsage()`: Get the token usage from the last OpenAI API response. May return null if no OpenAI usage is available (for example, before run() has been called or in non-OpenAI flows).
 - `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
