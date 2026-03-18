@@ -33,6 +33,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
   - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
   - [Example 8: Tracking Token Usage](#example-8--tracking-token-usage)
+  - [Example 9: Continue a Conversation with previous_response_id](#example-9--continue-a-conversation-with-previous_response_id)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -223,8 +224,8 @@ chat.addMCP(customConnector);
 - **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the
   model calls the connector.
 
-> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-4.1`,
-> `o4-mini`, `o3`, or `gpt-5`).
+> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example,
+> `o4-mini`, `o3`, or `gpt-5.4`).
 
 ### Running the Chat
 
@@ -241,7 +242,7 @@ console.log(response);
 ```
 The library supports the following models: 
 1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-4.1" | "o4-mini" | "o3" | "gpt-5"
+2. OpenAI: "gpt-5.4" | "o4-mini" | "o3" | "gpt-5"
 
 ⚠️ **Warning:** the "function_call" advanced parameter is supported by:
   - OpenAI models (including GPT-5)  
@@ -391,7 +392,7 @@ const gmailConnector = GenAIApp.newConnector()
 
 chat.addMCP(gmailConnector);
 
-const summary = chat.run({ model: 'gpt-4.1' });
+const summary = chat.run({ model: 'gpt-5.4' });
 Logger.log(summary);
 ```
 
@@ -415,7 +416,7 @@ const salesforceConnector = GenAIApp.newConnector()
 
 chat.addMCP(salesforceConnector);
 
-const report = chat.run({ model: 'gpt-4.1' });
+const report = chat.run({ model: 'gpt-5.4' });
 Logger.log(report);
 ```
 
@@ -433,7 +434,7 @@ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 const chat = GenAIApp.newChat();
 chat.addMessage('Summarize the main benefits of server-side context compaction in two bullet points.');
 
-const response = chat.run({ model: 'gpt-4.1' });
+const response = chat.run({ model: 'gpt-5.4' });
 Logger.log(response);
 
 const usage = chat.getLastUsage();
@@ -446,6 +447,32 @@ if (usage && usage.input_tokens > INPUT_TOKEN_THRESHOLD) {
 ```
 
 Use `getLastUsage()` right after `run()` to inspect input/output/total token usage for your latest OpenAI call.
+
+### Example 9 : Continue a Conversation with previous_response_id
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+// First request
+const firstChat = GenAIApp.newChat();
+firstChat.addMessage("Explain what Google Apps Script libraries are in 3 short bullet points.");
+
+const firstAnswer = firstChat.run({ model: "gpt-4.1" });
+Logger.log(firstAnswer);
+
+// Save the response id returned by the OpenAI Responses API
+const previousResponseId = firstChat.retrieveLastResponseId();
+Logger.log(`Previous response id: ${previousResponseId}`);
+
+// Follow-up request using previous_response_id
+const secondChat = GenAIApp.newChat();
+secondChat
+  .setPreviousResponseId(previousResponseId)
+  .addMessage("Now rewrite your previous answer for a beginner in one short paragraph.");
+
+const secondAnswer = secondChat.run({ model: "gpt-4.1" });
+Logger.log(secondAnswer);
+```
 
 
 ## Contributing
@@ -493,7 +520,8 @@ A `Chat` represents a conversation with the model.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
 - `retrieveLastResponseId()`: Get the last response ID.
 - `getLastUsage()`: Get the token usage from the last OpenAI API response.
-- `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
+- `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
+- `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 

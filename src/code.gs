@@ -56,6 +56,7 @@ const GenAIApp = (function () {
       let compaction_threshold = 10000;
 
       let previous_response_id;
+      let last_response_id;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
@@ -320,7 +321,7 @@ const GenAIApp = (function () {
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
-        return previous_response_id;
+        return last_response_id;
       };
 
       /**
@@ -415,6 +416,7 @@ const GenAIApp = (function () {
        */
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
+        last_response_id = null;
 
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
@@ -493,6 +495,11 @@ const GenAIApp = (function () {
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+          }
+
+          // OpenAI Responses API returns top-level "id"
+          if (!model.includes("gemini")) {
+            last_response_id = responseMessage?.id ?? null;
           }
           numberOfAPICalls++;
         }
@@ -574,9 +581,7 @@ const GenAIApp = (function () {
                   return _parseResponse(messages[messages.length - 3].arguments);
                 }
               }
-              // Use the previous_response_id parameter to pass reasoning items from previous responses
-              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              
               previous_response_id = responseMessage.id;
             }
             else {
@@ -625,7 +630,10 @@ const GenAIApp = (function () {
             "effort": reasoning_effort
           }
         }
-
+        
+        // Use the previous_response_id parameter to pass reasoning items from previous responses
+        // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+        // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
         if (previous_response_id) {
           payload.previous_response_id = previous_response_id;
         }
