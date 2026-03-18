@@ -326,14 +326,6 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Returns the usage statistics from the last OpenAI API response.
-       * @returns {Object|null} - The usage object containing input_tokens, output_tokens, and total_tokens, or null if not available.
-       */
-      this.getLastUsage = function () {
-        return this._lastUsage;
-      };
-
-      /**
        * Defines the input token threshold that should trigger a warning log.
        * @param {number} input_token_threshold - Input token threshold for warning.
        * @returns {Chat} - The current Chat instance.
@@ -421,7 +413,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite-preview" | "gemini-3-flash-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite-preview" | "gemini-3-flash-preview" | "gpt-5.4" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]

@@ -1,4 +1,4 @@
-const GPT_MODEL = "gpt-4.1";
+const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-2.5-pro";
 
@@ -141,7 +141,7 @@ ${lowThresholdResponse}`);
   // Case 2: high threshold should not log warning (manual log inspection).
   const highThresholdChat = GenAIApp.newChat();
   highThresholdChat
-    .warnIfResponseTokenUsageAbove(1000000)
+    .warnIfResponseTokenUsageAbove(180)
     .addMessage("In one sentence, explain what token usage means for an API call.");
   const highThresholdResponse = highThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
   console.log(`Input token warning test (high threshold) response:
