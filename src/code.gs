@@ -326,11 +326,22 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Returns the usage statistics from the last OpenAI API response.
+       * @returns {Object|null} - The usage object containing input_tokens, output_tokens, and total_tokens, or null if not available.
+       */
+      this.getLastUsage = function () {
+        return this._lastUsage;
+      };
+
+      /**
        * Defines the input token threshold that should trigger a warning log.
        * @param {number} input_token_threshold - Input token threshold for warning.
        * @returns {Chat} - The current Chat instance.
        */
       this.warnIfResponseTokenUsageAbove = function (input_token_threshold) {
+        if (typeof input_token_threshold !== 'number' || !Number.isFinite(input_token_threshold) || input_token_threshold < 0) {
+          throw new RangeError('[GenAIApp] - input token warning threshold must be a finite number >= 0.');
+        }
         this._inputTokenWarningThreshold = input_token_threshold;
         return this;
       };
@@ -500,7 +511,7 @@ const GenAIApp = (function () {
             this._lastUsage = responseMessage.usage;
             if (this._inputTokenWarningThreshold !== null
               && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
-              console.log(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}).`);
+              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}).`);
             }
           }
 
