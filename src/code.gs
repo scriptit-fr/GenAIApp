@@ -67,6 +67,7 @@ const GenAIApp = (function () {
       let numberOfAPICalls = 0;
 
       this._lastUsage = null;
+      this._inputTokenWarningThreshold = null;
 
       /**
        * Add a message to the chat.
@@ -325,14 +326,13 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Returns token usage of the last OpenAI response.
-       * @returns {Object | null} The usage object of the latest OpenAI call, otherwise null.
+       * Defines the input token threshold that should trigger a warning log.
+       * @param {number} input_token_threshold - Input token threshold for warning.
+       * @returns {Chat} - The current Chat instance.
        */
-      this.getLastUsage = function () {
-        if (this._lastUsage === null) {
-          return null;
-        }
-        return JSON.parse(JSON.stringify(this._lastUsage));
+      this.warnIfResponseTokenUsageAbove = function (input_token_threshold) {
+        this._inputTokenWarningThreshold = input_token_threshold;
+        return this;
       };
 
       /**
@@ -498,6 +498,10 @@ const GenAIApp = (function () {
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+            if (this._inputTokenWarningThreshold !== null
+              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
+              console.log(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}).`);
+            }
           }
 
           // OpenAI Responses API returns top-level "id"

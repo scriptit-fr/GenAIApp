@@ -12,7 +12,7 @@ function testAll() {
   testKnowledgeLink();
   testVision();
   testMaximumAPICalls();
-  testUsageRetrieval();
+  testInputTokenWarning();
 }
 
 
@@ -125,29 +125,28 @@ function testMaximumAPICalls() {
 }
 
 
-function testUsageRetrieval() {
+function testInputTokenWarning() {
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
-  const chat = GenAIApp.newChat();
-  chat.addMessage("In one sentence, explain what token usage means for an API call.");
+  // Case 1: low threshold should log warning (manual log inspection).
+  const lowThresholdChat = GenAIApp.newChat();
+  lowThresholdChat
+    .warnIfResponseTokenUsageAbove(1)
+    .addMessage("In one sentence, explain what token usage means for an API call.");
+  const lowThresholdResponse = lowThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
+  console.log(`Input token warning test (low threshold) response:
+${lowThresholdResponse}`);
+  console.log("Input token warning test (low threshold): verify that a warning log was emitted.");
 
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 200 });
-  console.log(`Usage retrieval response:
-${response}`);
-
-  const usage = chat.getLastUsage();
-  console.log(`Usage retrieval usage:
-${JSON.stringify(usage)}`);
-
-  if (!usage || typeof usage !== "object") {
-    throw new Error("Expected chat.getLastUsage() to return a usage object for OpenAI calls.");
-  }
-
-  ["input_tokens", "output_tokens", "total_tokens"].forEach(field => {
-    if (!Number.isFinite(usage[field])) {
-      throw new Error(`Missing or invalid usage field: ${field}`);
-    }
-  });
+  // Case 2: high threshold should not log warning (manual log inspection).
+  const highThresholdChat = GenAIApp.newChat();
+  highThresholdChat
+    .warnIfResponseTokenUsageAbove(1000000)
+    .addMessage("In one sentence, explain what token usage means for an API call.");
+  const highThresholdResponse = highThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
+  console.log(`Input token warning test (high threshold) response:
+${highThresholdResponse}`);
+  console.log("Input token warning test (high threshold): verify that no warning log was emitted.");
 }
 
 // Weather function implementation
