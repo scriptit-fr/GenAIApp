@@ -387,7 +387,9 @@ chat.addMessage('Search my latest unread Gmail message and summarize it.');
 
 const gmailConnector = GenAIApp.newConnector()
   .setConnectorId('gmail')
-  .setRequireApproval('domain');
+  .setLabel("Gmail inbox")
+  .setAuthorization(ScriptApp.getOAuthToken())
+  .setRequireApproval('never');
 
 chat.addMCP(gmailConnector);
 
