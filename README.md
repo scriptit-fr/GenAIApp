@@ -461,7 +461,7 @@ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 const firstChat = GenAIApp.newChat();
 firstChat.addMessage("Explain what Google Apps Script libraries are in 3 short bullet points.");
 
-const firstAnswer = firstChat.run({ model: "gpt-4.1" });
+const firstAnswer = firstChat.run({ model: "gpt-5.4" });
 Logger.log(firstAnswer);
 
 // Save the response id returned by the OpenAI Responses API
@@ -474,7 +474,7 @@ secondChat
   .setPreviousResponseId(previousResponseId)
   .addMessage("Now rewrite your previous answer for a beginner in one short paragraph.");
 
-const secondAnswer = secondChat.run({ model: "gpt-4.1" });
+const secondAnswer = secondChat.run({ model: "gpt-5.4" });
 Logger.log(secondAnswer);
 ```
 
