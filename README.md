@@ -32,8 +32,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 5: Describe an Image](#example-5--describe-an-image)
   - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
   - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
-  - [Example 8: Tracking Token Usage](#example-8--tracking-token-usage)
-  - [Example 9: Continue a Conversation with previous_response_id](#example-9--continue-a-conversation-with-previous_response_id)
+  - [Example 8: Continue a Conversation with previous_response_id](#example-8--continue-a-conversation-with-previous_response_id)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -424,35 +423,7 @@ The `setServerUrl()` method points the connector to your MCP gateway, while `set
 key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
 authorize every connector invocation.
 
-### Example 8 : Tracking Token Usage
-
-```javascript
-const INPUT_TOKEN_THRESHOLD = 1000;
-
-GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
-
-const chat = GenAIApp.newChat();
-chat.addMessage('Summarize the main benefits of server-side context compaction in two bullet points.');
-
-const response = chat.run({ model: 'gpt-5.4' });
-Logger.log(response);
-
-const usage = chat.getLastUsage();
-Logger.log(usage);
-
-if (usage && usage.input_tokens > INPUT_TOKEN_THRESHOLD) {
-  const responseId = chat.retrieveLastResponseId();
-  if (responseId != null) {
-    Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
-  } else {
-    Logger.log('High input token usage detected, but previous_response_id is unavailable.');
-  }
-}
-```
-
-Use `getLastUsage()` right after `run()` to inspect input/output/total token usage for your latest OpenAI call.
-
-### Example 9 : Continue a Conversation with previous_response_id
+### Example 8 : Continue a Conversation with previous_response_id
 
 ```javascript
 GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
@@ -522,9 +493,9 @@ A `Chat` represents a conversation with the model.
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
-- `getLastUsage()`: Get the token usage from the last OpenAI API response. May return null if no OpenAI usage is available (for example, before run() has been called or in non-OpenAI flows).
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
+- `warnIfResponseTokenUsageAbove(input_token_threshold)`: Logs a warning if the input tokens are greater than the threshold. Is not on by default.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 

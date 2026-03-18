@@ -67,6 +67,7 @@ const GenAIApp = (function () {
       let numberOfAPICalls = 0;
 
       this._lastUsage = null;
+      this._inputTokenWarningThreshold = null;
 
       /**
        * Add a message to the chat.
@@ -325,14 +326,16 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Returns token usage of the last OpenAI response.
-       * @returns {Object | null} The usage object of the latest OpenAI call, otherwise null.
+       * Defines the input token threshold that should trigger a warning log.
+       * @param {number} input_token_threshold - Input token threshold for warning.
+       * @returns {Chat} - The current Chat instance.
        */
-      this.getLastUsage = function () {
-        if (this._lastUsage === null) {
-          return null;
+      this.warnIfResponseTokenUsageAbove = function (input_token_threshold) {
+        if (typeof input_token_threshold !== 'number' || !Number.isFinite(input_token_threshold) || input_token_threshold < 0) {
+          throw new RangeError('[GenAIApp] - input token warning threshold must be a finite number >= 0.');
         }
-        return JSON.parse(JSON.stringify(this._lastUsage));
+        this._inputTokenWarningThreshold = input_token_threshold;
+        return this;
       };
 
       /**
@@ -410,7 +413,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite-preview" | "gemini-3-flash-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite-preview" | "gemini-3-flash-preview" | "gpt-5.4" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -498,6 +501,10 @@ const GenAIApp = (function () {
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+            if (this._inputTokenWarningThreshold !== null
+              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
+              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}).`);
+            }
           }
 
           // OpenAI Responses API returns top-level "id"
