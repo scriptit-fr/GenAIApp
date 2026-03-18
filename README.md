@@ -442,7 +442,11 @@ Logger.log(usage);
 
 if (usage && usage.input_tokens > INPUT_TOKEN_THRESHOLD) {
   const responseId = chat.retrieveLastResponseId();
-  Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
+  if (responseId != null) {
+    Logger.log(`High input token usage detected. Continue with previous_response_id: ${responseId}`);
+  } else {
+    Logger.log('High input token usage detected, but previous_response_id is unavailable.');
+  }
 }
 ```
 
@@ -519,7 +523,7 @@ A `Chat` represents a conversation with the model.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
 - `retrieveLastResponseId()`: Get the last response ID.
-- `getLastUsage()`: Get the token usage from the last OpenAI API response.
+- `getLastUsage()`: Get the token usage from the last OpenAI API response. May return null if no OpenAI usage is available (for example, before run() has been called or in non-OpenAI flows).
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.

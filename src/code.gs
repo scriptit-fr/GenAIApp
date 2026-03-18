@@ -329,7 +329,10 @@ const GenAIApp = (function () {
        * @returns {Object | null} The usage object of the latest OpenAI call, otherwise null.
        */
       this.getLastUsage = function () {
-        return this._lastUsage;
+        if (this._lastUsage === null) {
+          return null;
+        }
+        return JSON.parse(JSON.stringify(this._lastUsage));
       };
 
       /**
