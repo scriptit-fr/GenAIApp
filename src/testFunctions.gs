@@ -12,6 +12,7 @@ function testAll() {
   testKnowledgeLink();
   testVision();
   testMaximumAPICalls();
+  testUsageRetrieval();
 }
 
 
@@ -123,8 +124,33 @@ function testMaximumAPICalls() {
   });
 }
 
+
+function testUsageRetrieval() {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+  const chat = GenAIApp.newChat();
+  chat.addMessage("In one sentence, explain what token usage means for an API call.");
+
+  const response = chat.run({ model: GPT_MODEL, max_tokens: 200 });
+  console.log(`Usage retrieval response:
+${response}`);
+
+  const usage = chat.getLastUsage();
+  console.log(`Usage retrieval usage:
+${JSON.stringify(usage)}`);
+
+  if (!usage || typeof usage !== "object") {
+    throw new Error("Expected chat.getLastUsage() to return a usage object for OpenAI calls.");
+  }
+
+  ["input_tokens", "output_tokens", "total_tokens"].forEach(field => {
+    if (!Number.isFinite(usage[field])) {
+      throw new Error(`Missing or invalid usage field: ${field}`);
+    }
+  });
+}
+
 // Weather function implementation
 function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
 }
-
