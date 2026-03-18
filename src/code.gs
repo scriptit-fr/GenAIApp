@@ -56,7 +56,7 @@ const GenAIApp = (function () {
       let compaction_threshold = 10000;
 
       let previous_response_id;
-      let last_response_id;
+      let last_response_id = null;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;

@@ -522,7 +522,6 @@ A `Chat` represents a conversation with the model.
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
-- `retrieveLastResponseId()`: Get the last response ID.
 - `getLastUsage()`: Get the token usage from the last OpenAI API response. May return null if no OpenAI usage is available (for example, before run() has been called or in non-OpenAI flows).
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
