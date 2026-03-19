@@ -503,7 +503,7 @@ const GenAIApp = (function () {
             this._lastUsage = responseMessage.usage;
             if (this._inputTokenWarningThreshold !== null
               && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
-              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}).`);
+              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
 
