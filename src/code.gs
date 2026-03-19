@@ -596,7 +596,7 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
-              return _extractOpenAIResponseText(responseMessage?.output);
+              return _extractOpenAIResponseText(responseMessage);
             }
           }
           if (advancedParametersObject) {
@@ -612,7 +612,7 @@ const GenAIApp = (function () {
             return part?.text || null;
           }
           else {
-            return _extractOpenAIResponseText(responseMessage?.output);
+            return _extractOpenAIResponseText(responseMessage);
           }
         }
       }
@@ -1733,9 +1733,18 @@ const GenAIApp = (function () {
    * @param {Array} output - The `response.output` array returned by OpenAI.
    * @returns {string|null} - The selected assistant text, or `null` if no text is found.
    */
-  function _extractOpenAIResponseText(output) {
+  function _extractOpenAIResponseText(response) {
+    const output = response?.output;
+
     if (!Array.isArray(output)) {
       return null;
+    }
+
+    const compactionItems = output.filter(item => item?.type === "compaction");
+    if (compactionItems.length > 0) {
+      compactionItems.forEach(item => {
+        console.warn(`[GenAIApp] Compaction was used for response ${response?.id ?? null}`);
+      });
     }
 
     const messageItems = output.filter(item => item?.type === "message");
