@@ -1728,9 +1728,11 @@ const GenAIApp = (function () {
    * Extracts assistant text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
    * Falls back to the last available assistant message text when no explicit final answer exists.
+   * 
+   * Logs a warning when compaction was used for the response.
    *
    * @private
-   * @param {Array} output - The `response.output` array returned by OpenAI.
+   * @param {Array} response - The `response` array returned by OpenAI.
    * @returns {string|null} - The selected assistant text, or `null` if no text is found.
    */
   function _extractOpenAIResponseText(response) {
