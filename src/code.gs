@@ -54,6 +54,7 @@ const GenAIApp = (function () {
       let knowledgeLink = [];
       let compaction_enabled = false;
       let compaction_threshold = 10000;
+      let tool_combination_enabled = false;
 
       let previous_response_id;
       let last_response_id = null;
@@ -292,6 +293,18 @@ const GenAIApp = (function () {
         if (url) {
           restrictSearch = url;
         }
+        return this;
+      };
+
+      /**
+       * OPTIONAL
+       * 
+       * Enable or disable server-side tool invocations for Gemini (Tool Combination).
+       * @param {boolean} enabled - True to enable tool combination.
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.enableToolCombination = function (enabled) {
+        tool_combination_enabled = enabled;
         return this;
       };
 
@@ -751,7 +764,8 @@ const GenAIApp = (function () {
           'tool_config': {
             function_calling_config: {
               mode: "AUTO"
-            }
+            },
+            includeServerSideToolInvocations: tool_combination_enabled
           },
           tools: []
         };
@@ -785,9 +799,6 @@ const GenAIApp = (function () {
         }
 
         if (browsing) {
-          tools.push({
-            google_search: "",
-          });
           payload.tools.push({
             url_context: {}
           });
