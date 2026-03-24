@@ -182,8 +182,10 @@ const GenAIApp = (function () {
         // OpenAI
         const contentObj = {};
         if (fileInfo.mimeType.startsWith("image/")) {
-          contentObj.type = "input_image";
-          contentObj.image_url = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
+          Object.assign(
+            contentObj,
+            createOpenAIInputImageContent(fileInfo.mimeType, blobToBase64)
+          );
         }
         else {
           Object.assign(
