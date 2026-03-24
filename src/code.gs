@@ -591,7 +591,7 @@ const GenAIApp = (function () {
                   return _parseResponse(messages[messages.length - 3].arguments);
                 }
               }
-              
+
               previous_response_id = responseMessage.id;
             }
             else {
@@ -640,7 +640,7 @@ const GenAIApp = (function () {
             "effort": reasoning_effort
           }
         }
-        
+
         // Use the previous_response_id parameter to pass reasoning items from previous responses
         // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
         // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
@@ -1873,13 +1873,27 @@ const GenAIApp = (function () {
     filename: filename
   });
 
+  // OpenAI-only helper: creates a Responses API input_image content object.
+  const createOpenAIInputImageContent = (mimeType, base64Data) => ({
+    type: "input_image",
+    image_url: `data:${mimeType};base64,${base64Data}`
+  });
+
   // OpenAI-only helper for Blob-like values returned by function calling.
-  const blobToResponseInputFileContent = (blob) =>
-    createOpenAIInputFileContent(
-      blob.getContentType(),
-      Utilities.base64Encode(blob.getBytes()),
+  const blobToResponseInputFileContent = (blob) => {
+    const mimeType = blob.getContentType();
+    const base64Data = Utilities.base64Encode(blob.getBytes());
+
+    if (mimeType && mimeType.startsWith("image/")) {
+      return createOpenAIInputImageContent(mimeType, base64Data);
+    }
+
+    return createOpenAIInputFileContent(
+      mimeType,
+      base64Data,
       blob.getName()
     );
+  };
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
