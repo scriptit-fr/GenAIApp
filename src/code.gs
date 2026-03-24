@@ -354,7 +354,7 @@ const GenAIApp = (function () {
        * @param {boolean} enabled - True to enable compaction.
        */
       this.enableCompaction = function (enabled) {
-        compaction_enabled = Boolean(enabled);
+        compaction_enabled = enabled;
         return this;
       };
 
