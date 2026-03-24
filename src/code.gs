@@ -304,7 +304,7 @@ const GenAIApp = (function () {
        * @returns {Chat} - The current Chat instance.
        */
       this.enableToolCombination = function (enabled) {
-        tool_combination_enabled = Boolean(enabled);
+        tool_combination_enabled = enabled;
         return this;
       };
 
