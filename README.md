@@ -192,20 +192,28 @@ You can include the contents of a Google Drive file or a Blob in your conversati
 chat.addFile('your-google-drive-file-id');
 ```
 
-### Add MCP Connector (optional)
+### Add an MCP Connector (Optional)
 
-Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as Gmail,
-Calendar, Drive, or your own custom MCP server.
+Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers.
+
+> ⚠️ **Google Workspace Native MCP Requirements:**
+> To connect to Google's official MCP endpoints (e.g., `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`), your Google Apps Script must be linked to a **Standard Google Cloud Project** (the default Apps Script project will return a *403 Forbidden* error). 
+> In your GCP console, you must enable both the standard API (e.g., *Google Drive API*) **AND** the specific MCP API (e.g., *Google Drive MCP API*).
 
 ```javascript
 const chat = GenAIApp.newChat();
 
-const gmailConnector = GenAIApp.newConnector()
-  .setConnectorId('gmail')
-  .setRequireApproval('domain');
+// Google Native Workspace Connector (e.g., Google Drive)
+const nativeDriveConnector = GenAIApp.newConnector()
+  .setLabel('Google_Native_Drive')
+  .setDescription('Official Google Workspace MCP server for Google Drive')
+  .setServerUrl('https://drivemcp.googleapis.com/mcp/v1')
+  .setAuthorization(ScriptApp.getOAuthToken())
+  .setRequireApproval('never');
 
-chat.addMCP(gmailConnector);
+chat.addMCP(nativeDriveConnector);
 
+// Custom Internal MCP Server
 const customConnector = GenAIApp.newConnector()
   .setLabel('Salesforce CRM')
   .setDescription('Query opportunity data from Salesforce via MCP proxy')
@@ -216,15 +224,13 @@ const customConnector = GenAIApp.newConnector()
 chat.addMCP(customConnector);
 ```
 
-- **Google Workspace connectors:** Call `.setConnectorId("gmail" | "calendar" | "drive")` to use Google-managed connectors
-  authenticated with your script's OAuth token by default.
-- **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, and `.setServerUrl("https://...")`,
-  and optionally `.setAuthorization()` if the server expects a bearer token or API key.
-- **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the
-  model calls the connector.
+#### Connector Configuration
 
-> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example,
-> `o4-mini`, `o3`, or `gpt-5.4`).
+* **Google Native endpoints:** Configure a connector using `.setServerUrl()` pointing to the desired service (e.g., `"https://drivemcp.googleapis.com/mcp/v1"` or `"https://calendarmcp.googleapis.com/mcp/v1"`) and pass the script's OAuth token via `.setAuthorization(ScriptApp.getOAuthToken())`.
+* **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, and `.setServerUrl("https://...")`, and optionally `.setAuthorization()` if the server expects a bearer token.
+* **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
+
+> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `o4-mini`, `o3`, or `gpt-5.4`).
 
 ### Running the Chat
 
@@ -385,20 +391,21 @@ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 const chat = GenAIApp.newChat();
 chat.addMessage('Search my latest unread Gmail message and summarize it.');
 
+// Use Google's Native MCP Endpoint
 const gmailConnector = GenAIApp.newConnector()
-  .setConnectorId('gmail')
-  .setLabel("Gmail inbox")
+  .setServerUrl('https://gmailmcp.googleapis.com/mcp/v1') 
+  .setLabel('Google_Native_Gmail')
+  .setDescription('Official Google Workspace MCP server for Gmail')
   .setAuthorization(ScriptApp.getOAuthToken())
   .setRequireApproval('never');
 
 chat.addMCP(gmailConnector);
 
-const summary = chat.run({ model: 'gpt-5.4' });
+const summary = chat.run({ model: 'gpt-5.4', max_tokens: 10000 });
 Logger.log(summary);
 ```
 
-In this example the Gmail connector gives the model controlled access to your inbox. The `requireApproval('domain')` setting
-ensures end users in your domain must approve access before the connector is used.
+In this example, the connector points directly to Google's Native MCP infrastructure. It requires a linked GCP project with both **Gmail** API and **Gmail MCP API** enabled.
 
 ### Example 7 : Connect to a Custom MCP Server with setServerUrl()
 
