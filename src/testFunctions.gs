@@ -13,6 +13,8 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
+  testCodeInterpreterExcel();
+  testCodeInterpreterPDF();
 }
 
 
@@ -147,6 +149,44 @@ ${lowThresholdResponse}`);
   console.log(`Input token warning test (high threshold) response:
 ${highThresholdResponse}`);
   console.log("Input token warning test (high threshold): verify that no warning log was emitted.");
+}
+
+function testCodeInterpreterExcel() {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const inputBlob = Utilities.newBlob("Name,Value\nA,1\nB,2", "text/csv", "input.csv");
+  const chat = GenAIApp.newChat();
+  chat
+    .addFile(inputBlob)
+    .enableCodeInterpreter()
+    .addMessage("Convert this file to Excel format and add a third row with Name=C and Value=3.");
+
+  const response = chat.run({ model: GPT_MODEL, max_tokens: 2000 });
+  console.log(`Code Interpreter Excel response:\n${response}`);
+  const generatedFiles = chat.getGeneratedFiles();
+  console.log(`Code Interpreter Excel generated files: ${JSON.stringify(generatedFiles)}`);
+  if (generatedFiles.length > 0) {
+    const generatedBlob = chat.downloadGeneratedFile(0);
+    DriveApp.createFile(generatedBlob);
+  }
+}
+
+function testCodeInterpreterPDF() {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const inputBlob = Utilities.newBlob("Simple PDF-like content for transformation test.", "text/plain", "input.txt");
+  const chat = GenAIApp.newChat();
+  chat
+    .addFile(inputBlob)
+    .enableCodeInterpreter()
+    .addMessage("Create a PDF report that summarizes this content and return the generated PDF.");
+
+  const response = chat.run({ model: GPT_MODEL, max_tokens: 2000 });
+  console.log(`Code Interpreter PDF response:\n${response}`);
+  const generatedFiles = chat.getGeneratedFiles();
+  console.log(`Code Interpreter PDF generated files: ${JSON.stringify(generatedFiles)}`);
+  if (generatedFiles.length > 0) {
+    const generatedBlob = chat.downloadGeneratedFile(0);
+    DriveApp.createFile(generatedBlob);
+  }
 }
 
 // Weather function implementation

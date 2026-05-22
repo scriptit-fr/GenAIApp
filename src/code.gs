@@ -51,6 +51,10 @@ const GenAIApp = (function () {
       let max_tokens = 1000;
       let browsing = false;
       let reasoning_effort = "medium";
+      this._codeInterpreterEnabled = false;
+      this._codeInterpreterContainerId = null;
+      this._generatedFiles = [];
+      this._lastContainerId = null;
       let knowledgeLink = [];
       let compaction_enabled = false;
       let compaction_threshold = 10000;
@@ -296,6 +300,68 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Enables Code Interpreter for OpenAI Responses API calls.
+       * Optionally provides an explicit container ID to reuse.
+       *
+       * @param {string} [containerId] - Optional OpenAI container ID to reuse.
+       * @returns {Chat} - The current Chat instance.
+       *
+       * @example
+       * const outputBlob = DriveApp.getFileById("INPUT_FILE_ID").getBlob();
+       * const chat = GenAIApp.newChat()
+       *   .addFile(outputBlob)
+       *   .enableCodeInterpreter()
+       *   .addMessage("Edit this file and return the updated version.");
+       * chat.run({ model: "gpt-5.4" });
+       * const generatedFiles = chat.getGeneratedFiles();
+       * const downloadedBlob = chat.downloadGeneratedFile(0);
+       * DriveApp.createFile(downloadedBlob);
+       */
+      this.enableCodeInterpreter = function (containerId) {
+        this._codeInterpreterEnabled = true;
+        if (containerId) {
+          this._codeInterpreterContainerId = containerId;
+        }
+        return this;
+      };
+
+      /**
+       * Returns the generated files metadata from the latest run.
+       * @returns {Array<{containerId:string,fileId:string,filename:string}>}
+       */
+      this.getGeneratedFiles = function () {
+        return this._generatedFiles;
+      };
+
+      /**
+       * Returns the container ID from the latest run or explicit configuration.
+       * @returns {string|null}
+       */
+      this.getContainerId = function () {
+        return this._lastContainerId || this._codeInterpreterContainerId || null;
+      };
+
+      /**
+       * Downloads a generated file from Code Interpreter output by file ID or index.
+       * @param {string|number} fileIdOrIndex - File ID or index from getGeneratedFiles().
+       * @returns {Blob} - Downloaded file blob.
+       */
+      this.downloadGeneratedFile = function (fileIdOrIndex) {
+        const generatedFiles = this.getGeneratedFiles();
+        let selectedFile;
+        if (typeof fileIdOrIndex === "number") {
+          selectedFile = generatedFiles[fileIdOrIndex];
+        }
+        else {
+          selectedFile = generatedFiles.find(file => file.fileId === fileIdOrIndex);
+        }
+        if (!selectedFile) {
+          throw new Error(`[GenAIApp] - Unable to find generated file "${fileIdOrIndex}".`);
+        }
+        return this._downloadContainerFile(selectedFile.containerId, selectedFile.fileId, selectedFile.filename);
+      };
+
+      /**
        * Includes the content of a web page in the prompt sent to openAI
        * @param {string} url - the url of the webpage you want to fetch
        * @returns {Chat} - The current Chat instance.
@@ -425,6 +491,8 @@ const GenAIApp = (function () {
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
         last_response_id = null;
+        this._generatedFiles = [];
+        this._lastContainerId = this._codeInterpreterContainerId || null;
 
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
@@ -512,6 +580,10 @@ const GenAIApp = (function () {
           // OpenAI Responses API returns top-level "id"
           if (!model.includes("gemini")) {
             last_response_id = responseMessage?.id ?? null;
+            this._generatedFiles = this._extractContainerFileCitations(responseMessage);
+            if (this._generatedFiles.length > 0) {
+              this._lastContainerId = this._generatedFiles[0].containerId;
+            }
           }
           numberOfAPICalls++;
         }
@@ -725,8 +797,64 @@ const GenAIApp = (function () {
           payload.tools.push(fileSearchTool);
           payload.include = ["file_search_call.results"];
         }
+        if (this._codeInterpreterEnabled) {
+          payload.parallel_tool_calls = false;
+          if (this._codeInterpreterContainerId) {
+            payload.tools.push({
+              type: "container",
+              container_id: this._codeInterpreterContainerId
+            });
+          }
+          else {
+            payload.tools.push({
+              type: "code_interpreter",
+              container: {
+                type: "auto"
+              }
+            });
+          }
+        }
         return payload;
       }
+
+      this._extractContainerFileCitations = function (response) {
+        if (!Array.isArray(response?.output)) {
+          return [];
+        }
+        const citations = [];
+        response.output.forEach(item => {
+          if (!Array.isArray(item?.content)) {
+            return;
+          }
+          item.content.forEach(contentItem => {
+            const annotations = contentItem?.annotations;
+            if (!Array.isArray(annotations)) {
+              return;
+            }
+            annotations.forEach(annotation => {
+              const citation = annotation?.container_file_citation;
+              if (citation?.container_id && citation?.file_id) {
+                citations.push({
+                  containerId: citation.container_id,
+                  fileId: citation.file_id,
+                  filename: citation.filename || "generated_file"
+                });
+              }
+            });
+          });
+        });
+        return citations;
+      };
+
+      this._downloadContainerFile = function (containerId, fileId, filename) {
+        const endpointUrl = `${apiBaseUrl}/v1/containers/${containerId}/files/${fileId}/content`;
+        const response = _callGenAIApi(endpointUrl, null, { method: "get", contentType: null, parseJson: false });
+        const blob = response.getBlob();
+        if (filename) {
+          blob.setName(filename);
+        }
+        return blob;
+      };
 
       /**
        * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
@@ -1383,7 +1511,7 @@ const GenAIApp = (function () {
 * @returns {object} - The response message from the GenAI API.
 * @throws {Error} If the API call fails after the maximum number of retries.
 */
-  function _callGenAIApi(endpoint, payload) {
+  function _callGenAIApi(endpoint, payload, requestOptions) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
       if (geminiKey) {
@@ -1399,12 +1527,16 @@ const GenAIApp = (function () {
     let success = false;
 
     const hasMcpConnectors = !!payload && Array.isArray(payload.tools) && payload.tools.some(t => t && t.type === "mcp");
+    const httpMethod = requestOptions?.method || "post";
+    const contentType = Object.prototype.hasOwnProperty.call(requestOptions || {}, "contentType") ? requestOptions.contentType : "application/json";
+    const parseJson = requestOptions?.parseJson !== false;
 
     let responseMessage, finish_reason;
     while (retries < maxRetries && !success) {
-      const headers = {
-        'Content-Type': 'application/json',
-      };
+      const headers = {};
+      if (contentType) {
+        headers['Content-Type'] = contentType;
+      }
       if (authMethod) {
         headers['Authorization'] = authMethod;
       }
@@ -1413,11 +1545,13 @@ const GenAIApp = (function () {
         headers['x-goog-api-key'] = geminiKey;
       }
       const options = {
-        method: 'post',
+        method: httpMethod,
         headers: headers,
-        payload: JSON.stringify(payload),
         muteHttpExceptions: true
       };
+      if (payload !== null && payload !== undefined) {
+        options.payload = JSON.stringify(payload);
+      }
 
       let response;
       // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
@@ -1442,6 +1576,11 @@ const GenAIApp = (function () {
 
       if (responseCode === 200) {
         // The request was successful, exit the loop.
+        if (!parseJson) {
+          responseMessage = response;
+          success = true;
+          break;
+        }
         const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
           const firstCandidate = parsedResponse.candidates?.[0];
