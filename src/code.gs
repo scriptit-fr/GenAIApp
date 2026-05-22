@@ -875,6 +875,24 @@ const GenAIApp = (function () {
         return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
       };
 
+      /**
+       * Downloads a generated file from the last run and creates it in Google Drive.
+       * @param {string|number} [fileIdOrIndex] - OPTIONAL - File ID or index from getGeneratedFiles(). Defaults to first generated file.
+       * @returns {GoogleAppsScript.Drive.File} The created Drive file.
+       * @example
+       * const chat = GenAIApp.newChat()
+       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
+       *   .enableCodeInterpreter()
+       *   .addMessage("Process this file and generate an updated version.");
+       * chat.run({ model: "gpt-5.4" });
+       * const createdFile = chat.createGeneratedFileInDrive();
+       * Logger.log(createdFile.getId());
+       */
+      this.createGeneratedFileInDrive = function (fileIdOrIndex) {
+        const blob = this.downloadGeneratedFile(fileIdOrIndex);
+        return DriveApp.createFile(blob);
+      };
+
       this.getContainerId = function () {
         if (this._lastContainerId) {
           return this._lastContainerId;

@@ -169,8 +169,7 @@ function testCodeInterpreterExcel(driveFileId) {
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
   console.log(`Code Interpreter Excel response:\n${response}`);
   console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
-  const outputBlob = chat.downloadGeneratedFile();
-  const createdFile = DriveApp.createFile(outputBlob);
+  const createdFile = chat.createGeneratedFileInDrive();
   console.log(`Generated Excel file created: ${createdFile.getId()}`);
 }
 
@@ -185,8 +184,7 @@ function testCodeInterpreterPDF(driveFileId) {
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
   console.log(`Code Interpreter PDF response:\n${response}`);
   console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
-  const outputBlob = chat.downloadGeneratedFile();
-  const createdFile = DriveApp.createFile(outputBlob);
+  const createdFile = chat.createGeneratedFileInDrive();
   console.log(`Generated PDF file created: ${createdFile.getId()}`);
 }
 
