@@ -779,27 +779,44 @@ const GenAIApp = (function () {
       }
 
       this._extractContainerFileCitations = function (response) {
-        if (!Array.isArray(response?.output)) {
+        if (!response || !Array.isArray(response.output)) {
           return [];
         }
-        const citations = [];
-        response.output.forEach(outputItem => {
-          const contentItems = Array.isArray(outputItem?.content) ? outputItem.content : [];
-          contentItems.forEach(contentItem => {
-            const annotations = Array.isArray(contentItem?.annotations) ? contentItem.annotations : [];
-            annotations.forEach(annotation => {
-              const citation = annotation?.container_file_citation;
-              if (citation?.container_id && citation?.file_id) {
-                citations.push({
-                  containerId: citation.container_id,
-                  fileId: citation.file_id,
-                  filename: citation.filename || null
-                });
-              }
-            });
-          });
-        });
-        return citations;
+        const citationsById = {};
+
+        const addCitation = (containerId, fileId, filename) => {
+          if (!containerId || !fileId) return;
+          citationsById[fileId] = {
+            containerId: containerId,
+            fileId: fileId,
+            filename: filename || citationsById[fileId]?.filename || null
+          };
+        };
+
+        const walk = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(walk);
+            return;
+          }
+          if (typeof node !== "object") return;
+
+          if (node.type === "container_file_citation") {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+          if (node.container_file_citation) {
+            const c = node.container_file_citation;
+            addCitation(c.container_id, c.file_id, c.filename);
+          }
+          if (node.type === "container_file" && node.file_id) {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+
+          Object.keys(node).forEach(key => walk(node[key]));
+        };
+
+        walk(response.output);
+        return Object.keys(citationsById).map(fileId => citationsById[fileId]);
       };
 
       this._downloadContainerFile = function (containerId, fileId, filename) {
@@ -840,10 +857,16 @@ const GenAIApp = (function () {
        */
       this.downloadGeneratedFile = function (fileIdOrIndex) {
         let targetFile;
+        if (fileIdOrIndex === undefined || fileIdOrIndex === null) {
+          targetFile = this._generatedFiles[0];
+        }
+        else if (typeof fileIdOrIndex === "string" && fileIdOrIndex.trim() === "") {
+          targetFile = this._generatedFiles[0];
+        }
         if (typeof fileIdOrIndex === "number") {
           targetFile = this._generatedFiles[fileIdOrIndex];
         }
-        else {
+        else if (typeof fileIdOrIndex === "string") {
           targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex);
         }
         if (!targetFile) {

@@ -165,10 +165,11 @@ function testCodeInterpreterExcel(driveFileId) {
   chat
     .addFile(inputBlob)
     .enableCodeInterpreter()
-    .addMessage("Add a new column at the end that calculates row totals for all numeric columns");
+    .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
   console.log(`Code Interpreter Excel response:\n${response}`);
-  const outputBlob = chat.downloadGeneratedFile(0);
+  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  const outputBlob = chat.downloadGeneratedFile();
   const createdFile = DriveApp.createFile(outputBlob);
   console.log(`Generated Excel file created: ${createdFile.getId()}`);
 }
@@ -180,10 +181,11 @@ function testCodeInterpreterPDF(driveFileId) {
   chat
     .addFile(inputBlob)
     .enableCodeInterpreter()
-    .addMessage("Add a summary paragraph at the top of the document describing its main contents");
+    .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
   console.log(`Code Interpreter PDF response:\n${response}`);
-  const outputBlob = chat.downloadGeneratedFile(0);
+  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  const outputBlob = chat.downloadGeneratedFile();
   const createdFile = DriveApp.createFile(outputBlob);
   console.log(`Generated PDF file created: ${createdFile.getId()}`);
 }
