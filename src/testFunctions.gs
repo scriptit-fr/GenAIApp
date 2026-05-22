@@ -1,6 +1,8 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-2.5-pro";
+const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
+const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
 
 // Run all tests
 function testAll() {
@@ -13,6 +15,13 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
+  // OpenAI-only tests - require valid Drive file IDs.
+  if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
+    testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
+  }
+  if (TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID) {
+    testCodeInterpreterPDF(TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID);
+  }
 }
 
 
@@ -147,6 +156,36 @@ ${lowThresholdResponse}`);
   console.log(`Input token warning test (high threshold) response:
 ${highThresholdResponse}`);
   console.log("Input token warning test (high threshold): verify that no warning log was emitted.");
+}
+
+function testCodeInterpreterExcel(driveFileId) {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
+  const chat = GenAIApp.newChat();
+  chat
+    .addFile(inputBlob)
+    .enableCodeInterpreter()
+    .addMessage("Add a new column at the end that calculates row totals for all numeric columns");
+  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+  console.log(`Code Interpreter Excel response:\n${response}`);
+  const outputBlob = chat.downloadGeneratedFile(0);
+  const createdFile = DriveApp.createFile(outputBlob);
+  console.log(`Generated Excel file created: ${createdFile.getId()}`);
+}
+
+function testCodeInterpreterPDF(driveFileId) {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
+  const chat = GenAIApp.newChat();
+  chat
+    .addFile(inputBlob)
+    .enableCodeInterpreter()
+    .addMessage("Add a summary paragraph at the top of the document describing its main contents");
+  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+  console.log(`Code Interpreter PDF response:\n${response}`);
+  const outputBlob = chat.downloadGeneratedFile(0);
+  const createdFile = DriveApp.createFile(outputBlob);
+  console.log(`Generated PDF file created: ${createdFile.getId()}`);
 }
 
 // Weather function implementation
