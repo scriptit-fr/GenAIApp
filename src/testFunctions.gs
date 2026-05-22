@@ -167,10 +167,8 @@ function testCodeInterpreterExcel(driveFileId) {
     .enableCodeInterpreter()
     .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Code Interpreter Excel response:\n${response}`);
+  console.log(`Generated Excel file url: ${response}`);
   console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
-  const createdFile = chat.createGeneratedFileInDrive();
-  console.log(`Generated Excel file created: ${createdFile.getId()}`);
 }
 
 function testCodeInterpreterPDF(driveFileId) {
@@ -182,10 +180,8 @@ function testCodeInterpreterPDF(driveFileId) {
     .enableCodeInterpreter()
     .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Code Interpreter PDF response:\n${response}`);
+  console.log(`Generated PDF file url: ${response}`);
   console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
-  const createdFile = chat.createGeneratedFileInDrive();
-  console.log(`Generated PDF file created: ${createdFile.getId()}`);
 }
 
 // Weather function implementation

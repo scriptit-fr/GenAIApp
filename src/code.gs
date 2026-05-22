@@ -56,6 +56,7 @@ const GenAIApp = (function () {
       this._codeInterpreterContainerId = null;
       this._generatedFiles = [];
       this._lastContainerId = null;
+      this._lastGeneratedDriveFileUrl = null;
       let compaction_enabled = false;
       let compaction_threshold = 10000;
 
@@ -453,6 +454,7 @@ const GenAIApp = (function () {
         last_response_id = null;
         this._generatedFiles = [];
         this._lastContainerId = null;
+        this._lastGeneratedDriveFileUrl = null;
 
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
@@ -539,6 +541,13 @@ const GenAIApp = (function () {
           this._generatedFiles = this._extractContainerFileCitations(responseMessage);
           if (this._generatedFiles.length > 0) {
             this._lastContainerId = this._generatedFiles[0].containerId;
+            const blob = this._downloadContainerFile(
+              this._generatedFiles[0].containerId,
+              this._generatedFiles[0].fileId,
+              this._generatedFiles[0].filename
+            );
+            const createdFile = DriveApp.createFile(blob);
+            this._lastGeneratedDriveFileUrl = createdFile.getUrl();
           }
 
           // OpenAI Responses API returns top-level "id"
@@ -630,6 +639,9 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
+              if (this._lastGeneratedDriveFileUrl) {
+                return this._lastGeneratedDriveFileUrl;
+              }
               return _extractOpenAIResponseText(responseMessage);
             }
           }
@@ -646,6 +658,9 @@ const GenAIApp = (function () {
             return part?.text || null;
           }
           else {
+            if (this._lastGeneratedDriveFileUrl) {
+              return this._lastGeneratedDriveFileUrl;
+            }
             return _extractOpenAIResponseText(responseMessage);
           }
         }
@@ -873,24 +888,6 @@ const GenAIApp = (function () {
           throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID or index from getGeneratedFiles().");
         }
         return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
-      };
-
-      /**
-       * Downloads a generated file from the last run and creates it in Google Drive.
-       * @param {string|number} [fileIdOrIndex] - OPTIONAL - File ID or index from getGeneratedFiles(). Defaults to first generated file.
-       * @returns {GoogleAppsScript.Drive.File} The created Drive file.
-       * @example
-       * const chat = GenAIApp.newChat()
-       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
-       *   .enableCodeInterpreter()
-       *   .addMessage("Process this file and generate an updated version.");
-       * chat.run({ model: "gpt-5.4" });
-       * const createdFile = chat.createGeneratedFileInDrive();
-       * Logger.log(createdFile.getId());
-       */
-      this.createGeneratedFileInDrive = function (fileIdOrIndex) {
-        const blob = this.downloadGeneratedFile(fileIdOrIndex);
-        return DriveApp.createFile(blob);
       };
 
       this.getContainerId = function () {
