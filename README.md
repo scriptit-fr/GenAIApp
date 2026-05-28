@@ -197,8 +197,8 @@ chat.addFile('your-google-drive-file-id');
 Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers.
 
 > ⚠️ **Google Workspace Native MCP Requirements:**
-> To connect to Google's official MCP endpoints (e.g., `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`), your Google Apps Script must be linked to a **Standard Google Cloud Project** (the default Apps Script project will return a *403 Forbidden* error). 
-> In your GCP console, you must enable both the standard API (e.g., *Google Drive API*) **AND** the specific MCP API (e.g., *Google Drive MCP API*).
+> To connect to Google's official MCP endpoints (e.g., `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`), your Google Apps Script must be linked to a **Standard Google Cloud Project** (the default Apps Script project will return a *403 Forbidden* error).
+> In your GCP console, you must enable both the standard API (e.g., `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar) **AND** the specific MCP API (e.g., `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`).
 
 ```javascript
 const chat = GenAIApp.newChat();
@@ -223,6 +223,9 @@ const customConnector = GenAIApp.newConnector()
 
 chat.addMCP(customConnector);
 ```
+
+> **Note on Authorization Format:**
+> Google native connectors using `ScriptApp.getOAuthToken()` do NOT require the "Bearer " prefix — the token is passed directly to `.setAuthorization()`. Custom MCP servers (like the Salesforce example using `'Bearer ' + SALESFORCE_MCP_TOKEN`) typically expect the full "Bearer <TOKEN>" format. Always check your custom server's authentication requirements.
 
 #### Connector Configuration
 
