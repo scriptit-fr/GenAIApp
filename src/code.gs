@@ -1456,7 +1456,7 @@ const GenAIApp = (function () {
     for (const globalSymbol in globalThis) {
       try {
         const candidateService = globalThis[globalSymbol];
-        if (_isVertexAiAdvancedService(candidateService)) {
+        if (_getVertexAiGenerateContentMethod(candidateService)) {
           return candidateService;
         }
       }
