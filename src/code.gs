@@ -1474,7 +1474,7 @@ const GenAIApp = (function () {
    *
    * @private
    * @param {Object} service - The Vertex AI Advanced Service object.
-   * @returns {Function} - A generateContent method bound to its collection object.
+   * @returns {{method: Function, path: string}} - The generateContent method and its collection path.
    * @throws {Error} If the method is not exposed by the enabled Advanced Service.
    */
   function _getVertexAiGenerateContentMethod(service) {
@@ -1543,7 +1543,9 @@ const GenAIApp = (function () {
   function _buildVertexAiAdvancedServicePayload(payload) {
     const advancedServicePayload = JSON.parse(JSON.stringify(payload || {}));
     delete advancedServicePayload.model;
-    delete advancedServicePayload.tool_config.includeServerSideToolInvocations;
+    if (advancedServicePayload.tool_config) {
+      delete advancedServicePayload.tool_config.includeServerSideToolInvocations;
+    }
     return advancedServicePayload;
   }
 
