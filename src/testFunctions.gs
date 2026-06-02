@@ -1,4 +1,4 @@
-const GPT_MODEL = "gpt-5.2";
+const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-3-pro-preview";
 const GCP_PROJECT_ID = "";
@@ -16,6 +16,7 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testGeminiVectorStoreRagPipeline();
+  testInputTokenWarning();
 }
 
 
@@ -257,6 +258,30 @@ function deleteGcsBucketAndContents(bucketName) {
     throw new Error(`Failed to delete bucket: ${bucketDeleteResponse.getContentText()}`);
   }
   console.log(`Deleted bucket: ${bucketName}`);
+}
+
+function testInputTokenWarning() {
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+  // Case 1: low threshold should log warning (manual log inspection).
+  const lowThresholdChat = GenAIApp.newChat();
+  lowThresholdChat
+    .warnIfResponseTokenUsageAbove(1)
+    .addMessage("In one sentence, explain what token usage means for an API call.");
+  const lowThresholdResponse = lowThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
+  console.log(`Input token warning test (low threshold) response:
+${lowThresholdResponse}`);
+  console.log("Input token warning test (low threshold): verify that a warning log was emitted.");
+
+  // Case 2: high threshold should not log warning (manual log inspection).
+  const highThresholdChat = GenAIApp.newChat();
+  highThresholdChat
+    .warnIfResponseTokenUsageAbove(180)
+    .addMessage("In one sentence, explain what token usage means for an API call.");
+  const highThresholdResponse = highThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
+  console.log(`Input token warning test (high threshold) response:
+${highThresholdResponse}`);
+  console.log("Input token warning test (high threshold): verify that no warning log was emitted.");
 }
 
 // Weather function implementation

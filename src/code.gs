@@ -34,6 +34,9 @@ const GenAIApp = (function () {
   const globalMetadata = {};
   const addedVectorStores = {};
 
+  const modelForVision = "gemini-3-pro-preview";
+  let promptForVision = "Describe the images, transcribe any visible text, and summarize the visual context.";
+
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
 
   /**
@@ -53,8 +56,11 @@ const GenAIApp = (function () {
       let browsing = false;
       let reasoning_effort = "medium";
       let knowledgeLink = [];
+      let compaction_enabled = false;
+      let compaction_threshold = 10000;
 
       let previous_response_id;
+      let last_response_id = null;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
@@ -63,6 +69,9 @@ const GenAIApp = (function () {
       const messageMetadata = {};
       let maximumAPICalls = 30;
       let numberOfAPICalls = 0;
+
+      this._lastUsage = null;
+      this._inputTokenWarningThreshold = null;
 
       /**
        * Add a message to the chat.
@@ -113,12 +122,32 @@ const GenAIApp = (function () {
           const response = UrlFetchApp.fetch(imageInput);
           const blob = response.getBlob();
           const base64Image = Utilities.base64Encode(blob.getBytes());
+          let mimeType = blob.getContentType();
+          if (!mimeType || !mimeType.startsWith("image/")) {
+            let pathname;
+            try {
+              pathname = new URL(imageInput).pathname.toLowerCase();
+            } catch {
+              pathname = imageInput.split("?")[0].split("#")[0].toLowerCase();
+            }
+            if (pathname.endsWith(".png")) {
+              mimeType = "image/png";
+            } else if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) {
+              mimeType = "image/jpeg";
+            } else if (pathname.endsWith(".webp")) {
+              mimeType = "image/webp";
+            } else if (pathname.endsWith(".gif")) {
+              mimeType = "image/gif";
+            } else {
+              throw new Error("Failed to identify a valid image MIME type. Please check the file format for Gemini.");
+            }
+          }
           contents.push({
             role: "user",
             parts: [
               {
-                inline_data: {
-                  mime_type: blob.getContentType(),
+                inlineData: {
+                  mime_type: mimeType,
                   data: base64Image
                 }
               }
@@ -133,8 +162,7 @@ const GenAIApp = (function () {
             }]
           });
         }
-        else if (typeof imageInput.getBytes === 'function' &&
-          typeof imageInput.getContentType === 'function') {
+        else if (isBlobLike(imageInput)) {
           // the input is a Blob, to be handled by the addFile() method
           this.addFile(imageInput);
         }
@@ -158,8 +186,7 @@ const GenAIApp = (function () {
           fileInfo = this._getBlobFromGoogleDrive(fileInput);
           blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
         }
-        else if (typeof fileInput.getBytes === 'function' &&
-          typeof fileInput.getContentType === 'function') {
+        else if (isBlobLike(fileInput)) {
           // the input is a Blob
           const fileBytes = fileInput.getBytes();
           const fileSize = fileBytes.length;
@@ -183,9 +210,10 @@ const GenAIApp = (function () {
           contentObj.image_url = `data:${fileInfo.mimeType};base64,${blobToBase64}`;
         }
         else {
-          contentObj.type = "input_file";
-          contentObj.file_data = `data:application/pdf;base64,${blobToBase64}`;
-          contentObj.filename = fileInfo.fileName;
+          Object.assign(
+            contentObj,
+            createOpenAIInputFileContent(fileInfo.mimeType, blobToBase64, fileInfo.fileName)
+          );
         }
         messages.push({
           role: "user",
@@ -196,7 +224,7 @@ const GenAIApp = (function () {
         contents.push({
           role: 'user',
           parts: [{
-            inline_data: {
+            inlineData: {
               mime_type: fileInfo.mimeType,
               data: blobToBase64
             }
@@ -318,7 +346,20 @@ const GenAIApp = (function () {
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
-        return previous_response_id;
+        return last_response_id;
+      };
+
+      /**
+       * Defines the input token threshold that should trigger a warning log.
+       * @param {number} input_token_threshold - Input token threshold for warning.
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.warnIfResponseTokenUsageAbove = function (input_token_threshold) {
+        if (typeof input_token_threshold !== 'number' || !Number.isFinite(input_token_threshold) || input_token_threshold < 0) {
+          throw new RangeError('[GenAIApp] - input token warning threshold must be a finite number >= 0.');
+        }
+        this._inputTokenWarningThreshold = input_token_threshold;
+        return this;
       };
 
       /**
@@ -327,6 +368,27 @@ const GenAIApp = (function () {
        */
       this.setPreviousResponseId = function (previousResponseId) {
         previous_response_id = previousResponseId;
+        return this;
+      };
+
+      /**
+       * Enable or disable server-side context compaction for OpenAI Responses API requests.
+       * @param {boolean} enabled - True to enable compaction.
+       */
+      this.enableCompaction = function (enabled) {
+        compaction_enabled = Boolean(enabled);
+        return this;
+      };
+
+      /**
+       * Set the token threshold used by OpenAI server-side compaction.
+       * @param {number} threshold - Token threshold that triggers compaction.
+       */
+      this.setCompactionThreshold = function (threshold) {
+        if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 1000) {
+          throw new Error('[GenAIApp] - compaction threshold must be a number with minimum value 1000 (tokens).');
+        }
+        compaction_threshold = threshold;
         return this;
       };
 
@@ -362,6 +424,8 @@ const GenAIApp = (function () {
           temperature: temperature,
           max_tokens: max_tokens,
           browsing: browsing,
+          compaction_enabled: compaction_enabled,
+          compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls
         };
@@ -373,7 +437,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3-pro-preview" | "gemini-3-flash-preview" | "gpt-5" | "gpt-5.1" | "gpt-5.2" | "gpt-4.1" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite-preview" | "gemini-3-flash-preview" | "gpt-5.4" | "o4-mini" | "o3"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -381,6 +445,9 @@ const GenAIApp = (function () {
        * @returns {object} - the last message of the chat 
        */
       this.run = function (advancedParametersObject) {
+        this._lastUsage = null;
+        last_response_id = null;
+
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
@@ -423,6 +490,13 @@ const GenAIApp = (function () {
           knowledgeLink = [];
         }
 
+        // Gemini does not support using images together with vector stores (RAG) yet.
+        // Images must be analyzed first and replaced with text before RAG processing.
+        const ragCorpusIds = Object.keys(addedVectorStores);
+        if (ragCorpusIds.length > 0 && model.includes("gemini") && gcpProjectId) {
+          contents = this._convertImagesToText(contents);
+        }
+
         let payload;
         if (model.includes("gemini")) {
           payload = this._buildGeminiPayload(advancedParametersObject);
@@ -456,6 +530,18 @@ const GenAIApp = (function () {
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
+          if (responseMessage?.usage) {
+            this._lastUsage = responseMessage.usage;
+            if (this._inputTokenWarningThreshold !== null
+              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
+              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
+            }
+          }
+
+          // OpenAI Responses API returns top-level "id"
+          if (!model.includes("gemini")) {
+            last_response_id = responseMessage?.id ?? null;
+          }
           numberOfAPICalls++;
         }
         else {
@@ -552,15 +638,12 @@ const GenAIApp = (function () {
                   return _parseResponse(messages[messages.length - 3].arguments);
                 }
               }
-              // Use the previous_response_id parameter to pass reasoning items from previous responses
-              // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
-              // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
+              
               previous_response_id = responseMessage.id;
             }
             else {
               // if no function has been found, stop here
-              const messageItem = responseMessage?.output?.find?.(item => item.type === "message");
-              return messageItem?.content?.find(part => part?.text)?.text || null;
+              return _extractOpenAIResponseText(responseMessage);
             }
           }
           if (advancedParametersObject) {
@@ -576,10 +659,7 @@ const GenAIApp = (function () {
             return part?.text || null;
           }
           else {
-            return responseMessage
-              .output
-              .find(item => item.type === "message")?.content
-              ?.find(part => part?.text)?.text || null;
+            return _extractOpenAIResponseText(responseMessage);
           }
         }
       }
@@ -607,7 +687,10 @@ const GenAIApp = (function () {
             "effort": reasoning_effort
           }
         }
-
+        
+        // Use the previous_response_id parameter to pass reasoning items from previous responses
+        // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
+        // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
         if (previous_response_id) {
           payload.previous_response_id = previous_response_id;
         }
@@ -653,6 +736,13 @@ const GenAIApp = (function () {
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
+        }
+
+        if (compaction_enabled) {
+          payload.context_management = [{
+            type: "compaction",
+            compact_threshold: compaction_threshold
+          }];
         }
 
         if (browsing) {
@@ -766,6 +856,98 @@ const GenAIApp = (function () {
         }
 
         return payload;
+      }
+
+      /**
+       * Replaces all image parts in a Gemini conversation with a text description
+       * generated by Gemini 3 Pro Preview (Vertex AI Vision).
+       *
+       * - Detects images (inlineData / fileData) across all messages
+       * - Sends them to Gemini Vision for analysis
+       * - Removes images from the conversation
+       * - Appends a new message containing the image analysis
+       *
+       * @param {Array<Object>} currentContents
+       *   Gemini conversation contents.
+       *
+       * @returns {Array<Object>}
+       *   Updated contents with images removed and a text analysis appended.
+       */
+      this._convertImagesToText = function (currentContents) {
+        if (!currentContents || currentContents.length === 0) return currentContents;
+
+        const hasImages = currentContents.some(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.some(p => p.inlineData || p.fileData);
+        });
+        
+        if (!hasImages) return currentContents;
+
+        if (verbose) {
+          console.log("[GenAIApp] - Images detected. Converting to text description...");
+        }
+
+        const imageParts = currentContents.flatMap(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.filter(p => p.inlineData || p.fileData);
+        });
+        
+        const descriptionPayload = {
+          contents: [{
+            role: "user",
+            parts: [
+              ...imageParts,
+              { text: promptForVision}
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000
+          }
+        };
+
+        const options = {
+          method: 'post',
+          contentType: 'application/json',
+          headers: {
+            'Authorization': 'Bearer ' + ScriptApp.getOAuthToken()
+          },
+          payload: JSON.stringify(descriptionPayload),
+          muteHttpExceptions: true
+      };
+
+        const endpoint = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${modelForVision}:generateContent`;
+        let description = "Image analysis returned no text.";
+        try {
+          const response = UrlFetchApp.fetch(endpoint, options);
+          const result = JSON.parse(response.getContentText());
+
+          if (result?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            description = result.candidates[0].content.parts[0].text;
+          } else if (result?.parts?.[0]?.text) {
+            description = result.parts[0].text;
+          }
+        } catch (error) {
+          Logger.log(`[GenAIApp] - Image analysis failed during Gemini Vision preprocessing: ${error}`);
+        }
+        
+        let newContents = JSON.parse(JSON.stringify(currentContents));
+        newContents.forEach(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          c.parts = parts.filter(p => !p.inlineData && !p.fileData);
+        });
+
+        newContents = newContents.filter(c => {
+          const parts = Array.isArray(c.parts) ? c.parts : (c.parts ? [c.parts] : []);
+          return parts.length > 0;
+        });
+
+        newContents.push({
+          role: "user",
+          parts: [{ text: `IMAGE ANALYSIS:\n${description}` }]
+        });  
+
+        return newContents;
       }
 
       /**
@@ -1099,6 +1281,7 @@ const GenAIApp = (function () {
       let serverDescription = null;
       let serverUrl = null;
       let connectorId = null;
+      let allowedTools = null;
       let authorization = ScriptApp.getOAuthToken();
       let requireApproval = "never";
 
@@ -1222,6 +1405,28 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Sets the allowed mcp tools for the connector.
+       * @param {Array<string>} allowedToolsArray - Allowed mcp tools to be called.
+       * @returns {ConnectorObject}
+       */
+      this.setAllowedTools = function (allowedToolsArray) {
+        if (!Array.isArray(allowedToolsArray)) {
+          throw Error("[GenAIApp] - allowedTools must be an array.");
+        }
+
+        if (allowedToolsArray.length === 0) {
+          throw Error("[GenAIApp] - allowedTools array cannot be empty.");
+        }
+
+        if (!allowedToolsArray.every(tool => typeof tool === "string" && tool.trim() !== "")) {
+          throw Error("[GenAIApp] - All items in allowedTools must be non-empty strings.");
+        }
+
+        allowedTools = allowedToolsArray.map(tool => tool.trim());
+        return this;
+      };
+
+      /**
        * Returns the JSON representation for the connector.
        * @returns {Object}
        */
@@ -1246,6 +1451,10 @@ const GenAIApp = (function () {
         else {
           connector.connector_id = connectorId;
           connector.server_label = serverLabel || connectorId;
+        }
+
+        if (allowedTools) {
+          connector.allowed_tools = allowedTools;
         }
 
         if (authorization) {
@@ -1671,7 +1880,26 @@ const GenAIApp = (function () {
         let functionResponse = _callFunction(functionName, functionArgs, argsOrder);
         if (typeof functionResponse != "string") {
           if (typeof functionResponse == "object") {
-            functionResponse = JSON.stringify(functionResponse);
+
+            // handle array of blobs (or mixed arrays)
+            if (Array.isArray(functionResponse)) {
+              if (functionResponse.length > 0 && functionResponse.every(isBlobLike)) {
+                functionResponse = functionResponse.map(blobToResponseInputFileContent);
+              } else {
+                // non-blob arrays
+                functionResponse = JSON.stringify(functionResponse);
+              }
+            }
+            // single-object handling
+            else {
+              // check if response is a blob
+              if (isBlobLike(functionResponse)) {
+                functionResponse = [blobToResponseInputFileContent(functionResponse)];
+              }
+              else {
+                functionResponse = JSON.stringify(functionResponse);
+              }
+            }
           }
           else {
             functionResponse = String(functionResponse);
@@ -1717,6 +1945,49 @@ const GenAIApp = (function () {
       }
     }
     return messages;
+  }
+
+  /**
+   * Extracts assistant text from OpenAI Responses API output.
+   * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
+   * Falls back to the last available assistant message text when no explicit final answer exists.
+   * 
+   * Logs a warning when compaction was used for the response.
+   *
+   * @private
+   * @param {Array} response - The `response` array returned by OpenAI.
+   * @returns {string|null} - The selected assistant text, or `null` if no text is found.
+   */
+  function _extractOpenAIResponseText(response) {
+    const output = response?.output;
+
+    if (!Array.isArray(output)) {
+      return null;
+    }
+
+    const compactionItems = output.filter(item => item?.type === "compaction");
+    if (compactionItems.length > 0) {
+      compactionItems.forEach(item => {
+        console.warn(`[GenAIApp] Compaction was used for response ${response?.id ?? null}`);
+      });
+    }
+
+    const messageItems = output.filter(item => item?.type === "message");
+    if (messageItems.length === 0) {
+      return null;
+    }
+
+    const getText = (messageItem) => {
+      const textPart = messageItem?.content?.find(part => part?.text);
+      return textPart?.text || null;
+    };
+
+    const finalAnswerMessage = messageItems.find(item => item?.status === "final_answer");
+    if (finalAnswerMessage) {
+      return getText(finalAnswerMessage);
+    }
+
+    return getText(messageItems[messageItems.length - 1]);
   }
 
   /**
@@ -1810,6 +2081,28 @@ const GenAIApp = (function () {
       }
     }
   }
+
+  // Returns true for Blob-like objects exposing Apps Script Blob methods.
+  const isBlobLike = (x) =>
+    x &&
+    typeof x === "object" &&
+    typeof x.getBytes === "function" &&
+    typeof x.getContentType === "function";
+
+  // OpenAI-only helper: creates a Responses API input_file content object.
+  const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
+    type: "input_file",
+    file_data: `data:${mimeType};base64,${base64Data}`,
+    filename: filename
+  });
+
+  // OpenAI-only helper for Blob-like values returned by function calling.
+  const blobToResponseInputFileContent = (blob) =>
+    createOpenAIInputFileContent(
+      blob.getContentType(),
+      Utilities.base64Encode(blob.getBytes()),
+      blob.getName()
+    );
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
@@ -2942,6 +3235,20 @@ const GenAIApp = (function () {
      */
     setRagRegion: function (ragRegionValue) {
       ragRegion = ragRegionValue;
+    },
+
+    /**
+     * Sets the prompt used to describe images when using Gemini with RAG.
+     *
+     * Gemini does not support combining images and vector stores directly.
+     * When RAG is enabled, images are first analyzed and replaced with text
+     * using this prompt before querying the Gemini vector store.
+     *
+     * @param {string} prompt The prompt to use for image description.
+     */
+    setPromptForVision: function (prompt) {
+      promptForVision = prompt;
     }
+
   }
 })();
