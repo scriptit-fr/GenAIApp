@@ -59,7 +59,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 The setup for **GenAIApp** varies depending on which models you plan to use: 
 1. If you want to use **OpenAI models**: You'll need an **OpenAI API key**
 2. If you want to use **Google Gemini models**: you’ll need a **Google Cloud Platform (GCP) project** with **Vertex AI** enabled for access to Gemini models.
-Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled, and to include the following scopes in your manifest file:
+Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled. GenAIApp prefers the Google Apps Script Vertex AI Advanced Service when it is enabled in the Apps Script project, and automatically falls back to the direct `UrlFetchApp` Vertex AI call if the Advanced Service is unavailable or fails. Include the following scopes in your manifest file:
 ```js
 "oauthScopes": [
     "https://www.googleapis.com/auth/cloud-platform",

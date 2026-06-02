@@ -513,7 +513,12 @@ const GenAIApp = (function () {
               }
             }
           }
-          responseMessage = _callGenAIApi(endpointUrl, payload);
+          if (model.includes("gemini") && !geminiKey) {
+            responseMessage = callVertexAi(endpointUrl, payload);
+          }
+          else {
+            responseMessage = _callGenAIApi(endpointUrl, payload);
+          }
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
             if (this._inputTokenWarningThreshold !== null
@@ -1380,6 +1385,195 @@ const GenAIApp = (function () {
           onlyArgs: onlyArgs
         };
       };
+    }
+  }
+
+  /**
+   * Calls Vertex AI for Gemini requests, preferring the Google Apps Script
+   * Vertex AI Advanced Service and falling back to the existing UrlFetchApp path.
+   *
+   * @private
+   * @param {string} endpoint - The Vertex AI REST endpoint used by the fallback path.
+   * @param {Object} payload - The Gemini generateContent payload.
+   * @returns {object} - The normalized response message from the Gemini API.
+   */
+  function callVertexAi(endpoint, payload) {
+    try {
+      return callVertexAiWithAdvancedService(endpoint, payload);
+    }
+    catch (err) {
+      _logVertexAiAdvancedServiceFallback(err);
+      return callVertexAiWithUrlFetchFallback(endpoint, payload);
+    }
+  }
+
+  /**
+   * Calls Vertex AI through the Apps Script Advanced Service.
+   *
+   * @private
+   * @param {string} endpoint - The Vertex AI REST endpoint, used to derive the model resource.
+   * @param {Object} payload - The Gemini generateContent payload.
+   * @returns {object} - The normalized response message from the Gemini API.
+   * @throws {Error} If the Advanced Service is unavailable, unsupported, misconfigured, or returns an API error.
+   */
+  function callVertexAiWithAdvancedService(endpoint, payload) {
+    const service = _getVertexAiAdvancedService();
+    const generateContent = _getVertexAiGenerateContentMethod(service);
+    const modelResource = _getVertexAiModelResource(endpoint, payload);
+    const advancedServicePayload = _buildVertexAiAdvancedServicePayload(payload);
+    const response = generateContent(advancedServicePayload, modelResource);
+
+    return _normalizeVertexAiResponse(response, payload);
+  }
+
+  /**
+   * Calls Vertex AI through the existing UrlFetchApp implementation.
+   *
+   * @private
+   * @param {string} endpoint - The Vertex AI REST endpoint.
+   * @param {Object} payload - The Gemini generateContent payload.
+   * @returns {object} - The normalized response message from the Gemini API.
+   */
+  function callVertexAiWithUrlFetchFallback(endpoint, payload) {
+    return _callGenAIApi(endpoint, payload);
+  }
+
+  /**
+   * Finds the Apps Script Vertex AI Advanced Service object if it is enabled.
+   *
+   * @private
+   * @returns {Object} - The Vertex AI Advanced Service object.
+   * @throws {Error} If the service is not available.
+   */
+  function _getVertexAiAdvancedService() {
+    if (typeof VertexAI !== 'undefined') {
+      return VertexAI;
+    }
+    if (typeof vertexai !== 'undefined') {
+      return vertexai;
+    }
+    throw new Error('Vertex AI Advanced Service is not enabled or not available in this Apps Script project.');
+  }
+
+  /**
+   * Resolves the generated Apps Script method for projects.locations.publishers.models.generateContent.
+   * Apps Script Advanced Service names can differ by release/casing, so support the known variants.
+   *
+   * @private
+   * @param {Object} service - The Vertex AI Advanced Service object.
+   * @returns {Function} - A generateContent method bound to its collection object.
+   * @throws {Error} If the method is not exposed by the enabled Advanced Service.
+   */
+  function _getVertexAiGenerateContentMethod(service) {
+    const collectionPaths = [
+      ['projects', 'locations', 'publishers', 'models'],
+      ['Projects', 'Locations', 'Publishers', 'Models']
+    ];
+
+    for (let i = 0; i < collectionPaths.length; i++) {
+      let collection = service;
+      for (let j = 0; j < collectionPaths[i].length && collection; j++) {
+        collection = collection[collectionPaths[i][j]];
+      }
+      if (collection && typeof collection.generateContent === 'function') {
+        return collection.generateContent.bind(collection);
+      }
+    }
+
+    throw new Error('Vertex AI Advanced Service does not expose projects.locations.publishers.models.generateContent.');
+  }
+
+  /**
+   * Derives the model resource name expected by the Vertex AI Advanced Service.
+   *
+   * @private
+   * @param {string} endpoint - The Vertex AI REST endpoint.
+   * @param {Object} payload - The Gemini generateContent payload.
+   * @returns {string} - The fully qualified Vertex AI model resource name.
+   * @throws {Error} If the project, location, or model cannot be resolved.
+   */
+  function _getVertexAiModelResource(endpoint, payload) {
+    const endpointMatch = endpoint.match(/\/v1\/(projects\/[^:]+):generateContent/);
+    if (endpointMatch && endpointMatch[1]) {
+      return endpointMatch[1];
+    }
+
+    if (!gcpProjectId) {
+      throw new Error('Missing GCP project ID for Vertex AI Advanced Service call.');
+    }
+    if (!payload?.model) {
+      throw new Error('Missing Gemini model for Vertex AI Advanced Service call.');
+    }
+
+    const location = (!region || payload.model.includes('gemini-3')) ? 'global' : region;
+    if (!location) {
+      throw new Error('Missing Vertex AI location for Advanced Service call.');
+    }
+
+    return `projects/${gcpProjectId}/locations/${location}/publishers/google/models/${payload.model}`;
+  }
+
+  /**
+   * Builds a request body compatible with Vertex AI generateContent.
+   *
+   * @private
+   * @param {Object} payload - The existing Gemini request payload.
+   * @returns {Object} - A request body for Vertex AI Advanced Service.
+   */
+  function _buildVertexAiAdvancedServicePayload(payload) {
+    const advancedServicePayload = JSON.parse(JSON.stringify(payload || {}));
+    delete advancedServicePayload.model;
+    return advancedServicePayload;
+  }
+
+  /**
+   * Normalizes a Vertex AI Advanced Service GenerateContentResponse to match
+   * the existing UrlFetchApp response format returned by _callGenAIApi().
+   *
+   * @private
+   * @param {Object} response - The Advanced Service response.
+   * @param {Object} payload - The original request payload.
+   * @returns {object} - The first candidate content object.
+   * @throws {Error} If the response is invalid or contains an API error.
+   */
+  function _normalizeVertexAiResponse(response, payload) {
+    if (!response) {
+      throw new Error('Vertex AI Advanced Service returned an empty response.');
+    }
+    if (response.error) {
+      throw new Error(`Vertex AI Advanced Service returned an API error: ${JSON.stringify(response.error)}`);
+    }
+
+    const firstCandidate = response.candidates?.[0];
+    const responseMessage = firstCandidate?.content || null;
+    const finish_reason = firstCandidate?.finishReason || null;
+
+    if (!responseMessage) {
+      throw new Error('Vertex AI Advanced Service returned no candidate content.');
+    }
+    if (finish_reason == "length" || finish_reason == "incomplete" || finish_reason == "MAX_TOKENS") {
+      console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
+    }
+
+    if (verbose) {
+      Logger.log({
+        message: `[GenAIApp] - Got response from ${payload.model}`,
+        responseMessage: responseMessage
+      });
+    }
+    return responseMessage;
+  }
+
+  /**
+   * Logs the internal reason for falling back from the Vertex AI Advanced Service.
+   *
+   * @private
+   * @param {Error} err - The Advanced Service failure.
+   */
+  function _logVertexAiAdvancedServiceFallback(err) {
+    if (verbose) {
+      const message = err?.message || err;
+      console.warn(`[GenAIApp] - Vertex AI Advanced Service call failed; falling back to UrlFetchApp. Reason: ${message}`);
     }
   }
 
