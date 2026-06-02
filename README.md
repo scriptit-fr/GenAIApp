@@ -13,6 +13,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Adding Messages](#adding-messages)
   - [Adding Callable Functions to the Chat](#adding-callable-functions-to-the-chat)
   - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
+  - [Enable OpenAI server-side compaction (Optional)](#enable-openai-server-side-compaction-optional)
   - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
   - [Add Image (Optional)](#add-image-optional)
   - [Add File to Chat (optional)](#add-file-to-chat-optional)
@@ -22,6 +23,10 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
     - [Creating a Function](#creating-a-function)
     - [Configuring Parameters](#configuring-parameters)
   - [VectorStoreObject Class](#vectorstoreobject-class)
+    - [Create a Vector Store](#create-a-vector-store)
+    - [Upload Documents](#upload-documents)
+    - [Use a Vector Store in a Chat](#use-a-vector-store-in-a-chat)
+    - [Optional Controls](#optional-controls)
   - [Retrieving Knowledge from an OpenAI Vector Store](#retrieving-knowledge-from-an-openai-vector-store)
 - [Examples](#examples)
   - [Example 1: Send a Prompt and Get Completion](#example-1--send-a-prompt-and-get-completion)
@@ -30,6 +35,8 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
   - [Example 5: Describe an Image](#example-5--describe-an-image)
   - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
+  - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
+  - [Example 8: Continue a Conversation with previous_response_id](#example-8--continue-a-conversation-with-previous_response_id)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -151,6 +158,23 @@ If want to restrict your browsing to a specific web page, you can add as a secon
 ```javascript
   chat.enableBrowsing(true, "https://support.google.com");
 ```
+
+### Enable OpenAI server-side compaction (optional)
+
+Use Responses API native compaction to let OpenAI compact long conversations automatically.
+
+```js
+const chat = GenAIApp.newChat()
+  .enableCompaction(true)
+  .setCompactionThreshold(120000); // minimum: 1000
+```
+
+If you only need default behavior, enabling compaction is enough (default threshold is `10000`):
+
+```js
+const chat = GenAIApp.newChat().enableCompaction(true);
+```
+
 ### Give a web page as a knowledge base (optional)
 
 If you don't need the perform a web search and want to directly give a link for a web page you want the chat to read before performing any action, you can use the addKnowledgeLink(url) function.
@@ -158,6 +182,7 @@ If you don't need the perform a web search and want to directly give a link for 
 ```javascript
   chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
 ```
+
 ### Add Image (optional)
 
 To include an image in the conversation, use the `addImage()` method with a URL or a Blob.
@@ -206,8 +231,8 @@ chat.addMCP(customConnector);
 - **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the
   model calls the connector.
 
-> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-4.1`,
-> `o4-mini`, `o3`, or `gpt-5`).
+> ⚠️ MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example,
+> `o4-mini`, `o3`, or `gpt-5.4`).
 
 ### Running the Chat
 
@@ -224,7 +249,7 @@ console.log(response);
 ```
 The library supports the following models: 
 1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-4.1" | "o4-mini" | "o3" | "gpt-5"
+2. OpenAI: "gpt-5.4" | "o4-mini" | "o3" | "gpt-5"
 
 ⚠️ **Warning:** the "function_call" advanced parameter is supported by:
   - OpenAI models (including GPT-5)  
@@ -260,16 +285,83 @@ functionObject.addParameter("rating", "number", "The minimum rating of movies to
 
 ## VectorStoreObject Class
 
-### Retrieving Knowledge from an OpenAI Vector Store
+The `VectorStoreObject` class lets you create and use vector stores for Retrieval Augmented Generation (RAG).
+Vector stores allow the model to retrieve relevant information from your own documents during a chat.
 
-Retrieve contextual information from a specific OpenAI vector search :
+GenAIApp supports:
 
-```js
-const vectorStoreObject = GenAIApp.newVectorStore()
-  .initializeFromId("your-vector-store-id");
-chat.addVectorStore(vectorStoreObject);
+- OpenAI vector stores
+
+- Google Vertex AI RAG
+
+### Create a Vector Store
+
+By default, GenAIApp creates an OpenAI vector store.
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+const vectorStore = GenAIApp.newVectorStore()
+  .setName("Support knowledge base")
+  .createVectorStore();
+
+const vectorStoreId = vectorStore.getId();
 ```
-To find out more : [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search)
+
+To use Google Vertex AI RAG instead, specify the provider and a GCS bucket:
+
+```javascript
+GenAIApp.setGeminiAuth("my-gcp-project-id", "europe-west4");
+
+// RAG endpoints use a dedicated region (may differ from Gemini auth region)
+GenAIApp.setRagRegion("europe-west4");
+
+const vectorStore = GenAIApp.newVectorStore("google")
+  .setName("Product documentation")
+  .setBucketName("gs://my-rag-bucket")
+  .createVectorStore();
+```
+
+> ⚠️  **Warning:** `setGeminiAuth()` configures authentication and region for Gemini
+> model calls, while `setRagRegion()` controls the region used for Vertex AI RAG
+> operations. Since RAG is not available in all regions, these two values may
+> differ and should both be set explicitly when using Google Vertex AI RAG.
+
+
+### Upload Documents
+
+Documents are provided as `Blob` objects and are automatically chunked and embedded.
+
+```javascript
+const blob = /* any Blob (PDF, text, image, etc.) */;
+vectorStore.uploadAndAttachFile(blob);
+```
+
+You can also upload multiple documents at once:
+
+```javascript
+vectorStore.uploadAndAttachFiles([blob1, blob2]);
+```
+
+### Use a Vector Store in a Chat
+
+```javascript
+const chat = GenAIApp.newChat();
+
+chat
+  .addMessage("How do I reset my password?")
+  .addVectorStores(vectorStoreId);
+
+const answer = chat.run();
+Logger.log(answer);
+```
+
+### Optional Controls
+
+```javascript
+chat.setMaxChunks(5);        // Limit retrieved chunks
+chat.onlyReturnChunks(true); // Return raw chunks instead of a text answer
+```
 
 ## Examples
 
@@ -370,11 +462,13 @@ chat.addMessage('Search my latest unread Gmail message and summarize it.');
 
 const gmailConnector = GenAIApp.newConnector()
   .setConnectorId('gmail')
-  .setRequireApproval('domain');
+  .setLabel("Gmail inbox")
+  .setAuthorization(ScriptApp.getOAuthToken())
+  .setRequireApproval('never');
 
 chat.addMCP(gmailConnector);
 
-const summary = chat.run({ model: 'gpt-4.1' });
+const summary = chat.run({ model: 'gpt-5.4' });
 Logger.log(summary);
 ```
 
@@ -398,13 +492,40 @@ const salesforceConnector = GenAIApp.newConnector()
 
 chat.addMCP(salesforceConnector);
 
-const report = chat.run({ model: 'gpt-4.1' });
+const report = chat.run({ model: 'gpt-5.4' });
 Logger.log(report);
 ```
 
 The `setServerUrl()` method points the connector to your MCP gateway, while `setAuthorization()` injects a bearer token or API
 key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
 authorize every connector invocation.
+
+### Example 8 : Continue a Conversation with previous_response_id
+
+```javascript
+GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+
+// First request
+const firstChat = GenAIApp.newChat();
+firstChat.addMessage("Explain what Google Apps Script libraries are in 3 short bullet points.");
+
+const firstAnswer = firstChat.run({ model: "gpt-5.4" });
+Logger.log(firstAnswer);
+
+// Save the response id returned by the OpenAI Responses API
+const previousResponseId = firstChat.retrieveLastResponseId();
+Logger.log(`Previous response id: ${previousResponseId}`);
+
+// Follow-up request using previous_response_id
+const secondChat = GenAIApp.newChat();
+secondChat
+  .setPreviousResponseId(previousResponseId)
+  .addMessage("Now rewrite your previous answer for a beginner in one short paragraph.");
+
+const secondAnswer = secondChat.run({ model: "gpt-5.4" });
+Logger.log(secondAnswer);
+```
+
 
 ## Contributing
 
@@ -444,11 +565,14 @@ A `Chat` represents a conversation with the model.
 - `getFunctions()`: Get the functions as a JSON string.
 - `disableLogs(bool)`: Disable library logs.
 - `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
+- `enableCompaction(enabled)`: Enable/disable OpenAI Responses API server-side compaction (`false` by default).
+- `setCompactionThreshold(threshold)`: Set the compaction threshold (`10000` by default, minimum `1000`; finite numbers only).
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
-- `retrieveLastResponseId()`: Get the last response ID.
-- `setPreviousResponseId(id)`: Provide the previous response ID to continue a conversation.
+- `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
+- `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
+- `warnIfResponseTokenUsageAbove(input_token_threshold)`: Logs a warning if the input tokens are greater than the threshold. Is not on by default.
 - `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 
@@ -464,15 +588,18 @@ A `FunctionObject` represents a function that can be called by the chat.
 
 ### Vector Store Object
 
-A `VectorStoreObject` represents an OpenAI vector store.
+A `VectorStoreObject` represents a vector store (OpenAI or Google Vertex AI RAG).
 
 - `setName(newName)`: Set the vector store name.
 - `setDescription(newDesc)`: Set the description.
 - `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure chunking before uploads.
+- `setBucketName(bucketAddress)`: Set the Google Cloud Storage bucket (Google RAG only).
 - `createVectorStore()`: Create the vector store.
 - `initializeFromId(vectorStoreId)`: Initialize from an existing vector store ID.
 - `getId()`: Get the vector store ID.
+- `getProvider()`: Get the underlying provider (`"openai"` or `"google"`).
 - `uploadAndAttachFile(blob, attributes)`: Upload a file and attach it to the store.
+- `uploadAndAttachFiles(blobs, attributesList)`: Upload and attach multiple files.
 - `listFiles()`: List files attached to the store.
 - `deleteFile(fileId)`: Delete a file from the store.
 - `deleteVectorStore()`: Delete the vector store.
