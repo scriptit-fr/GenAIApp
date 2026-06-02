@@ -1452,7 +1452,35 @@ const GenAIApp = (function () {
     if (typeof vertexai !== 'undefined') {
       return vertexai;
     }
+
+    for (const globalSymbol in globalThis) {
+      try {
+        const candidateService = globalThis[globalSymbol];
+        if (_isVertexAiAdvancedService(candidateService)) {
+          return candidateService;
+        }
+      }
+      catch (err) {
+        // Ignore globals that cannot be inspected and keep looking for the Advanced Service.
+      }
+    }
+
     throw new Error('Vertex AI Advanced Service is not enabled or not available in this Apps Script project.');
+  }
+
+  /**
+   * Checks whether an object matches the Apps Script Vertex AI Advanced Service
+   * shape exposed for any enabledAdvancedServices[].userSymbol.
+   *
+   * @private
+   * @param {Object} service - A global object candidate from globalThis.
+   * @returns {boolean} - True when the object exposes the Endpoints.generateContent method.
+   */
+  function _isVertexAiAdvancedService(service) {
+    return !!service
+      && typeof service === 'object'
+      && !!service.Endpoints
+      && typeof service.Endpoints.generateContent === 'function';
   }
 
   /**
@@ -1466,6 +1494,8 @@ const GenAIApp = (function () {
    */
   function _getVertexAiGenerateContentMethod(service) {
     const collectionPaths = [
+      ['Endpoints'],
+      ['endpoints'],
       ['projects', 'locations', 'publishers', 'models'],
       ['Projects', 'Locations', 'Publishers', 'Models']
     ];
