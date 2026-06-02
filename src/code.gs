@@ -513,7 +513,7 @@ const GenAIApp = (function () {
               }
             }
           }
-          if (model.includes("gemini") && !geminiKey) {
+          if (model.includes("gemini") && !geminiKey && payload?.tool_config?.includeServerSideToolInvocations === false) { // VertexAI does not support server-side tool invocation metadata in the response at the moment
             responseMessage = callVertexAi(endpointUrl, payload);
           }
           else {
@@ -1418,10 +1418,10 @@ const GenAIApp = (function () {
    */
   function callVertexAiWithAdvancedService(endpoint, payload) {
     const service = _getVertexAiAdvancedService();
-    const generateContent = _getVertexAiGenerateContentMethod(service);
+    const generateContentInfo = _getVertexAiGenerateContentMethod(service);
     const modelResource = _getVertexAiModelResource(endpoint, payload);
     const advancedServicePayload = _buildVertexAiAdvancedServicePayload(payload);
-    const response = generateContent(advancedServicePayload, modelResource);
+    const response = generateContentInfo.method(advancedServicePayload, modelResource);
 
     return _normalizeVertexAiResponse(response, payload);
   }
@@ -1469,21 +1469,6 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Checks whether an object matches the Apps Script Vertex AI Advanced Service
-   * shape exposed for any enabledAdvancedServices[].userSymbol.
-   *
-   * @private
-   * @param {Object} service - A global object candidate from globalThis.
-   * @returns {boolean} - True when the object exposes the Endpoints.generateContent method.
-   */
-  function _isVertexAiAdvancedService(service) {
-    return !!service
-      && typeof service === 'object'
-      && !!service.Endpoints
-      && typeof service.Endpoints.generateContent === 'function';
-  }
-
-  /**
    * Resolves the generated Apps Script method for projects.locations.publishers.models.generateContent.
    * Apps Script Advanced Service names can differ by release/casing, so support the known variants.
    *
@@ -1494,23 +1479,28 @@ const GenAIApp = (function () {
    */
   function _getVertexAiGenerateContentMethod(service) {
     const collectionPaths = [
-      ['Endpoints'],
-      ['endpoints'],
       ['projects', 'locations', 'publishers', 'models'],
-      ['Projects', 'Locations', 'Publishers', 'Models']
+      ['Projects', 'Locations', 'Publishers', 'Models'],
+      ['endpoints'],
+      ['Endpoints']
     ];
 
     for (let i = 0; i < collectionPaths.length; i++) {
       let collection = service;
+
       for (let j = 0; j < collectionPaths[i].length && collection; j++) {
         collection = collection[collectionPaths[i][j]];
       }
+
       if (collection && typeof collection.generateContent === 'function') {
-        return collection.generateContent.bind(collection);
+        return {
+          method: collection.generateContent.bind(collection),
+          path: collectionPaths[i].join('.')
+        };
       }
     }
 
-    throw new Error('Vertex AI Advanced Service does not expose projects.locations.publishers.models.generateContent.');
+    throw new Error('Vertex AI Advanced Service does not expose a compatible generateContent method.');
   }
 
   /**
@@ -1553,6 +1543,7 @@ const GenAIApp = (function () {
   function _buildVertexAiAdvancedServicePayload(payload) {
     const advancedServicePayload = JSON.parse(JSON.stringify(payload || {}));
     delete advancedServicePayload.model;
+    delete advancedServicePayload.tool_config.includeServerSideToolInvocations;
     return advancedServicePayload;
   }
 
