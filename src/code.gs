@@ -514,7 +514,7 @@ const GenAIApp = (function () {
             }
           }
           if (model.includes("gemini") && !geminiKey && payload?.tool_config?.includeServerSideToolInvocations === false) { // VertexAI does not support server-side tool invocation metadata in the response at the moment
-            responseMessage = callVertexAi(endpointUrl, payload);
+            responseMessage = _callVertexAi(endpointUrl, payload);
           }
           else {
             responseMessage = _callGenAIApi(endpointUrl, payload);
@@ -1397,9 +1397,9 @@ const GenAIApp = (function () {
    * @param {Object} payload - The Gemini generateContent payload.
    * @returns {object} - The normalized response message from the Gemini API.
    */
-  function callVertexAi(endpoint, payload) {
+  function _callVertexAi(endpoint, payload) {
     try {
-      return callVertexAiWithAdvancedService(endpoint, payload);
+      return _callVertexAiWithAdvancedService(endpoint, payload);
     }
     catch (err) {
       _logVertexAiAdvancedServiceFallback(err);
@@ -1416,7 +1416,7 @@ const GenAIApp = (function () {
    * @returns {object} - The normalized response message from the Gemini API.
    * @throws {Error} If the Advanced Service is unavailable, unsupported, misconfigured, or returns an API error.
    */
-  function callVertexAiWithAdvancedService(endpoint, payload) {
+  function _callVertexAiWithAdvancedService(endpoint, payload) {
     const service = _getVertexAiAdvancedService();
     const generateContentInfo = _getVertexAiGenerateContentMethod(service);
     const modelResource = _getVertexAiModelResource(endpoint, payload);
@@ -1434,7 +1434,7 @@ const GenAIApp = (function () {
    * @param {Object} payload - The Gemini generateContent payload.
    * @returns {object} - The normalized response message from the Gemini API.
    */
-  function callVertexAiWithUrlFetchFallback(endpoint, payload) {
+  function _callVertexAiWithUrlFetchFallback(endpoint, payload) {
     return _callGenAIApi(endpoint, payload);
   }
 
