@@ -1403,7 +1403,7 @@ const GenAIApp = (function () {
     }
     catch (err) {
       _logVertexAiAdvancedServiceFallback(err);
-      return callVertexAiWithUrlFetchFallback(endpoint, payload);
+      return _callVertexAiWithUrlFetchFallback(endpoint, payload);
     }
   }
 
