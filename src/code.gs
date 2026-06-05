@@ -52,6 +52,11 @@ const GenAIApp = (function () {
       let browsing = false;
       let reasoning_effort = "medium";
       let knowledgeLink = [];
+      this._codeInterpreterEnabled = false;
+      this._codeInterpreterContainerId = null;
+      this._generatedFiles = [];
+      this._lastContainerId = null;
+      this._lastGeneratedDriveFileUrl = null;
       let compaction_enabled = false;
       let compaction_threshold = 10000;
       let tool_combination_enabled = false;
@@ -297,7 +302,26 @@ const GenAIApp = (function () {
       };
 
       /**
-       * OPTIONAL
+       * Enables OpenAI Code Interpreter support for this chat.
+       * @param {string} [containerId] - OPTIONAL - Explicit container ID to reuse.
+       * @returns {Chat} - The current Chat instance.
+       * @example
+       * const chat = GenAIApp.newChat()
+       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
+       *   .enableCodeInterpreter()
+       *   .addMessage("Process this file and generate an updated version.");
+       * chat.run({ model: "gpt-5.4" });
+       * const generatedFiles = chat.getGeneratedFiles();
+       * const blob = chat.downloadGeneratedFile(0);
+       * DriveApp.createFile(blob);
+       */
+      this.enableCodeInterpreter = function (containerId) {
+        this._codeInterpreterEnabled = true;
+        if (containerId) {
+          this._codeInterpreterContainerId = containerId;
+        }
+        
+       /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
@@ -438,6 +462,9 @@ const GenAIApp = (function () {
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
         last_response_id = null;
+        this._generatedFiles = [];
+        this._lastContainerId = null;
+        this._lastGeneratedDriveFileUrl = null;
 
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
@@ -520,6 +547,17 @@ const GenAIApp = (function () {
               && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
               console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
+          }
+          this._generatedFiles = this._extractContainerFileCitations(responseMessage);
+          if (this._generatedFiles.length > 0) {
+            this._lastContainerId = this._generatedFiles[0].containerId;
+            const blob = this._downloadContainerFile(
+              this._generatedFiles[0].containerId,
+              this._generatedFiles[0].fileId,
+              this._generatedFiles[0].filename
+            );
+            const createdFile = DriveApp.createFile(blob);
+            this._lastGeneratedDriveFileUrl = createdFile.getUrl();
           }
 
           // OpenAI Responses API returns top-level "id"
@@ -611,6 +649,9 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
+              if (this._lastGeneratedDriveFileUrl) {
+                return this._lastGeneratedDriveFileUrl;
+              }
               return _extractOpenAIResponseText(responseMessage);
             }
           }
@@ -627,6 +668,9 @@ const GenAIApp = (function () {
             return part?.text || null;
           }
           else {
+            if (this._lastGeneratedDriveFileUrl) {
+              return this._lastGeneratedDriveFileUrl;
+            }
             return _extractOpenAIResponseText(responseMessage);
           }
         }
@@ -738,8 +782,130 @@ const GenAIApp = (function () {
           payload.tools.push(fileSearchTool);
           payload.include = ["file_search_call.results"];
         }
+
+        if (this._codeInterpreterEnabled) {
+          payload.parallel_tool_calls = false;
+          if (this._codeInterpreterContainerId) {
+            payload.tools.push({
+              type: "container",
+              container_id: this._codeInterpreterContainerId
+            });
+          }
+          else {
+            payload.tools.push({
+              type: "code_interpreter",
+              container: {
+                type: "auto"
+              }
+            });
+          }
+        }
         return payload;
       }
+
+      this._extractContainerFileCitations = function (response) {
+        if (!response || !Array.isArray(response.output)) {
+          return [];
+        }
+        const citationsById = {};
+
+        const addCitation = (containerId, fileId, filename) => {
+          if (!containerId || !fileId) return;
+          citationsById[fileId] = {
+            containerId: containerId,
+            fileId: fileId,
+            filename: filename || citationsById[fileId]?.filename || null
+          };
+        };
+
+        const walk = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(walk);
+            return;
+          }
+          if (typeof node !== "object") return;
+
+          if (node.type === "container_file_citation") {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+          if (node.container_file_citation) {
+            const c = node.container_file_citation;
+            addCitation(c.container_id, c.file_id, c.filename);
+          }
+          if (node.type === "container_file" && node.file_id) {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+
+          Object.keys(node).forEach(key => walk(node[key]));
+        };
+
+        walk(response.output);
+        return Object.keys(citationsById).map(fileId => citationsById[fileId]);
+      };
+
+      this._downloadContainerFile = function (containerId, fileId, filename) {
+        const endpointUrl = `${apiBaseUrl}/v1/containers/${containerId}/files/${fileId}/content`;
+        const response = _callGenAIApi(endpointUrl, null, "GET", true);
+        const blob = response.getBlob();
+        const contentType = response.getHeaders()["Content-Type"] || blob.getContentType();
+        if (contentType) {
+          blob.setContentType(contentType);
+        }
+        if (filename) {
+          blob.setName(filename);
+        }
+        return blob;
+      };
+
+      /**
+       * Returns generated files from the last run call.
+       * @returns {{containerId: string, fileId: string, filename: string}[]} Generated files metadata.
+       */
+      this.getGeneratedFiles = function () {
+        return this._generatedFiles;
+      };
+
+      /**
+       * Downloads a generated file from the last run.
+       * @param {string|number} fileIdOrIndex - File ID or index from getGeneratedFiles().
+       * @returns {Blob} Downloaded file blob that can be stored with DriveApp.createFile(blob).
+       * @example
+       * const chat = GenAIApp.newChat()
+       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
+       *   .enableCodeInterpreter()
+       *   .addMessage("Process this file and generate an updated version.");
+       * chat.run({ model: "gpt-5.4" });
+       * const files = chat.getGeneratedFiles();
+       * const blob = chat.downloadGeneratedFile(files[0].fileId);
+       * DriveApp.createFile(blob);
+       */
+      this.downloadGeneratedFile = function (fileIdOrIndex) {
+        let targetFile;
+        if (fileIdOrIndex === undefined || fileIdOrIndex === null) {
+          targetFile = this._generatedFiles[0];
+        }
+        else if (typeof fileIdOrIndex === "string" && fileIdOrIndex.trim() === "") {
+          targetFile = this._generatedFiles[0];
+        }
+        if (typeof fileIdOrIndex === "number") {
+          targetFile = this._generatedFiles[fileIdOrIndex];
+        }
+        else if (typeof fileIdOrIndex === "string") {
+          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex);
+        }
+        if (!targetFile) {
+          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID or index from getGeneratedFiles().");
+        }
+        return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
+      };
+
+      this.getContainerId = function () {
+        if (this._lastContainerId) {
+          return this._lastContainerId;
+        }
+        return this._generatedFiles[0]?.containerId || this._codeInterpreterContainerId || null;
+      };
 
       /**
        * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
@@ -1394,7 +1560,7 @@ const GenAIApp = (function () {
 * @returns {object} - The response message from the GenAI API.
 * @throws {Error} If the API call fails after the maximum number of retries.
 */
-  function _callGenAIApi(endpoint, payload) {
+  function _callGenAIApi(endpoint, payload, method = "post", returnRawResponse = false) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
       if (geminiKey) {
@@ -1424,11 +1590,14 @@ const GenAIApp = (function () {
         headers['x-goog-api-key'] = geminiKey;
       }
       const options = {
-        method: 'post',
+        method: method.toLowerCase(),
         headers: headers,
-        payload: JSON.stringify(payload),
+        timeoutSeconds: 30 * 60, 
         muteHttpExceptions: true
       };
+      if (payload !== null && payload !== undefined) {
+        options.payload = JSON.stringify(payload);
+      }
 
       let response;
       // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
@@ -1452,6 +1621,9 @@ const GenAIApp = (function () {
       const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
+        if (returnRawResponse) {
+          return response;
+        }
         // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
