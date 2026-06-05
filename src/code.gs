@@ -1584,6 +1584,7 @@ const GenAIApp = (function () {
       const options = {
         method: method.toLowerCase(),
         headers: headers,
+        timeoutSeconds: 30 * 60, 
         muteHttpExceptions: true
       };
       if (payload !== null && payload !== undefined) {
