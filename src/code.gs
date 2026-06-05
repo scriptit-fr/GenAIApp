@@ -54,7 +54,6 @@ const GenAIApp = (function () {
       let knowledgeLink = [];
       let compaction_enabled = false;
       let compaction_threshold = 10000;
-      let tool_combination_enabled = false;
 
       let previous_response_id;
       let last_response_id = null;
@@ -293,18 +292,6 @@ const GenAIApp = (function () {
         if (url) {
           restrictSearch = url;
         }
-        return this;
-      };
-
-      /**
-       * OPTIONAL
-       * 
-       * Enable or disable server-side tool invocations for Gemini (Tool Combination).
-       * @param {boolean} enabled - True to enable tool combination.
-       * @returns {Chat} - The current Chat instance.
-       */
-      this.enableToolCombination = function (enabled) {
-        tool_combination_enabled = enabled;
         return this;
       };
 
@@ -742,39 +729,26 @@ const GenAIApp = (function () {
       }
 
       /**
-       * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
-       * and tool settings based on advanced options and feature flags such as browsing. 
+       * Builds and returns a payload for a Gemini API call, configuring content, model parameters,
+       * and tool settings based on advanced options and feature flags such as browsing.
        * Adapts the payload for specific function calls and tools.
        *
        * @private
-       * @param {Object} advancedParametersObject - An object with optional advanced parameters, 
+       * @param {Object} advancedParametersObject - An object with optional advanced parameters,
        *                                            such as function call preferences.
-       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
+       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings,
        *                     generation configuration, and available tools.
-       * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
+       * @throws {Error} If an incompatible feature is selected.
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
-          'contents': contents,
-          'model': model,
-          'generationConfig': {
+          contents: contents,
+          model: model,
+          generationConfig: {
             maxOutputTokens: max_tokens,
             temperature: temperature,
-          },
-          'tool_config': {
-            function_calling_config: {
-              mode: "AUTO"
-            },
-            includeServerSideToolInvocations: tool_combination_enabled
-          },
-          tools: []
+          }
         };
-
-        if (advancedParametersObject?.function_call) {
-          payload.tool_config.function_calling_config.mode = "ANY";
-          payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
-          delete advancedParametersObject.function_call;
-        }
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
@@ -796,19 +770,42 @@ const GenAIApp = (function () {
           payload.tools = [{
             functionDeclarations: payloadTools
           }];
+
+          payload.tool_config = {
+            function_calling_config: {
+              mode: "AUTO"
+            }
+          };
+
+          if (advancedParametersObject?.function_call) {
+            payload.tool_config.function_calling_config.mode = "ANY";
+            payload.tool_config.function_calling_config.allowed_function_names =
+              advancedParametersObject.function_call;
+
+            delete advancedParametersObject.function_call;
+          }
         }
 
         if (browsing) {
+          if (tools.length > 0) {
+            payload.tool_config.includeServerSideToolInvocations = true;
+          }
+
+          if (!payload.tools) {
+            payload.tools = [];
+          }
+
           payload.tools.push({
             url_context: {}
           });
+
           payload.tools.push({
             google_search: {}
           });
         }
 
         return payload;
-      }
+      };
 
       /**
        * Get a blob from a Google Drive file ID
