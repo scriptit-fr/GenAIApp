@@ -116,6 +116,8 @@ For Vertex AI or Google Workspace MCP connectors, include the required OAuth sco
 ]
 ```
 
+> **Note:** The `oauthScopes` array shown above is a starting point. Google Workspace MCP connectors (Gmail, Calendar, Drive) require additional service-specific scopes. For example, Gmail requires `https://www.googleapis.com/auth/gmail.readonly`, Calendar requires `https://www.googleapis.com/auth/calendar`, and Drive requires `https://www.googleapis.com/auth/drive.readonly`. The exact scopes depend on which connectors and operations you use, so you must add the corresponding scopes to the `oauthScopes` manifest entry.
+
 ## Installation
 
 Setup is intentionally lightweight: drag and drop the **GenAIApp** library files into your Google Apps Script project, add the needed credentials in Script Properties, and start with [`samples/simple-chat.gs`](samples/simple-chat.gs).
@@ -267,7 +269,7 @@ const customConnector = GenAIApp.newConnector()
 chat.addMCP(customConnector);
 ```
 
-> **Note on Authorization Format:** Google native connectors using `ScriptApp.getOAuthToken()` do not require the `Bearer ` prefix; the token is passed directly to `.setAuthorization()`. Custom MCP servers typically expect the full bearer-token format. Always check your custom server's authentication requirements.
+> **Note on Authorization Format:** Google native connectors using `ScriptApp.getOAuthToken()` do not require the `Bearer` prefix; the token is passed directly to `.setAuthorization()`. Custom MCP servers typically expect the full bearer-token format with a space following `Bearer`. Always check your custom server's authentication requirements.
 
 #### Connector Configuration
 
@@ -293,7 +295,7 @@ console.log(response);
 
 The library supports the following model families:
 
-1. Gemini: `gemini-2.5-pro` and `gemini-2.5-flash`.
+1. Gemini: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash-native-audio`.
 2. OpenAI: `gpt-5.4`, `o4-mini`, `o3`, and `gpt-5`.
 
 ⚠️ **Warning:** The `function_call` advanced parameter is supported by OpenAI models, including GPT-5, and Gemini 2.5 variants including `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash-native-audio`.
