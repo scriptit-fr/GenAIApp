@@ -1,91 +1,137 @@
 # GenAIApp
 
-The **GenAIApp** library is a Google Apps Script library designed for creating, managing, and interacting with LLMs using Gemini and OpenAI's API. The library provides features like text-based conversation, browsing the web, image analysis, and more, allowing you to build versatile AI chat applications that can integrate with various functionalities and external data sources.
+The **GenAIApp** library is a Google Apps Script library designed for creating, managing, and interacting with LLMs using Gemini and OpenAI APIs. It supports text conversations, web browsing, image and document analysis, function calling, vector-store retrieval, MCP connectors, and Google Workspace integrations.
 
 ## Table of Contents
 
 - [Features](#features)
+- [Samples](#samples)
+  - [Quick Start](#quick-start)
+  - [Getting Started](#getting-started)
+  - [Content Analysis](#content-analysis)
+  - [Function Calling](#function-calling)
+  - [Advanced Features](#advanced-features)
+  - [Integration](#integration)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Usage](#usage)
+- [API Guide](#api-guide)
   - [Setting API Keys](#setting-api-keys)
   - [Creating a New Chat](#creating-a-new-chat)
   - [Adding Messages](#adding-messages)
   - [Adding Callable Functions to the Chat](#adding-callable-functions-to-the-chat)
-  - [Enable Web Browsing (Optional)](#enable-web-browsing-optional)
-  - [Enable OpenAI server-side compaction (Optional)](#enable-openai-server-side-compaction-optional)
-  - [Give a Web Page as a Knowledge Base (Optional)](#give-a-web-page-as-a-knowledge-base-optional)
-  - [Add Image (Optional)](#add-image-optional)
-  - [Add File to Chat (optional)](#add-file-to-chat-optional)
-  - [Add MCP Connector (optional)](#add-mcp-connector-optional)
+  - [Enable Web Browsing Optional](#enable-web-browsing-optional)
+  - [Enable OpenAI Server-Side Compaction Optional](#enable-openai-server-side-compaction-optional)
+  - [Give a Web Page as a Knowledge Base Optional](#give-a-web-page-as-a-knowledge-base-optional)
+  - [Add Image Optional](#add-image-optional)
+  - [Add File to Chat Optional](#add-file-to-chat-optional)
+  - [Add an MCP Connector Optional](#add-an-mcp-connector-optional)
   - [Running the Chat](#running-the-chat)
   - [FunctionObject Class](#functionobject-class)
-    - [Creating a Function](#creating-a-function)
-    - [Configuring Parameters](#configuring-parameters)
   - [VectorStoreObject Class](#vectorstoreobject-class)
-  - [Retrieving Knowledge from an OpenAI Vector Store](#retrieving-knowledge-from-an-openai-vector-store)
-- [Examples](#examples)
-  - [Example 1: Send a Prompt and Get Completion](#example-1--send-a-prompt-and-get-completion)
-  - [Example 2: Ask Open AI to Create a Draft Reply for the Last Email in Gmail Inbox](#example-2--ask-open-ai-to-create-a-draft-reply-for-the-last-email-in-gmail-inbox)
-  - [Example 3: Retrieve Structured Data Instead of Raw Text with onlyReturnArguments](#example-3--retrieve-structured-data-instead-of-raw-text-with-onlyreturnargument)
-  - [Example 4: Use Web Browsing](#example-4--use-web-browsing)
-  - [Example 5: Describe an Image](#example-5--describe-an-image)
-  - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
-  - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
-  - [Example 8: Continue a Conversation with previous_response_id](#example-8--continue-a-conversation-with-previous_response_id)
-- [Contributing](#contributing)
-- [License](#license)
 - [Reference](#reference)
-  - [GenAIApp](#genaiapp)
+  - [GenAIApp Factory](#genaiapp-factory)
   - [Chat](#chat)
   - [Function Object](#function-object)
   - [Vector Store Object](#vector-store-object)
   - [Connector Object](#connector-object)
-
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
-- **Chat Creation:** Create interactive chats that can send and receive messages using Gemini or OpenAI's API.
+- **Chat Creation:** Create interactive chats that can send and receive messages using Gemini or OpenAI APIs.
 - **Web Search Integration:** Perform web searches to enhance chatbot responses.
-- **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI's vision models.
-- **Function Calling:** Enable the chat to call predefined functions and utilize their results in conversations.
+- **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI vision models.
+- **Function Calling:** Enable the chat to call predefined functions and use their results in conversations.
 - **Vector Store Search:** Retrieve knowledge from OpenAI vector stores for a better contextual response.
-- **Document Analysis:** Analyze documents from Google Drive with support for various formats.
-- **MCP Connectors:** Attach Google Workspace or custom Model Context Protocol connectors to securely retrieve additional context
-  during a conversation.
+- **Document Analysis:** Analyze documents from Google Drive with support for multiple formats.
+- **MCP Connectors:** Attach Google Workspace or custom Model Context Protocol connectors to securely retrieve additional context during a conversation.
+
+## Samples
+
+> **Start here:** The `samples/` directory contains copyable Google Apps Script examples organized by use case. Use this section as the fastest way to find a working pattern before reading the detailed API guide.
+
+### Quick Start
+
+Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommended hello-world smoke test: set an OpenAI API key in Script Properties as `OPENAI_API_KEY`, paste or import the sample into Apps Script, and run `simpleChatSample()` to log a short model response.
+
+### Getting Started
+
+| Sample | Description | Demonstrates |
+| --- | --- | --- |
+| [`simple-chat.gs`](samples/simple-chat.gs) | Smallest possible GenAIApp chat request for a hello-world smoke test. | `setOpenAIAPIKey()`, `newChat()`, `addMessage()`, `run()` |
+| [`system-prompts.gs`](samples/system-prompts.gs) | Sets assistant role, tone, and response format with a system message. | System messages with `addMessage(message, true)`, prompt shaping |
+| [`configuration-options.gs`](samples/configuration-options.gs) | Shows common configuration and guardrail settings for production scripts. | `disableLogs()`, `warnIfResponseTokenUsageAbove()`, `enableCompaction()`, `setMaximumAPICalls()` |
+| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Reuses the same prompt across OpenAI and Gemini models for comparison. | `setOpenAIAPIKey()`, `setGeminiAPIKey()`, model selection in `run()` |
+| [`vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) | Authenticates Gemini through a linked Google Cloud project instead of an API key. | `setGeminiAuth()`, Vertex AI configuration, Gemini model execution |
+
+### Content Analysis
+
+| Sample | Description | Demonstrates |
+| --- | --- | --- |
+| [`image-analysis.gs`](samples/image-analysis.gs) | Sends both a public image URL and an Apps Script Blob to a vision-capable model. | `addImage()`, multimodal prompts, Blob inputs |
+| [`document-analysis.gs`](samples/document-analysis.gs) | Summarizes PDFs or exported Google Workspace files from Drive and Blob inputs. | `addFile()`, Drive file IDs, Blob file analysis |
+| [`knowledge-links.gs`](samples/knowledge-links.gs) | Injects a known web page as direct context without broad web search. | `addKnowledgeLink()`, page-grounded answers |
+| [`web-browsing.gs`](samples/web-browsing.gs) | Allows real-time browsing with an optional trusted-domain restriction. | `enableBrowsing(true, url)`, current-information prompts |
+| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Creates a vector store, uploads source content, queries it, and returns chunks. | `newVectorStore()`, `uploadAndAttachFile()`, `addVectorStores()`, `onlyReturnChunks()` |
+
+### Function Calling
+
+| Sample | Description | Demonstrates |
+| --- | --- | --- |
+| [`function-calling-basics.gs`](samples/function-calling-basics.gs) | Registers a single callable tool and lets the model use Apps Script code. | `newFunction()`, `setName()`, `setDescription()`, `addParameter()`, `addFunction()` |
+| [`function-calling-advanced.gs`](samples/function-calling-advanced.gs) | Extracts structured arguments or ends early after a tool result. | `onlyReturnArguments(true)`, `endWithResult(true)`, tool-routing patterns |
+
+### Advanced Features
+
+| Sample | Description | Demonstrates |
+| --- | --- | --- |
+| [`conversation-continuation.gs`](samples/conversation-continuation.gs) | Continues an OpenAI Responses API conversation without resending the full transcript. | `retrieveLastResponseId()`, `setPreviousResponseId()` |
+| [`configuration-options.gs`](samples/configuration-options.gs) | Configures operational controls for long-running or budget-sensitive automations. | Token warnings, API call limits, compaction thresholds, logging controls |
+| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Compares outputs from GPT, Gemini, and reasoning models with one prompt. | Multiple model IDs, `reasoning_effort`, provider switching |
+| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Builds retrieval-augmented generation on OpenAI vector stores. | Vector-store lifecycle, chunking, attributes, retrieval responses |
+
+### Integration
+
+| Sample | Description | Demonstrates |
+| --- | --- | --- |
+| [`sheets-ai-assistant.gs`](samples/sheets-ai-assistant.gs) | Reads active Google Sheets data, asks AI for observations, and writes results back. | `SpreadsheetApp`, sheet-bound workflows, chat summarization |
+| [`mcp-connectors.gs`](samples/mcp-connectors.gs) | Configures Gmail, Calendar, and Drive MCP connectors for Workspace-aware responses. | `newConnector()`, `setConnectorId()`, `setAuthorization()`, `addMCP()` |
+| [`google-mcp-connector.gs`](samples/google-mcp-connector.gs) | Connects directly to Google's Native Gmail MCP endpoint. | `setServerUrl()`, native Google MCP endpoint setup, OAuth token authorization |
 
 ## Prerequisites
 
-The setup for **GenAIApp** varies depending on which models you plan to use: 
-1. If you want to use **OpenAI models**: You'll need an **OpenAI API key**
-2. If you want to use **Google Gemini models**: you’ll need a **Google Cloud Platform (GCP) project** with **Vertex AI** enabled for access to Gemini models.
-Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled, and to include the following scopes in your manifest file:
+Choose the credentials that match the models you plan to use:
+
+1. **OpenAI models:** Store an OpenAI API key for `GenAIApp.setOpenAIAPIKey()`.
+2. **Gemini with an API key:** Store a Gemini API key for `GenAIApp.setGeminiAPIKey()`.
+3. **Gemini through Vertex AI:** Link your Apps Script project to a Google Cloud project with Vertex AI enabled, then use `GenAIApp.setGeminiAuth(projectId, region)`.
+
+For Vertex AI or Google Workspace MCP connectors, include the required OAuth scopes in your Apps Script manifest. Start with:
+
 ```js
 "oauthScopes": [
-    "https://www.googleapis.com/auth/cloud-platform",
-    "https://www.googleapis.com/auth/script.external_request"
-  ]
+  "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/script.external_request"
+]
 ```
-
-1. An **OpenAI API key** for accessing OpenAI models.
-2. A **Gemini API key** OR a **Google Cloud Platform (GCP) project** for using Gemini models.
 
 ## Installation
 
-To start using the library, include the **GenAIApp** code in your Google Apps Script project environment. 
+Setup is intentionally lightweight: drag and drop the **GenAIApp** library files into your Google Apps Script project, add the needed credentials in Script Properties, and start with [`samples/simple-chat.gs`](samples/simple-chat.gs).
 
-## Usage
+## API Guide
 
 ### Setting API Keys
 
-You need to set your API keys before starting any chat:
+You need to set your API keys before starting any chat. See [`samples/simple-chat.gs`](samples/simple-chat.gs), [`samples/multi-model-usage.gs`](samples/multi-model-usage.gs), and [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) for complete setup examples.
 
 ```js
 // Set Gemini API Key
 GenAIApp.setGeminiAPIKey('your-gemini-api-key');
 
 // Set Gemini Auth if using Google Cloud
-GenAIApp.setGeminiAuth('your-gcp-project-id','your-region');
+GenAIApp.setGeminiAuth('your-gcp-project-id', 'your-region');
 
 // Set OpenAI API Key if using OpenAI
 GenAIApp.setOpenAIAPIKey('your-openai-api-key');
@@ -99,61 +145,61 @@ GenAIApp.setPrivateInstanceBaseUrl('https://your-endpoint.example.com');
 
 ### Creating a New Chat
 
-To start a new chat, call the `newChat()` method. This creates a new Chat instance.
+To start a new chat, call the `newChat()` method. This creates a new `Chat` instance. For the smallest runnable version, use [`samples/simple-chat.gs`](samples/simple-chat.gs).
 
 ```js
-let chat = GenAIApp.newChat();
+const chat = GenAIApp.newChat();
 ```
 
 ### Adding Messages
 
-You can add messages to your chat using the `addMessage()` method. Messages can be from the user or the system.
+You can add messages to your chat using the `addMessage()` method. Messages can be from the user or from the system. See [`samples/system-prompts.gs`](samples/system-prompts.gs) for a focused system-prompt example.
 
 ```js
 // Add a user message
-chat.addMessage("Hello, how are you?");
+chat.addMessage('Hello, how are you?');
 
 // Add a system message (optional)
-chat.addMessage("Answer to the user in a professional way.", true);
+chat.addMessage('Answer to the user in a professional way.', true);
 ```
 
-### Adding callable Functions to the Chat
+### Adding Callable Functions to the Chat
 
-You can create and add functions to the chat that the AI can call during the conversation:
-The `newFunction()` method allows you to create a new Function instance. You can then add this function to your chat using the `addFunction()` method.
+You can create functions that the AI can call during the conversation. The `newFunction()` method creates a `FunctionObject`, and `addFunction()` attaches it to your chat. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs) and [`samples/function-calling-advanced.gs`](samples/function-calling-advanced.gs) for runnable patterns.
 
 ```js
-// Create a new function
-let myFunction = GenAIApp.newFunction()
-  .setName("getWeather")
-  .setDescription("Retrieve the current weather for a given city.")
-  .addParameter("city", "string", "The name of the city.");
+const myFunction = GenAIApp.newFunction()
+  .setName('getWeather')
+  .setDescription('Retrieve the current weather for a given city.')
+  .addParameter('city', 'string', 'The name of the city.');
 
-// Add the function to the chat
 chat.addFunction(myFunction);
 ```
 
-From the moment that you add a function to chat, we will use function calling features.
-For more information : 
-- [https://ai.google.dev/gemini-api/docs/function-calling](https://ai.google.dev/gemini-api/docs/function-calling)
-- [https://platform.openai.com/docs/guides/gpt/function-calling](https://platform.openai.com/docs/guides/gpt/function-calling)
+From the moment you add a function to a chat, GenAIApp uses function-calling features.
 
-### Enable web browsing (optional)
+For more information:
 
-If you want to allow the chat to perform web searches and fetch web pages, enable browsing on your chat instance:
+- [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling)
+- [OpenAI function calling](https://platform.openai.com/docs/guides/gpt/function-calling)
 
-```javascript
+### Enable Web Browsing (Optional)
+
+If you want to allow the chat to perform web searches and fetch web pages, enable browsing on your chat instance. See [`samples/web-browsing.gs`](samples/web-browsing.gs).
+
+```js
 chat.enableBrowsing(true);
 ```
-If want to restrict your browsing to a specific web page, you can add as a second argument the url of this web page as bellow.
 
-```javascript
-  chat.enableBrowsing(true, "https://support.google.com");
+To restrict browsing to a specific web page or domain, add the URL as the second argument.
+
+```js
+chat.enableBrowsing(true, 'https://support.google.com');
 ```
 
-### Enable OpenAI server-side compaction (optional)
+### Enable OpenAI Server-Side Compaction (Optional)
 
-Use Responses API native compaction to let OpenAI compact long conversations automatically.
+Use Responses API native compaction to let OpenAI compact long conversations automatically. See [`samples/configuration-options.gs`](samples/configuration-options.gs) for this alongside other operational settings.
 
 ```js
 const chat = GenAIApp.newChat()
@@ -161,49 +207,47 @@ const chat = GenAIApp.newChat()
   .setCompactionThreshold(120000); // minimum: 1000
 ```
 
-If you only need default behavior, enabling compaction is enough (default threshold is `10000`):
+If you only need default behavior, enabling compaction is enough. The default threshold is `10000`.
 
 ```js
 const chat = GenAIApp.newChat().enableCompaction(true);
 ```
 
-### Give a web page as a knowledge base (optional)
+### Give a Web Page as a Knowledge Base (Optional)
 
-If you don't need the perform a web search and want to directly give a link for a web page you want the chat to read before performing any action, you can use the addKnowledgeLink(url) function.
+If you do not need broad web search and want to give the model a specific page to read before answering, use `addKnowledgeLink(url)`. See [`samples/knowledge-links.gs`](samples/knowledge-links.gs).
 
-```javascript
-  chat.addKnowledgeLink("https://developers.google.com/apps-script/guides/libraries");
+```js
+chat.addKnowledgeLink('https://developers.google.com/apps-script/guides/libraries');
 ```
 
-### Add Image (optional)
+### Add Image (Optional)
 
-To include an image in the conversation, use the `addImage()` method with a URL or a Blob.
+To include an image in the conversation, use the `addImage()` method with a URL or a Blob. See [`samples/image-analysis.gs`](samples/image-analysis.gs).
 
-```javascript
+```js
 chat.addImage('https://example.com/image.jpg');
 ```
 
-### Add File to Chat (optional)
+### Add File to Chat (Optional)
 
-You can include the contents of a Google Drive file or a Blob in your conversation using the `addFile()` method. This works with both Gemini and OpenAI multimodal models.
+You can include the contents of a Google Drive file or a Blob in your conversation using the `addFile()` method. This works with both Gemini and OpenAI multimodal models. See [`samples/document-analysis.gs`](samples/document-analysis.gs).
 
-```javascript
+```js
 // Add a Google Drive file to the chat context using its Drive file ID
 chat.addFile('your-google-drive-file-id');
 ```
 
 ### Add an MCP Connector (Optional)
 
-Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers.
+Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs) and [`samples/google-mcp-connector.gs`](samples/google-mcp-connector.gs).
 
 > ⚠️ **Google Workspace Native MCP Requirements:**
-> To connect to Google's official MCP endpoints (e.g., `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`), your Google Apps Script must be linked to a **Standard Google Cloud Project** (the default Apps Script project will return a *403 Forbidden* error).
-> In your GCP console, you must enable both the standard API (e.g., `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar) **AND** the specific MCP API (e.g., `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`).
+> To connect to Google's official MCP endpoints, such as `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`, your Google Apps Script must be linked to a **Standard Google Cloud Project**. In your GCP console, enable both the standard API, such as `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar, and the specific MCP API, such as `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`.
 
-```javascript
+```js
 const chat = GenAIApp.newChat();
 
-// Google Native Workspace Connector (e.g., Google Drive)
 const nativeDriveConnector = GenAIApp.newConnector()
   .setLabel('Google_Native_Drive')
   .setDescription('Official Google Workspace MCP server for Google Drive')
@@ -213,7 +257,6 @@ const nativeDriveConnector = GenAIApp.newConnector()
 
 chat.addMCP(nativeDriveConnector);
 
-// Custom Internal MCP Server
 const customConnector = GenAIApp.newConnector()
   .setLabel('Salesforce CRM')
   .setDescription('Query opportunity data from Salesforce via MCP proxy')
@@ -224,291 +267,118 @@ const customConnector = GenAIApp.newConnector()
 chat.addMCP(customConnector);
 ```
 
-> **Note on Authorization Format:**
-> Google native connectors using `ScriptApp.getOAuthToken()` do NOT require the "Bearer " prefix — the token is passed directly to `.setAuthorization()`. Custom MCP servers (like the Salesforce example using `'Bearer ' + SALESFORCE_MCP_TOKEN`) typically expect the full "Bearer <TOKEN>" format. Always check your custom server's authentication requirements.
+> **Note on Authorization Format:** Google native connectors using `ScriptApp.getOAuthToken()` do not require the `Bearer ` prefix; the token is passed directly to `.setAuthorization()`. Custom MCP servers typically expect the full bearer-token format. Always check your custom server's authentication requirements.
 
 #### Connector Configuration
 
-* **Google Native endpoints:** Configure a connector using `.setServerUrl()` pointing to the desired service (e.g., `"https://drivemcp.googleapis.com/mcp/v1"` or `"https://calendarmcp.googleapis.com/mcp/v1"`) and pass the script's OAuth token via `.setAuthorization(ScriptApp.getOAuthToken())`.
-* **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, and `.setServerUrl("https://...")`, and optionally `.setAuthorization()` if the server expects a bearer token.
-* **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
+- **Google Native endpoints:** Configure a connector using `.setServerUrl()` pointing to the desired service and pass the script's OAuth token via `.setAuthorization(ScriptApp.getOAuthToken())`.
+- **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, `.setServerUrl('https://...')`, and optionally `.setAuthorization()` if the server expects a bearer token.
+- **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
 
-> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `o4-mini`, `o3`, or `gpt-5.4`).
+> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models, for example `o4-mini`, `o3`, or `gpt-5.4`.
 
 ### Running the Chat
 
-Once you've set up the chat and added the necessary components, you can start the conversation by calling the `run()` method.
+Once you have set up the chat and added the necessary components, start the conversation by calling `run()`. See [`samples/simple-chat.gs`](samples/simple-chat.gs) for a minimal run and [`samples/multi-model-usage.gs`](samples/multi-model-usage.gs) for model switching.
 
 ```js
-let response = chat.run({
-  model: "gemini-2.5-flash", // Optional: set the model to use
+const response = chat.run({
+  model: 'gemini-2.5-flash', // Optional: set the model to use
   temperature: 0.5, // Optional: set response creativity
-  function_call: "getWeather" // Optional: force the first API response to call a function
+  function_call: 'getWeather' // Optional: force the first API response to call a function
 });
 
 console.log(response);
 ```
-The library supports the following models: 
-1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-5.4" | "o4-mini" | "o3" | "gpt-5"
 
-⚠️ **Warning:** the "function_call" advanced parameter is supported by:
-  - OpenAI models (including GPT-5)  
-  - Gemini 2.5 variants (gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-native-audio)
+The library supports the following model families:
 
-  The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
-⚠️ **Warning:** The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
+1. Gemini: `gemini-2.5-pro` and `gemini-2.5-flash`.
+2. OpenAI: `gpt-5.4`, `o4-mini`, `o3`, and `gpt-5`.
 
-## FunctionObject Class
+⚠️ **Warning:** The `function_call` advanced parameter is supported by OpenAI models, including GPT-5, and Gemini 2.5 variants including `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash-native-audio`.
 
-### Creating a Function
+⚠️ **Warning:** The `reasoning_effort` parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
-The **FunctionObject** class represents a callable function by the chatbot. It is highly customizable with various options:
+### FunctionObject Class
+
+#### Creating a Function
+
+The **FunctionObject** class represents a callable function for the chatbot. It is customizable with names, descriptions, parameters, and execution behavior. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs).
 
 ```js
-let functionObject = GenAIApp.newFunction()
-  .setName("searchMovies")
-  .setDescription("Search for movies based on a genre.")
-  .addParameter("genre", "string", "The genre of movies to search for.");
+const functionObject = GenAIApp.newFunction()
+  .setName('searchMovies')
+  .setDescription('Search for movies based on a genre.')
+  .addParameter('genre', 'string', 'The genre of movies to search for.');
 ```
 
-### Configuring Parameters
+#### Configuring Parameters
 
-The function parameters can be configured to be required or optional:
+Function parameters can be configured as required or optional. See [`samples/function-calling-advanced.gs`](samples/function-calling-advanced.gs) for structured extraction patterns.
 
 ```js
 // Adding required parameter
-functionObject.addParameter("year", "number", "The year of the movie release.");
+functionObject.addParameter('year', 'number', 'The year of the movie release.');
 
 // Adding optional parameter
-functionObject.addParameter("rating", "number", "The minimum rating of movies to return.", true);
+functionObject.addParameter('rating', 'number', 'The minimum rating of movies to return.', true);
 ```
 
-## VectorStoreObject Class
+### VectorStoreObject Class
 
-### Retrieving Knowledge from an OpenAI Vector Store
+#### Retrieving Knowledge from an OpenAI Vector Store
 
-Retrieve contextual information from a specific OpenAI vector search :
+Use a vector store when you want model answers grounded in uploaded source files. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs) for a full create-upload-query workflow.
 
 ```js
 const vectorStoreObject = GenAIApp.newVectorStore()
-  .initializeFromId("your-vector-store-id");
-chat.addVectorStore(vectorStoreObject);
-```
-To find out more : [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search)
+  .initializeFromId('your-vector-store-id');
 
-## Examples
-
-### Example 1 : Send a prompt and get completion
-
-```javascript
- GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
-
- const chat = GenAIApp.newChat();
- chat.addMessage("What are the steps to add an external library to my Google Apps Script project?");
-
- const chatAnswer = chat.run();
- Logger.log(chatAnswer);
+chat.addVectorStores(vectorStoreObject.getId());
 ```
 
-### Example 2 : Ask Open AI to create a draft reply for the last email in Gmail inbox
-
-```javascript
- GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
- const chat = GenAIApp.newChat();
-
- var getLatestThreadFunction = GenAIApp.newFunction()
-    .setName("getLatestThread")
-    .setDescription("Retrieve information from the last message received.");
-
- var createDraftResponseFunction = GenAIApp.newFunction()
-    .setName("createDraftResponse")
-    .setDescription("Create a draft response.")
-    .addParameter("threadId", "string", "the ID of the thread to retrieve")
-    .addParameter("body", "string", "the body of the email in plain text");
-
-  var resp = GenAIApp.newChat()
-    .addMessage("You are an assistant managing my Gmail inbox.", true)
-    .addMessage("Retrieve the latest message I received and draft a response.")
-    .addFunction(getLatestThreadFunction)
-    .addFunction(createDraftResponseFunction)
-    .run();
-
-  console.log(resp);
-```
-
-### Example 3 : Retrieve structured data instead of raw text with onlyReturnArgument()
-
-```javascript
-const ticket = "Hello, could you check the status of my subscription under customer@example.com";
-
-  chat.addMessage("You just received this ticket : " + ticket);
-  chat.addMessage("What's the customer email address ? You will give it to me using the function getEmailAddress.");
-
-  const myFunction = GenAIApp.newFunction() // in this example, getEmailAddress is not actually a real function in your script
-    .setName("getEmailAddress")
-    .setDescription("To give the user an email address")
-    .addParameter("emailAddress", "string", "the email address")
-    .onlyReturnArguments(true) // you will get your parameters in a json object
-
-  chat.addFunction(myFunction);
-
-  const chatAnswer = chat.run();
-  Logger.log(chatAnswer["emailAddress"]); // the name of the parameter of your "fake" function
-
-  // output : 	"customer@example.com"
-```
-
-### Example 4 : Use web browsing
-
-```javascript
- const message = "You're a google support agent, a customer is asking you how to install a library he found on github in a google appscript project."
-
- const chat = GenAIApp.newChat();
- chat.addMessage(message);
- chat.addMessage("Browse this website to answer : https://developers.google.com/apps-script", true)
- chat.enableBrowsing(true);
-
- const chatAnswer = chat.run();
- Logger.log(chatAnswer);
-```
-
-### Example 5 : Describe an Image
-
-To have the chat model describe an image:
-
-```javascript
-const chat = GenAIApp.newChat();
-chat.addMessage("Describe the following image.");
-chat.addImage("https://example.com/image.jpg");
-const response = chat.run();
-Logger.log(response);
-```
-This will use the selected model to provide a description of the image at the specified URL.
-
-### Example 6 : Extend a Chat with an MCP Connector
-
-```javascript
-GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
-
-const chat = GenAIApp.newChat();
-chat.addMessage('Search my latest unread Gmail message and summarize it.');
-
-// Use Google's Native MCP Endpoint
-const gmailConnector = GenAIApp.newConnector()
-  .setServerUrl('https://gmailmcp.googleapis.com/mcp/v1') 
-  .setLabel('Google_Native_Gmail')
-  .setDescription('Official Google Workspace MCP server for Gmail')
-  .setAuthorization(ScriptApp.getOAuthToken())
-  .setRequireApproval('never');
-
-chat.addMCP(gmailConnector);
-
-const summary = chat.run({ model: 'gpt-5.4', max_tokens: 10000 });
-Logger.log(summary);
-```
-
-In this example, the connector points directly to Google's Native MCP infrastructure. It requires a linked GCP project with both **Gmail** API and **Gmail MCP API** enabled.
-
-### Example 7 : Connect to a Custom MCP Server with setServerUrl()
-
-```javascript
-GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
-
-const chat = GenAIApp.newChat();
-chat.addMessage('Check the latest closed-won opportunities and report total revenue.');
-
-const salesforceConnector = GenAIApp.newConnector()
-  .setLabel('Salesforce CRM')
-  .setDescription('Internal MCP service that proxies Salesforce data')
-  .setServerUrl('https://mcp.example.com/salesforce')
-  .setAuthorization('Bearer ' + SALESFORCE_MCP_TOKEN)
-  .setRequireApproval('always');
-
-chat.addMCP(salesforceConnector);
-
-const report = chat.run({ model: 'gpt-5.4' });
-Logger.log(report);
-```
-
-The `setServerUrl()` method points the connector to your MCP gateway, while `setAuthorization()` injects a bearer token or API
-key that the proxy expects. Combine these settings with `.setRequireApproval('always')` if you want end users to explicitly
-authorize every connector invocation.
-
-### Example 8 : Continue a Conversation with previous_response_id
-
-```javascript
-GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
-
-// First request
-const firstChat = GenAIApp.newChat();
-firstChat.addMessage("Explain what Google Apps Script libraries are in 3 short bullet points.");
-
-const firstAnswer = firstChat.run({ model: "gpt-5.4" });
-Logger.log(firstAnswer);
-
-// Save the response id returned by the OpenAI Responses API
-const previousResponseId = firstChat.retrieveLastResponseId();
-Logger.log(`Previous response id: ${previousResponseId}`);
-
-// Follow-up request using previous_response_id
-const secondChat = GenAIApp.newChat();
-secondChat
-  .setPreviousResponseId(previousResponseId)
-  .addMessage("Now rewrite your previous answer for a beginner in one short paragraph.");
-
-const secondAnswer = secondChat.run({ model: "gpt-5.4" });
-Logger.log(secondAnswer);
-```
-
-
-## Contributing
-
-Contributions are welcome! If you find any bugs, have feature requests, or want to contribute code, please submit an issue or pull request on this [GitHub repository](https://github.com/scriptit-fr/GenAIApp).
-
-## License
-
-The **GenAIApp** library is licensed under the Apache License, Version 2.0. You may not use this file except in compliance with the License. For more details, please see the [LICENSE](http://www.apache.org/licenses/LICENSE-2.0).
+To find out more, see the [OpenAI vector stores search API reference](https://platform.openai.com/docs/api-reference/vector_stores/search).
 
 ## Reference
 
-### GenAIApp
+### GenAIApp Factory
 
-- `newChat()`: Create a new `Chat` instance.
-- `newFunction()`: Create a new `FunctionObject`.
-- `newConnector()`: Create a new `ConnectorObject` for MCP integrations.
-- `newVectorStore()`: Create a new `VectorStoreObject`.
+- `newChat()`: Create a new `Chat` instance. Start with [`samples/simple-chat.gs`](samples/simple-chat.gs).
+- `newFunction()`: Create a new `FunctionObject`. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs).
+- `newConnector()`: Create a new `ConnectorObject` for MCP integrations. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
+- `newVectorStore()`: Create a new `VectorStoreObject`. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs).
 - `setOpenAIAPIKey(apiKey)`: Set the OpenAI API key.
 - `setGeminiAPIKey(apiKey)`: Set the Gemini API key.
-- `setGeminiAuth(projectId, region)`: Use Vertex AI authentication.
+- `setGeminiAuth(projectId, region)`: Use Vertex AI authentication. See [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs).
 - `setGlobalMetadata(key, value)`: Attach a key/value pair to every request.
-- `setPrivateInstanceBaseUrl(baseUrl)`: Use a custom OpenAI‑compatible endpoint.
+- `setPrivateInstanceBaseUrl(baseUrl)`: Use a custom OpenAI-compatible endpoint.
 
 ### Chat
 
 A `Chat` represents a conversation with the model.
 
-- `addMessage(messageContent, [system])`: Add a user or system message.
-- `addFunction(functionObject)`: Attach a `FunctionObject` for function calling.
-- `addImage(imageInput)`: Include an image URL or Blob in the conversation.
-- `addFile(fileInput)`: Include the content of a Google Drive file or Blob.
+- `addMessage(messageContent, [system])`: Add a user or system message. See [`samples/system-prompts.gs`](samples/system-prompts.gs).
+- `addFunction(functionObject)`: Attach a `FunctionObject` for function calling. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs).
+- `addImage(imageInput)`: Include an image URL or Blob in the conversation. See [`samples/image-analysis.gs`](samples/image-analysis.gs).
+- `addFile(fileInput)`: Include the content of a Google Drive file or Blob. See [`samples/document-analysis.gs`](samples/document-analysis.gs).
 - `addMetadata(key, value)`: Add metadata sent with the next request.
 - `getAttributes()`: Retrieve attributes from vector store search results.
-- `onlyReturnChunks(bool)`: Return raw chunks from vector store searches.
+- `onlyReturnChunks(bool)`: Return raw chunks from vector store searches. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs).
 - `setMaxChunks(maxChunks)`: Limit the number of chunks returned by vector stores.
 - `getMessages()`: Get the messages as a JSON string.
 - `getFunctions()`: Get the functions as a JSON string.
-- `disableLogs(bool)`: Disable library logs.
-- `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL.
-- `enableCompaction(enabled)`: Enable/disable OpenAI Responses API server-side compaction (`false` by default).
-- `setCompactionThreshold(threshold)`: Set the compaction threshold (`10000` by default, minimum `1000`; finite numbers only).
-- `addKnowledgeLink(url)`: Inject the content of a web page into the conversation.
-- `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request.
-- `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run.
-- `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`.
-- `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation.
-- `warnIfResponseTokenUsageAbove(input_token_threshold)`: Logs a warning if the input tokens are greater than the threshold. Is not on by default.
-- `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval.
+- `disableLogs(bool)`: Disable library logs. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
+- `enableBrowsing(bool, [url])`: Allow the model to browse the web, optionally restricted to a URL. See [`samples/web-browsing.gs`](samples/web-browsing.gs).
+- `enableCompaction(enabled)`: Enable or disable OpenAI Responses API server-side compaction. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
+- `setCompactionThreshold(threshold)`: Set the compaction threshold. The default is `10000`, the minimum is `1000`, and values must be finite numbers.
+- `addKnowledgeLink(url)`: Inject the content of a web page into the conversation. See [`samples/knowledge-links.gs`](samples/knowledge-links.gs).
+- `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
+- `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
+- `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
+- `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs).
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 
 ### Function Object
@@ -518,8 +388,8 @@ A `FunctionObject` represents a function that can be called by the chat.
 - `setName(name)`: Set the function name.
 - `setDescription(description)`: Set the function description.
 - `addParameter(name, type, description, [isOptional])`: Add a parameter to the function. Parameters are required by default; set `isOptional` to `true` to make a parameter optional.
-- `endWithResult(bool)`: End the conversation after the function is executed.
-- `onlyReturnArguments(bool)`: End the conversation and return only the arguments.
+- `endWithResult(bool)`: End the conversation after the function is executed. See [`samples/function-calling-advanced.gs`](samples/function-calling-advanced.gs).
+- `onlyReturnArguments(bool)`: End the conversation and return only the arguments. See [`samples/function-calling-advanced.gs`](samples/function-calling-advanced.gs).
 
 ### Vector Store Object
 
@@ -540,12 +410,20 @@ A `VectorStoreObject` represents an OpenAI vector store.
 
 A `ConnectorObject` represents a Google Workspace or custom MCP connector that can be attached to an OpenAI chat request.
 
-- `setLabel(label)`: Set the identifier used in the chat payload (required for custom servers).
+- `setLabel(label)`: Set the identifier used in the chat payload. This is required for custom servers.
 - `setDescription(description)`: Provide an optional description visible to the model.
 - `setServerUrl(url)`: Use a custom MCP server hosted at the provided HTTPS URL.
-- `setConnectorId('gmail'|'calendar'|'drive')`: Reference a Google Workspace MCP connector by its predefined ID.
-- `setAuthorization(token)`: Override the default OAuth token (for example, supply `Bearer ...`).
-- `setRequireApproval('never'|'domain'|'always')`: Control whether the connector requires user approval before execution.
+- `setConnectorId('gmail' | 'calendar' | 'drive')`: Reference a Google Workspace MCP connector by its predefined ID.
+- `setAuthorization(token)`: Override the default OAuth token, for example supply `Bearer ...`.
+- `setRequireApproval('never' | 'domain' | 'always')`: Control whether the connector requires user approval before execution.
+
+## Contributing
+
+Contributions are welcome! If you find bugs, have feature requests, or want to contribute code, please submit an issue or pull request on this [GitHub repository](https://github.com/scriptit-fr/GenAIApp).
+
+## License
+
+The **GenAIApp** library is licensed under the Apache License, Version 2.0. You may not use this file except in compliance with the License. For details, see the [LICENSE](http://www.apache.org/licenses/LICENSE-2.0).
 
 ---
 
