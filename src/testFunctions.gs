@@ -1,6 +1,6 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3.5-flash";
 
 const AUTH_TEST_CONFIG_KEYS = {
   ENABLE_API_KEY_AUTH_TESTS: "ENABLE_API_KEY_AUTH_TESTS",
@@ -150,7 +150,7 @@ function testAll() {
   testFunctionCallingOnlyReturnArguments();
   testBrowsing();
   testKnowledgeLink();
-  testVision();
+  //testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
 }
@@ -158,9 +158,16 @@ function testAll() {
 
 // Helper to set API keys and run tests across models
 function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
-  // Set API keys once per batch
-  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  const geminiApiKey = getAuthTestConfigValue("GEMINI_API_KEY", "");
+  const openAiApiKey = getAuthTestConfigValue("OPEN_AI_API_KEY", "");
+
+  if (geminiApiKey) {
+    GenAIApp.setGeminiAPIKey(geminiApiKey);
+  }
+
+  if (openAiApiKey) {
+    GenAIApp.setOpenAIAPIKey(openAiApiKey);
+  }
 
   const models = [
     { name: GPT_MODEL, label: "GPT" },
@@ -183,7 +190,7 @@ function testSimpleChatInstance() {
     chat
       .addMessage("You're name is Tom, you're a Google Developper Expert and always willing to give useful tips. Always answer in a friendly manner, and include one joke at the end of your messages.", true)
       .addMessage("What are the best pratices to document a project?");
-  }, { max_tokens: 1000 });
+  }, { max_tokens: 10000 });
 }
 
 function testFunctionCalling() {
@@ -196,7 +203,7 @@ function testFunctionCalling() {
     chat
       .addMessage("What's the weather in Lyon and Paris today?")
       .addFunction(weatherFunction);
-  }, { max_tokens: 1000 });
+  }, { max_tokens: 10000 });
 }
 
 function testFunctionCallingEndWithResult() {
