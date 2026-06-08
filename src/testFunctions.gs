@@ -59,7 +59,7 @@ function getAuthTestBoolean(name, defaultValue) {
 }
 
 function requireAuthTestCredential(name, modeName) {
-  const value = getAuthTestConfigValue(name, "");
+  const value = getAuthTestConfigValue(name, "").trim();
   if (!value) {
     throw new Error(`[GenAIApp tests] ${modeName} tests are enabled, but required credential/configuration ${name} is missing.`);
   }
