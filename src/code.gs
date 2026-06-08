@@ -2669,6 +2669,17 @@ const GenAIApp = (function () {
      */
     setPrivateInstanceBaseUrl: function (baseUrl) {
       privateInstanceBaseUrl = baseUrl;
+    },
+
+    /**
+     * Resets Gemini authentication state to default values.
+     * Clears API key, GCP project ID, and region settings.
+     * Useful for test isolation to prevent auth state from leaking between tests.
+     */
+    resetGeminiAuthState: function () {
+      geminiKey = "";
+      gcpProjectId = "";
+      region = "";
     }
   }
 })();

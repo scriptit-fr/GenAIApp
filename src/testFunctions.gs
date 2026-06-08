@@ -143,6 +143,7 @@ function testVertexAiAuthentication() {
 // Run all tests
 function testAll() {
   testConfiguredAuthenticationModes();
+  GenAIApp.resetGeminiAuthState();
   testSimpleChatInstance();
   testFunctionCalling();
   testFunctionCallingEndWithResult();
