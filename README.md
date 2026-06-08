@@ -295,10 +295,8 @@ console.log(response);
 
 The library supports the following model families:
 
-1. Gemini: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash-native-audio`.
-2. OpenAI: `gpt-5.4`, `o4-mini`, `o3`, and `gpt-5`.
-
-⚠️ **Warning:** The `function_call` advanced parameter is supported by OpenAI models, including GPT-5, and Gemini 2.5 variants including `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash-native-audio`.
+1. Gemini: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, and `gemini-3.5-flash`.
+2. OpenAI: `gpt-5.4`, `gpt-5.5`, `o4-mini`, and `o3`.
 
 ⚠️ **Warning:** The `reasoning_effort` parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
