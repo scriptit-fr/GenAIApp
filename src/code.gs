@@ -208,27 +208,30 @@ const GenAIApp = (function () {
           content: [contentObj]
         });
 
-        // Gemini
-        let geminiMimeType = fileInfo.mimeType;
-        let geminiBase64Data = blobToBase64;
+        // Gemini - defer spreadsheet conversion until _buildGeminiPayload
         if (_isSpreadsheetMimeType(fileInfo.mimeType)) {
-          const csvResult = sourceFileId && fileInfo.mimeType === 'application/vnd.google-apps.spreadsheet'
-            ? _exportGoogleSheetsToCsv(sourceFileId)
-            : _convertXlsxBlobToCsv(sourceBlob || fileInfo.blob);
-          const csvWithMetadata = _formatSpreadsheetCsvForGemini(csvResult);
-          geminiMimeType = 'text/csv';
-          geminiBase64Data = Utilities.base64Encode(csvWithMetadata);
+          // Mark for lazy conversion - store metadata instead of converting now
+          contents.push({
+            role: 'user',
+            parts: [{
+              _needsSpreadsheetConversion: true,
+              _sourceFileId: sourceFileId,
+              _sourceBlob: sourceBlob || fileInfo.blob,
+              _mimeType: fileInfo.mimeType
+            }]
+          });
+        } else {
+          // Non-spreadsheet files can be encoded immediately
+          contents.push({
+            role: 'user',
+            parts: [{
+              inline_data: {
+                mime_type: fileInfo.mimeType,
+                data: blobToBase64
+              }
+            }]
+          });
         }
-
-        contents.push({
-          role: 'user',
-          parts: [{
-            inline_data: {
-              mime_type: geminiMimeType,
-              data: geminiBase64Data
-            }
-          }]
-        });
         return this;
       };
 
@@ -1021,8 +1024,42 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
+        // Process contents array to handle lazy spreadsheet conversion
+        const processedContents = contents.map(content => {
+          if (content.role === 'user' && content.parts) {
+            const processedParts = content.parts.map(part => {
+              if (part._needsSpreadsheetConversion) {
+                // Perform lazy spreadsheet conversion here
+                const csvResult = part._sourceFileId && part._mimeType === 'application/vnd.google-apps.spreadsheet'
+                  ? _exportGoogleSheetsToCsv(part._sourceFileId)
+                  : _convertXlsxBlobToCsv(part._sourceBlob);
+                const csvWithMetadata = _formatSpreadsheetCsvForGemini(csvResult);
+
+                // Issue 2: Validate CSV size before base64 encoding
+                const csvByteLength = Utilities.newBlob(csvWithMetadata).getBytes().length;
+                const base64Size = Math.ceil(csvByteLength * 4 / 3);
+                const MAX_INLINE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
+
+                if (base64Size > MAX_INLINE_UPLOAD_SIZE) {
+                  throw new Error(`[GenAIApp] - Spreadsheet CSV too large after conversion (${base64Size} bytes base64-encoded). Maximum allowed size for inline upload is ${MAX_INLINE_UPLOAD_SIZE} bytes.`);
+                }
+
+                return {
+                  inline_data: {
+                    mime_type: 'text/csv',
+                    data: Utilities.base64Encode(csvWithMetadata)
+                  }
+                };
+              }
+              return part;
+            });
+            return { ...content, parts: processedParts };
+          }
+          return content;
+        });
+
         const payload = {
-          'contents': contents,
+          'contents': processedContents,
           'model': model,
           'generationConfig': {
             maxOutputTokens: max_tokens,
@@ -2225,19 +2262,24 @@ const GenAIApp = (function () {
     const originalFilename = blob.getName() || 'spreadsheet.xlsx';
     _assertBlobSizeWithinLimit(blob, originalFilename);
 
-    let convertedFile;
+    let convertedFileId;
     try {
-      const conversionBlob = blob.copyBlob()
-        .setName(originalFilename)
-        .setContentType(MimeType.GOOGLE_SHEETS);
-      convertedFile = DriveApp.createFile(conversionBlob);
+      // Use Advanced Drive Service to perform XLSX → Google Sheets conversion
+      const resource = {
+        title: originalFilename,
+        mimeType: MimeType.GOOGLE_SHEETS
+      };
+      const file = Drive.Files.insert(resource, blob, {
+        convert: true
+      });
+      convertedFileId = file.id;
 
-      const spreadsheet = SpreadsheetApp.openById(convertedFile.getId());
+      const spreadsheet = SpreadsheetApp.openById(convertedFileId);
       return _spreadsheetToCsvResult(spreadsheet, originalFilename);
     }
     finally {
-      if (convertedFile) {
-        convertedFile.setTrashed(true);
+      if (convertedFileId) {
+        Drive.Files.remove(convertedFileId);
       }
     }
   }
@@ -2312,7 +2354,7 @@ const GenAIApp = (function () {
         throw new Error(`[GenAIApp] - Spreadsheet too large to convert (${totalCells} populated-range cells). Maximum allowed is ${MAX_SPREADSHEET_CELLS} cells.`);
       }
 
-      const values = sheet.getDataRange().getValues();
+      const values = sheet.getDataRange().getDisplayValues();
       if (_isEmptySheetData(values)) {
         return;
       }
