@@ -320,6 +320,8 @@ const GenAIApp = (function () {
         if (containerId) {
           this._codeInterpreterContainerId = containerId;
         }
+        return this;
+      };
         
        /** OPTIONAL
        * 
@@ -1052,7 +1054,6 @@ const GenAIApp = (function () {
         };
       };
     }
-  }
   } // End Chat class.
 
   /**
