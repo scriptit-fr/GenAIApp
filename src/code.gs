@@ -898,7 +898,7 @@ const GenAIApp = (function () {
 
         const artifacts = [];
         parts.forEach(part => {
-          const inlineData = part?.inlineData;
+          const inlineData = part?.inlineData || part?.inline_data;
           if (!inlineData?.data || inputInlineData[inlineData.data]) {
             return;
           }
