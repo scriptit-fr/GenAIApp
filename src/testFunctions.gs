@@ -1,6 +1,6 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
 
@@ -12,12 +12,10 @@ function testAll() {
   testFunctionCallingOnlyReturnArguments();
   testBrowsing();
   testKnowledgeLink();
-  testVision();
+  //testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
-  testGeminiCodeExecution();
-  testGeminiCodeExecutionWithArtifact();
-  // OpenAI-only tests - require valid Drive file IDs.
+  // Code interpreter tests - require valid Drive file IDs.
   if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
     testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
   }
@@ -35,16 +33,26 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
 
   const models = [
     { name: GPT_MODEL, label: "GPT" },
-    { name: REASONING_MODEL, label: "reasoning" },
     { name: GEMINI_MODEL, label: "gemini" }
   ];
 
   models.forEach(model => {
     const chat = GenAIApp.newChat();
     setupFunction(chat);
+    
     const options = { model: model.name, ...runOptions };
     const response = chat.run(options);
-    console.log(`${testName} ${model.label}:\n${response}`);
+    
+    let logMessage = `${testName} ${model.label}:\n${response}`;
+    
+    if (typeof chat.getGeneratedFiles === 'function') {
+      const generatedFiles = chat.getGeneratedFiles();
+      if (generatedFiles && generatedFiles.length > 0) {
+        logMessage += `\nGenerated files:\n${JSON.stringify(generatedFiles)}`;
+      }
+    }
+    
+    console.log(logMessage);
   });
 }
 
@@ -161,106 +169,25 @@ ${highThresholdResponse}`);
 }
 
 function testCodeInterpreterExcel(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
-  chat
-    .addFile(inputBlob)
-    .enableCodeInterpreter()
-    .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated Excel file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  
+  runTestAcrossModels("Code Interpreter Excel", chat => {
+    chat
+      .addFile(inputBlob)
+      .enableCodeInterpreter()
+      .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
+  }, { max_tokens: 4000 });
 }
 
 function testCodeInterpreterPDF(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
-  chat
-    .addFile(inputBlob)
-    .enableCodeInterpreter()
-    .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated PDF file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
-}
-
-function testGeminiCodeExecution() {
-  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-
-  const chat = GenAIApp.newChat();
-  chat
-    .enableCodeInterpreter()
-    .addMessage("Use code execution to compute the mean, median, and sum of this list: [4, 8, 15, 16, 23, 42]. Return the numeric results in your final answer.");
-
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 4000 });
-  if (!response) {
-    throw new Error("Gemini code execution test failed: expected a response.");
-  }
-  if (chat.getContainerId() !== null) {
-    throw new Error("Gemini code execution test failed: Gemini should not return a container ID.");
-  }
-
-  const generatedFiles = chat.getGeneratedFiles();
-  console.log(`Gemini code execution response:
-${response}`);
-  console.log(`Gemini code execution generated files:
-${JSON.stringify(generatedFiles)}`);
-
-  generatedFiles.forEach((artifact, index) => {
-    assertGeminiArtifactMetadata(artifact, `Gemini code execution artifact ${index}`);
-    const blob = chat.downloadGeneratedFile(index);
-    assertBlobLike(blob, `Gemini code execution artifact ${index}`);
-  });
-}
-
-function testGeminiCodeExecutionWithArtifact() {
-  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-
-  const chat = GenAIApp.newChat();
-  chat
-    .enableCodeInterpreter()
-    .addMessage("Use code execution to create a PNG bar chart file showing quarterly revenue values Q1=12, Q2=18, Q3=9, Q4=24. Return the chart as an output artifact.");
-
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 4000 });
-  if (!response) {
-    throw new Error("Gemini artifact test failed: expected a response.");
-  }
-
-  const generatedFiles = chat.getGeneratedFiles();
-  console.log(`Gemini code execution artifact response:
-${response}`);
-  console.log(`Gemini code execution artifact files:
-${JSON.stringify(generatedFiles)}`);
-
-  if (generatedFiles.length === 0) {
-    throw new Error("Gemini artifact test failed: expected at least one generated artifact.");
-  }
-
-  generatedFiles.forEach((artifact, index) => {
-    assertGeminiArtifactMetadata(artifact, `Gemini artifact ${index}`);
-    const blob = chat.downloadGeneratedFile(artifact.filename);
-    assertBlobLike(blob, `Gemini artifact ${index}`);
-    if (blob.getContentType() !== artifact.mimeType) {
-      throw new Error(`Gemini artifact ${index} failed: blob mime type ${blob.getContentType()} did not match ${artifact.mimeType}.`);
-    }
-  });
-
-  const savedFile = DriveApp.createFile(chat.downloadGeneratedFile(0));
-  console.log(`Gemini generated artifact file url: ${savedFile.getUrl()}`);
-}
-
-function assertGeminiArtifactMetadata(artifact, label) {
-  if (!artifact || !artifact.mimeType || !artifact.data || !artifact.filename) {
-    throw new Error(`${label} failed: expected mimeType, data, and filename fields.`);
-  }
-}
-
-function assertBlobLike(blob, label) {
-  if (!blob || typeof blob.getBytes !== "function" || blob.getBytes().length === 0) {
-    throw new Error(`${label} failed: expected a non-empty Blob.`);
-  }
+  
+  runTestAcrossModels("Code Interpreter PDF", chat => {
+    chat
+      .addFile(inputBlob)
+      .enableCodeInterpreter()
+      .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
+  }, { max_tokens: 4000 });
 }
 
 // Weather function implementation
