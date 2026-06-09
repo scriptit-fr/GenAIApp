@@ -28,6 +28,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   ENABLE_API_KEY_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-api-key-tests'] || false }}
   ENABLE_VERTEX_AI_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-vertex-ai-tests'] || false }}
@@ -43,12 +47,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -92,20 +96,22 @@ jobs:
       HAS_OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY != '' }}
       HAS_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
       HAS_VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID != '' }}
+      HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON != '' }}
       CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
       SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
       OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID }}
+      VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -113,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for value in "$CLASPRC_JSON" "$SCRIPT_ID" "$OPEN_AI_API_KEY" "$GEMINI_API_KEY" "$VERTEX_AI_PROJECT_ID"; do
+          for value in "$CLASPRC_JSON" "$SCRIPT_ID" "$OPEN_AI_API_KEY" "$GEMINI_API_KEY" "$VERTEX_AI_PROJECT_ID" "$VERTEX_AI_SERVICE_ACCOUNT_JSON"; do
             if [ -n "$value" ]; then
               echo "::add-mask::$value"
             fi
@@ -142,7 +148,7 @@ jobs:
 
           echo "API key test secrets are configured."
 
-      - name: Validate Vertex AI test secrets
+      - name: Validate Vertex AI secrets
         if: env.ENABLE_VERTEX_AI_TESTS == 'true'
         shell: bash
         run: |
@@ -154,11 +160,17 @@ jobs:
           if [ -z "$VERTEX_AI_LOCATION" ]; then
             missing+=("VERTEX_AI_LOCATION repository variable or secret")
           fi
+          if [ "$HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON" != "true" ]; then
+            missing+=("VERTEX_AI_SERVICE_ACCOUNT_JSON")
+          fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
             printf '::error::Vertex AI tests were requested but required configuration value(s) are missing: %s\n' "${missing[*]}"
             exit 1
           fi
+
+          printf '%s' "$VERTEX_AI_SERVICE_ACCOUNT_JSON" > "$GITHUB_WORKSPACE/vertex-ai-service-account.json"
+          node -e 'const fs = require("fs"); const p = process.env.GITHUB_WORKSPACE + "/vertex-ai-service-account.json"; const text = fs.readFileSync(p, "utf8"); JSON.parse(text); console.log("Vertex AI service account JSON is valid and written to", p);'
 
           echo "Vertex AI test configuration is present."
 
@@ -250,29 +262,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Read existing CI test property values and save them for restoration
-          backup="$(clasp run 'function() {
-            var props = PropertiesService.getScriptProperties();
-            var backup = {};
+          output="$(clasp run backupCITestScriptProperties 2>&1 | tail -n 1)"
+          status=$?
 
-            [
-              "OPEN_AI_API_KEY",
-              "GEMINI_API_KEY",
-              "VERTEX_AI_PROJECT_ID",
-              "VERTEX_AI_LOCATION"
-            ].forEach(function(key) {
-              var value = props.getProperty(key);
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Failed to backup existing CI test properties. clasp run exit status: $status. Output: $output"
+            echo "PROPERTY_BACKUP_FAILED=true" >> "$GITHUB_ENV"
+            echo "PROPERTY_BACKUP={}" >> "$GITHUB_ENV"
+            exit 1
+          fi
 
-              if (value !== null) {
-                backup[key] = value;
-              }
-            });
+          if [ -z "$output" ]; then
+            echo "::error::Backup command returned empty output. PROPERTY_BACKUP cannot be determined."
+            echo "PROPERTY_BACKUP_FAILED=true" >> "$GITHUB_ENV"
+            echo "PROPERTY_BACKUP={}" >> "$GITHUB_ENV"
+            exit 1
+          fi
 
-            return JSON.stringify(backup);
-          }' 2>&1 | tail -n 1 || echo '{}')"
-
-          echo "PROPERTY_BACKUP=$backup" >> "$GITHUB_ENV"
-          echo "Backed up existing properties: $backup"
+          echo "PROPERTY_BACKUP=$output" >> "$GITHUB_ENV"
+          if [ "$output" = "{}" ]; then
+            echo "No existing CI test properties were found; PROPERTY_BACKUP is empty JSON."
+          fi
+          echo "Backed up existing properties: $output"
 
       - name: Provision test script properties
         if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
@@ -325,6 +336,19 @@ jobs:
             clasp run "$function_name"
           done
 
+      - name: Cleanup Vertex AI service account file
+        if: always() && env.ENABLE_VERTEX_AI_TESTS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$GITHUB_WORKSPACE/vertex-ai-service-account.json"
+          if [ -f "$file" ]; then
+            rm -f "$file"
+            echo "Removed Vertex AI service account file: $file"
+          else
+            echo "No vertex-ai-service-account.json file present."
+          fi
+
       - name: Restore backed-up script properties
         if: always() && env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
         shell: bash
@@ -348,18 +372,7 @@ jobs:
           if [ "$backup" != "{}" ] && [ -n "$backup" ]; then
             echo "Restoring backed-up properties: $backup"
 
-            clasp run 'function(backup) {
-              var props = PropertiesService.getScriptProperties();
-              var restored = JSON.parse(backup);
-
-              for (var key in restored) {
-                if (restored.hasOwnProperty(key)) {
-                  props.setProperty(key, restored[key]);
-                }
-              }
-
-              return "Restored " + Object.keys(restored).length + " properties";
-            }' --params "$(node -e 'process.stdout.write(JSON.stringify([process.env.PROPERTY_BACKUP || "{}"]))')"
+            clasp run restoreCITestScriptProperties --params "$(node -e 'process.stdout.write(JSON.stringify([process.env.PROPERTY_BACKUP || "{}"]))')"
           else
             echo "No backed-up properties to restore."
           fi

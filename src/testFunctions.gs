@@ -57,6 +57,20 @@ function setCITestScriptProperties(properties) {
   return propertyNames;
 }
 
+function backupCITestScriptProperties() {
+  const props = PropertiesService.getScriptProperties();
+  const backup = {};
+
+  CI_TEST_PROPERTY_NAMES.forEach(name => {
+    const value = props.getProperty(name);
+    if (value !== null) {
+      backup[name] = value;
+    }
+  });
+
+  return JSON.stringify(backup);
+}
+
 function clearCITestScriptProperties(propertyNames) {
   if (!Array.isArray(propertyNames)) {
     throw new Error("CI test property names must be provided as an array.");
@@ -65,12 +79,36 @@ function clearCITestScriptProperties(propertyNames) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const clearedNames = [];
   propertyNames.forEach(name => {
-    if (CI_TEST_PROPERTY_NAMES.indexOf(name) !== -1) {
+    if (CI_TEST_PROPERTY_NAMES.includes(name)) {
       scriptProperties.deleteProperty(name);
       clearedNames.push(name);
     }
   });
   return clearedNames;
+}
+
+function restoreCITestScriptProperties(backup) {
+  if (typeof backup !== 'string') {
+    throw new Error('Backup payload must be a JSON string.');
+  }
+
+  let restored;
+  try {
+    restored = JSON.parse(backup);
+  } catch (e) {
+    throw new Error('Failed to parse backup JSON: ' + e.message);
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const restoredKeys = [];
+  Object.keys(restored).forEach(key => {
+    if (CI_TEST_PROPERTY_NAMES.includes(key)) {
+      props.setProperty(key, String(restored[key]));
+      restoredKeys.push(key);
+    }
+  });
+
+  return 'Restored ' + restoredKeys.length + ' properties';
 }
 
 // Run all tests

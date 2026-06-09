@@ -8,7 +8,7 @@
 !src/
 !src/**
 
-# Documentation files.
+# Documentation files — intentionally ignored; do not deploy to Apps Script
 README.md
 LICENSE
 

@@ -114,7 +114,7 @@ Configure secrets in **GitHub repository → Settings → Secrets and variables 
 | `OPEN_AI_API_KEY` | `enable-api-key-tests=true` | Create/copy an OpenAI API key from your OpenAI account and store only the key value as the secret. |
 | `GEMINI_API_KEY` | `enable-api-key-tests=true` | Create/copy a Gemini API key from Google AI Studio or the Google Cloud API credentials page and store only the key value as the secret. |
 | `VERTEX_AI_PROJECT_ID` | `enable-vertex-ai-tests=true` | Use the Google Cloud project ID for the standard GCP project linked to the Apps Script project and with Vertex AI enabled. |
-| `VERTEX_AI_LOCATION` | `enable-vertex-ai-tests=true` unless you accept the workflow default of `global` | Configure it as either a repository variable or secret. Use the Vertex AI location you want the tests to call, such as `global` or `us-central1`. |
+| `VERTEX_AI_LOCATION` | `enable-vertex-ai-tests=true` | Optional; defaults to `global` if not provided. Configure it as either a repository variable or secret. Use the Vertex AI location you want the tests to call, such as `global` or `us-central1`. |
 | `VERTEX_AI_SERVICE_ACCOUNT_JSON` | `enable-vertex-ai-tests=true` | Create a Google Cloud service account with the permissions your Vertex AI test flow requires, create a JSON key if your organization allows key-based CI credentials, and store the complete JSON document as the secret. |
 
 > **Note:** The current Apps Script Vertex AI smoke test authenticates through the linked Apps Script/GCP project via `ScriptApp.getOAuthToken()` after CI pushes the code. The workflow still validates `VERTEX_AI_SERVICE_ACCOUNT_JSON` when Vertex AI tests are requested so the repository has an explicit place for future Vertex AI CI credential needs.

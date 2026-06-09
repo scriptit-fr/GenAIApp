@@ -1,5 +1,6 @@
 # Local clasp configuration generated from the SCRIPT_ID secret in CI.
 .clasp.json
+vertex-ai-service-account.json
 
 # Local dependencies and tooling artifacts
 node_modules/
