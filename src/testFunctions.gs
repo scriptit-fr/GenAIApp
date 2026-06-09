@@ -119,13 +119,11 @@ function testConfiguredAuthenticationModes() {
 
 function testApiKeyAuthentication() {
   const geminiApiKey = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.GEMINI_API_KEY, "API key authentication");
-  const openAiApiKey = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.OPEN_AI_API_KEY, "API key authentication");
 
   // Force the Gemini public API-key path and clear Vertex settings so this
   // test cannot accidentally pass with Vertex AI credentials.
   GenAIApp.setGeminiAuth(null, null);
   GenAIApp.setGeminiAPIKey(geminiApiKey);
-  GenAIApp.setOpenAIAPIKey(openAiApiKey);
 
   const chat = GenAIApp.newChat();
   chat.addMessage("Reply with exactly: API key authentication ok");
