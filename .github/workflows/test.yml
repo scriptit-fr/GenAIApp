@@ -33,9 +33,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ENABLE_API_KEY_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-api-key-tests'] || false }}
-  ENABLE_VERTEX_AI_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-vertex-ai-tests'] || false }}
-  AUTH_TESTS_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && (inputs['enable-api-key-tests'] || inputs['enable-vertex-ai-tests']) || false }}
+  ENABLE_API_KEY_TESTS: true
+  ENABLE_VERTEX_AI_TESTS: false
+  AUTH_TESTS_REQUESTED: true
   API_KEY_TEST_FUNCTIONS: ${{ vars.API_KEY_TEST_FUNCTIONS || 'testSimpleChatInstance' }}
   VERTEX_AI_TEST_FUNCTIONS: ${{ vars.VERTEX_AI_TEST_FUNCTIONS || 'testVertexAISimpleChat' }}
   VERTEX_AI_LOCATION: ${{ vars.VERTEX_AI_LOCATION || secrets.VERTEX_AI_LOCATION || 'global' }}
@@ -80,7 +80,7 @@ jobs:
 
   apps-script-tests:
     name: Apps Script remote tests
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     needs: syntax-validation
     concurrency:
