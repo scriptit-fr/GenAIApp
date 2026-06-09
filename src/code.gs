@@ -320,6 +320,8 @@ const GenAIApp = (function () {
         if (containerId) {
           this._codeInterpreterContainerId = containerId;
         }
+        return this;
+      };
         
        /** OPTIONAL
        * 
