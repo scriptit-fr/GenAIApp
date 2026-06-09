@@ -71,7 +71,6 @@ function testVertexAISimpleChat() {
   }
   console.log(`Vertex AI simple chat response:\n${response}`);
 }
-}
 EOF_VERTEX_TEST
 fi
 
