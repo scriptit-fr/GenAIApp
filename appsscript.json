@@ -2,7 +2,7 @@
   "timeZone": "Etc/UTC",
   "runtimeVersion": "V8",
   "executionApi": {
-    "access": "ANYONE"
+    "access": "MYSELF"
   },
   "oauthScopes": [
     "https://www.googleapis.com/auth/cloud-platform",
