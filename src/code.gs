@@ -324,7 +324,11 @@ const GenAIApp = (function () {
         }
         return this;
       };
+<<<<<<< codex/add-code-execution-tool-to-payload-builder
 
+=======
+        
+>>>>>>> main
        /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
