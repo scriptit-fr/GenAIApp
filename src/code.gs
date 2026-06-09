@@ -162,14 +162,18 @@ const GenAIApp = (function () {
       this.addFile = function (fileInput) {
         let fileInfo;
         let blobToBase64;
+        let sourceFileId = null;
+        let sourceBlob = null;
 
         if (typeof fileInput == 'string') {
           // assume the input is a Google Drive ID
+          sourceFileId = fileInput;
           fileInfo = this._getBlobFromGoogleDrive(fileInput);
           blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
         }
         else if (isBlobLike(fileInput)) {
           // the input is a Blob
+          sourceBlob = fileInput;
           const fileBytes = fileInput.getBytes();
           const fileSize = fileBytes.length;
           if (fileSize > MAX_FILE_SIZE) {
@@ -205,12 +209,23 @@ const GenAIApp = (function () {
         });
 
         // Gemini
+        let geminiMimeType = fileInfo.mimeType;
+        let geminiBase64Data = blobToBase64;
+        if (_isSpreadsheetMimeType(fileInfo.mimeType)) {
+          const csvResult = sourceFileId && fileInfo.mimeType === 'application/vnd.google-apps.spreadsheet'
+            ? _exportGoogleSheetsToCsv(sourceFileId)
+            : _convertXlsxBlobToCsv(sourceBlob || fileInfo.blob);
+          const csvWithMetadata = _formatSpreadsheetCsvForGemini(csvResult);
+          geminiMimeType = 'text/csv';
+          geminiBase64Data = Utilities.base64Encode(csvWithMetadata);
+        }
+
         contents.push({
           role: 'user',
           parts: [{
             inline_data: {
-              mime_type: fileInfo.mimeType,
-              data: blobToBase64
+              mime_type: geminiMimeType,
+              data: geminiBase64Data
             }
           }]
         });
@@ -1097,6 +1112,9 @@ const GenAIApp = (function () {
           case 'image/jpeg':
           case 'image/gif':
           case 'image/webp':
+          case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+          case 'application/vnd.ms-excel':
+          case 'application/vnd.oasis.opendocument.spreadsheet':
             blob = file.getBlob();
             break;
 
@@ -2143,6 +2161,23 @@ const GenAIApp = (function () {
     typeof x.getBytes === "function" &&
     typeof x.getContentType === "function";
 
+  /**
+   * Returns true when a MIME type identifies a spreadsheet file that can be
+   * converted to CSV for Gemini prompts.
+   *
+   * @private
+   * @param {string} mimeType - MIME type to inspect.
+   * @returns {boolean} Whether the MIME type is a supported spreadsheet.
+   */
+  function _isSpreadsheetMimeType(mimeType) {
+    return [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.google-apps.spreadsheet',
+      'application/vnd.ms-excel',
+      'application/vnd.oasis.opendocument.spreadsheet'
+    ].includes(mimeType);
+  }
+
   // OpenAI-only helper: creates a Responses API input_file content object.
   const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
     type: "input_file",
@@ -2171,6 +2206,168 @@ const GenAIApp = (function () {
       blob.getName()
     );
   };
+
+  const MAX_SPREADSHEET_CELLS = 500000;
+
+  /**
+   * Converts an uploaded XLSX blob into CSV text by temporarily converting it to
+   * a native Google Sheets file.
+   *
+   * @private
+   * @param {Blob} blob - The XLSX blob to convert.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} Conversion result and metadata.
+   */
+  function _convertXlsxBlobToCsv(blob) {
+    if (!isBlobLike(blob)) {
+      throw new Error('[GenAIApp] - Invalid XLSX input. Please provide a valid Blob.');
+    }
+
+    const originalFilename = blob.getName() || 'spreadsheet.xlsx';
+    _assertBlobSizeWithinLimit(blob, originalFilename);
+
+    let convertedFile;
+    try {
+      const conversionBlob = blob.copyBlob()
+        .setName(originalFilename)
+        .setContentType(MimeType.GOOGLE_SHEETS);
+      convertedFile = DriveApp.createFile(conversionBlob);
+
+      const spreadsheet = SpreadsheetApp.openById(convertedFile.getId());
+      return _spreadsheetToCsvResult(spreadsheet, originalFilename);
+    }
+    finally {
+      if (convertedFile) {
+        convertedFile.setTrashed(true);
+      }
+    }
+  }
+
+  /**
+   * Exports a native Google Sheets file to concatenated CSV text. Hidden and
+   * empty sheets are omitted.
+   *
+   * @private
+   * @param {string} fileId - The Google Sheets Drive file ID.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} Export result and metadata.
+   */
+  function _exportGoogleSheetsToCsv(fileId) {
+    const file = DriveApp.getFileById(fileId);
+    const fileSize = file.getSize();
+    if (fileSize > MAX_FILE_SIZE) {
+      throw new Error(`[GenAIApp] - Spreadsheet file too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(fileId);
+    return _spreadsheetToCsvResult(spreadsheet, file.getName());
+  }
+
+  /**
+   * Converts a two-dimensional array to RFC 4180-compatible CSV text.
+   *
+   * @private
+   * @param {Array[]} dataArray - Two-dimensional row/cell array.
+   * @returns {string} CSV text.
+   */
+  function _arrayToCsv(dataArray) {
+    if (!dataArray || dataArray.length === 0) {
+      return '';
+    }
+
+    return dataArray.map(row => {
+      const cells = Array.isArray(row) ? row : [row];
+      return cells.map(cell => {
+        const value = cell === null || typeof cell === 'undefined' ? '' : String(cell);
+        const escapedValue = value.replace(/"/g, '""');
+        return /[",\r\n]/.test(value) ? `"${escapedValue}"` : escapedValue;
+      }).join(',');
+    }).join('\n');
+  }
+
+  /**
+   * Creates a concatenated CSV export from visible, non-empty spreadsheet sheets.
+   *
+   * @private
+   * @param {Spreadsheet} spreadsheet - The spreadsheet to export.
+   * @param {string} originalFilename - Source filename for metadata.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} CSV export and metadata.
+   */
+  function _spreadsheetToCsvResult(spreadsheet, originalFilename) {
+    const csvSections = [];
+    const sheetNames = [];
+    let totalCells = 0;
+
+    spreadsheet.getSheets().forEach(sheet => {
+      if (sheet.isSheetHidden()) {
+        return;
+      }
+
+      const lastRow = sheet.getLastRow();
+      const lastColumn = sheet.getLastColumn();
+      if (lastRow === 0 || lastColumn === 0) {
+        return;
+      }
+
+      totalCells += lastRow * lastColumn;
+      if (totalCells > MAX_SPREADSHEET_CELLS) {
+        throw new Error(`[GenAIApp] - Spreadsheet too large to convert (${totalCells} populated-range cells). Maximum allowed is ${MAX_SPREADSHEET_CELLS} cells.`);
+      }
+
+      const values = sheet.getDataRange().getValues();
+      if (_isEmptySheetData(values)) {
+        return;
+      }
+
+      sheetNames.push(sheet.getName());
+      csvSections.push(`--- Sheet: ${sheet.getName()} ---\n${_arrayToCsv(values)}`);
+    });
+
+    return {
+      csvText: csvSections.join('\n\n'),
+      originalFilename: originalFilename,
+      sheetNames: sheetNames
+    };
+  }
+
+  /**
+   * Formats converted spreadsheet CSV with a filename/sheet metadata preamble for Gemini.
+   *
+   * @private
+   * @param {{csvText: string, originalFilename: string, sheetNames: string[]}} csvResult - Spreadsheet CSV result.
+   * @returns {string} CSV text prefixed with spreadsheet metadata.
+   */
+  function _formatSpreadsheetCsvForGemini(csvResult) {
+    const sheetNames = csvResult.sheetNames && csvResult.sheetNames.length > 0
+      ? csvResult.sheetNames.join(', ')
+      : 'None';
+    return `[Spreadsheet: ${csvResult.originalFilename} | Sheets: ${sheetNames}]\n\n${csvResult.csvText}`;
+  }
+
+  /**
+   * Throws when a blob exceeds the shared maximum file size.
+   *
+   * @private
+   * @param {Blob} blob - Blob to check.
+   * @param {string} filename - Filename used in the error message.
+   */
+  function _assertBlobSizeWithinLimit(blob, filename) {
+    const fileSize = blob.getBytes().length;
+    if (fileSize > MAX_FILE_SIZE) {
+      throw new Error(`[GenAIApp] - Spreadsheet file too large (${filename}, ${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+    }
+  }
+
+  /**
+   * Returns true when a sheet data array contains no non-empty values.
+   *
+   * @private
+   * @param {Array[]} values - Sheet values from getValues().
+   * @returns {boolean} Whether the sheet data is empty.
+   */
+  function _isEmptySheetData(values) {
+    return !values || values.length === 0 || values.every(row =>
+      !row || row.every(cell => cell === null || typeof cell === 'undefined' || cell === '')
+    );
+  }
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
