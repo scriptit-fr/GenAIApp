@@ -81,7 +81,7 @@ jobs:
     needs: syntax-validation
     concurrency:
       group: ${{ github.repository }}-${{ github.workflow }}-apps-script-tests
-      cancel-in-progress: true
+      cancel-in-progress: false
     outputs:
       clasp-available: ${{ steps.clasp-setup.outputs.available }}
       clasp-authenticated: ${{ steps.clasp-auth.outputs.authenticated }}
@@ -243,6 +243,36 @@ jobs:
       - name: Push clean source to Apps Script
         if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
         run: clasp push --force
+      
+      - name: Backup existing script properties
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Read existing CI test property values and save them for restoration
+          backup="$(clasp run 'function() {
+            var props = PropertiesService.getScriptProperties();
+            var backup = {};
+
+            [
+              "OPEN_AI_API_KEY",
+              "GEMINI_API_KEY",
+              "VERTEX_AI_PROJECT_ID",
+              "VERTEX_AI_LOCATION"
+            ].forEach(function(key) {
+              var value = props.getProperty(key);
+
+              if (value !== null) {
+                backup[key] = value;
+              }
+            });
+
+            return JSON.stringify(backup);
+          }' 2>&1 | tail -n 1 || echo '{}')"
+
+          echo "PROPERTY_BACKUP=$backup" >> "$GITHUB_ENV"
+          echo "Backed up existing properties: $backup"
 
       - name: Provision test script properties
         if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
@@ -295,11 +325,12 @@ jobs:
             clasp run "$function_name"
           done
 
-      - name: Clear test script properties
+      - name: Restore backed-up script properties
         if: always() && env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
         shell: bash
         run: |
           set -euo pipefail
+          # First clear all CI test properties
           params="$(node -e '
             const propertyNames = [
               "OPEN_AI_API_KEY",
@@ -310,3 +341,25 @@ jobs:
             process.stdout.write(JSON.stringify([propertyNames]));
           ')"
           clasp run clearCITestScriptProperties --params "$params"
+
+          # Then restore any backed-up values that existed before the test run
+          backup="${PROPERTY_BACKUP:-{}}"
+
+          if [ "$backup" != "{}" ] && [ -n "$backup" ]; then
+            echo "Restoring backed-up properties: $backup"
+
+            clasp run 'function(backup) {
+              var props = PropertiesService.getScriptProperties();
+              var restored = JSON.parse(backup);
+
+              for (var key in restored) {
+                if (restored.hasOwnProperty(key)) {
+                  props.setProperty(key, restored[key]);
+                }
+              }
+
+              return "Restored " + Object.keys(restored).length + " properties";
+            }' --params "$(node -e 'process.stdout.write(JSON.stringify([process.env.PROPERTY_BACKUP || "{}"]))')"
+          else
+            echo "No backed-up properties to restore."
+          fi
