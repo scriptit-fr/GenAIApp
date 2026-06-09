@@ -20,6 +20,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 env:
   ENABLE_API_KEY_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs['enable-api-key-tests'] || false }}
   ENABLE_VERTEX_AI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs['enable-vertex-ai-tests'] || false }}
