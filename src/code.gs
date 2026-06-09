@@ -168,25 +168,53 @@ const GenAIApp = (function () {
         if (typeof fileInput == 'string') {
           // assume the input is a Google Drive ID
           sourceFileId = fileInput;
-          fileInfo = this._getBlobFromGoogleDrive(fileInput);
-          blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
+          const file = DriveApp.getFileById(fileInput);
+          fileInfo = {
+            mimeType: file.getMimeType(),
+            fileName: file.getName()
+          };
+          if (!_isSpreadsheetMimeType(fileInfo.mimeType)) {
+            fileInfo = this._getBlobFromGoogleDrive(fileInput);
+            blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
+          }
         }
         else if (isBlobLike(fileInput)) {
           // the input is a Blob
           sourceBlob = fileInput;
-          const fileBytes = fileInput.getBytes();
-          const fileSize = fileBytes.length;
-          if (fileSize > MAX_FILE_SIZE) {
-            throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
-          }
-          blobToBase64 = Utilities.base64Encode(fileBytes);
           fileInfo = {
             mimeType: fileInput.getContentType(),
             fileName: fileInput.getName()
           };
+          if (!_isSpreadsheetMimeType(fileInfo.mimeType)) {
+            const fileBytes = fileInput.getBytes();
+            const fileSize = fileBytes.length;
+            if (fileSize > MAX_FILE_SIZE) {
+              throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+            }
+            blobToBase64 = Utilities.base64Encode(fileBytes);
+          }
         }
         else {
           throw new Error('Invalid file input provided to addFile() method. Please provide a valid Google Drive file ID or a Blob.');
+        }
+
+        if (_isSpreadsheetMimeType(fileInfo.mimeType)) {
+          const lazySpreadsheetPart = {
+            _needsSpreadsheetConversion: true,
+            _sourceFileId: sourceFileId,
+            _sourceBlob: sourceBlob,
+            _mimeType: fileInfo.mimeType,
+            _fileName: fileInfo.fileName
+          };
+          messages.push({
+            role: "user",
+            content: [lazySpreadsheetPart]
+          });
+          contents.push({
+            role: 'user',
+            parts: [lazySpreadsheetPart]
+          });
+          return this;
         }
 
         // OpenAI
@@ -208,30 +236,15 @@ const GenAIApp = (function () {
           content: [contentObj]
         });
 
-        // Gemini - defer spreadsheet conversion until _buildGeminiPayload
-        if (_isSpreadsheetMimeType(fileInfo.mimeType)) {
-          // Mark for lazy conversion - store metadata instead of converting now
-          contents.push({
-            role: 'user',
-            parts: [{
-              _needsSpreadsheetConversion: true,
-              _sourceFileId: sourceFileId,
-              _sourceBlob: sourceBlob || fileInfo.blob,
-              _mimeType: fileInfo.mimeType
-            }]
-          });
-        } else {
-          // Non-spreadsheet files can be encoded immediately
-          contents.push({
-            role: 'user',
-            parts: [{
-              inline_data: {
-                mime_type: fileInfo.mimeType,
-                data: blobToBase64
-              }
-            }]
-          });
-        }
+        contents.push({
+          role: 'user',
+          parts: [{
+            inline_data: {
+              mime_type: fileInfo.mimeType,
+              data: blobToBase64
+            }
+          }]
+        });
         return this;
       };
 
@@ -738,12 +751,45 @@ const GenAIApp = (function () {
 
         let systemInstructions = "";
         const userMessages = [];
+        const resolveOpenAIContentPart = (part) => {
+          if (!part?._needsSpreadsheetConversion) {
+            return part;
+          }
+
+          const fileInfo = part._sourceFileId
+            ? this._getBlobFromGoogleDrive(part._sourceFileId)
+            : {
+              blob: part._sourceBlob,
+              mimeType: part._mimeType,
+              fileName: part._fileName
+            };
+          const fileBytes = fileInfo.blob.getBytes();
+          const fileSize = fileBytes.length;
+          if (fileSize > MAX_FILE_SIZE) {
+            throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+          }
+
+          return createOpenAIInputFileContent(
+            fileInfo.mimeType,
+            Utilities.base64Encode(fileBytes),
+            fileInfo.fileName
+          );
+        };
+
         for (const message of messages) {
           if (message.role === "system") {
             systemInstructions += message.content + "\n";
           }
           else {
-            userMessages.push(message);
+            if (Array.isArray(message.content)) {
+              userMessages.push({
+                ...message,
+                content: message.content.map(resolveOpenAIContentPart)
+              });
+            }
+            else {
+              userMessages.push(message);
+            }
           }
         }
         if (systemInstructions !== "") {
@@ -1030,9 +1076,14 @@ const GenAIApp = (function () {
             const processedParts = content.parts.map(part => {
               if (part._needsSpreadsheetConversion) {
                 // Perform lazy spreadsheet conversion here
-                const csvResult = part._sourceFileId && part._mimeType === 'application/vnd.google-apps.spreadsheet'
-                  ? _exportGoogleSheetsToCsv(part._sourceFileId)
-                  : _convertXlsxBlobToCsv(part._sourceBlob);
+                let csvResult;
+                if (part._sourceFileId && part._mimeType === 'application/vnd.google-apps.spreadsheet') {
+                  csvResult = _exportGoogleSheetsToCsv(part._sourceFileId);
+                }
+                else {
+                  const sourceBlob = part._sourceBlob || (part._sourceFileId ? DriveApp.getFileById(part._sourceFileId).getBlob() : null);
+                  csvResult = _convertXlsxBlobToCsv(sourceBlob);
+                }
                 const csvWithMetadata = _formatSpreadsheetCsvForGemini(csvResult);
 
                 // Issue 2: Validate CSV size before base64 encoding
