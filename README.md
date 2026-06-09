@@ -33,6 +33,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
   - [Example 6: Extend a Chat with an MCP Connector](#example-6--extend-a-chat-with-an-mcp-connector)
   - [Example 7: Connect to a Custom MCP Server with setServerUrl()](#example-7--connect-to-a-custom-mcp-server-with-setserverurl)
   - [Example 8: Continue a Conversation with previous_response_id](#example-8--continue-a-conversation-with-previous_response_id)
+- [Testing authentication modes](#testing-authentication-modes)
 - [Contributing](#contributing)
 - [License](#license)
 - [Reference](#reference)
@@ -59,7 +60,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 The setup for **GenAIApp** varies depending on which models you plan to use: 
 1. If you want to use **OpenAI models**: You'll need an **OpenAI API key**
 2. If you want to use **Google Gemini models**: you’ll need a **Google Cloud Platform (GCP) project** with **Vertex AI** enabled for access to Gemini models.
-Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled, and to include the following scopes in your manifest file:
+Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled. GenAIApp prefers the Google Apps Script Vertex AI Advanced Service when it is enabled in the Apps Script project, and automatically falls back to the direct `UrlFetchApp` Vertex AI call if the Advanced Service is unavailable or fails. Include the following scopes in your manifest file:
 ```js
 "oauthScopes": [
     "https://www.googleapis.com/auth/cloud-platform",
@@ -461,6 +462,31 @@ const secondAnswer = secondChat.run({ model: "gpt-5.4" });
 Logger.log(secondAnswer);
 ```
 
+## Testing authentication modes
+
+The library includes an Apps Script test entrypoint named `testConfiguredAuthenticationModes()` for explicitly validating the two Gemini authentication paths supported by GenAIApp:
+
+1. **API key authentication** through `GenAIApp.setGeminiAPIKey(...)`.
+2. **Vertex AI authentication** through `GenAIApp.setGeminiAuth(projectId, region)`.
+
+Each mode can be enabled independently with boolean switches so you can run only API-key tests, only Vertex AI tests, both modes, or neither mode while a path is temporarily blocked.
+
+| Switch | Default | Behavior |
+| --- | --- | --- |
+| `ENABLE_API_KEY_AUTH_TESTS` | `true` | Runs the Gemini API-key smoke test when `true`; logs a skip when `false`. |
+| `ENABLE_VERTEX_AI_AUTH_TESTS` | `false` | Runs the Gemini Vertex AI smoke test when `true`; logs a skip when `false`. |
+
+### Local Apps Script configuration
+
+Set these values as Apps Script **Script Properties** or define equivalent constants in your local test project. Do not print credential values in logs.
+
+| Name | Required when | Description |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | `ENABLE_API_KEY_AUTH_TESTS=true` | Gemini API key used by the public Generative Language API test. |
+| `VERTEX_AI_GCP_PROJECT_ID` | `ENABLE_VERTEX_AI_AUTH_TESTS=true` | GCP project linked to the Apps Script project and enabled for Vertex AI. |
+| `VERTEX_AI_GCP_REGION` | Optional for Vertex AI | Vertex AI region such as `us-central1`; leave blank to use the global endpoint. |
+
+Run `testConfiguredAuthenticationModes()` from the Apps Script editor after setting the switches and credentials. Disabled modes log a clear skip message. Enabled modes fail before making an API call when required credentials/configuration are missing. The test code clears the opposite Gemini authentication setting before each smoke test so API-key coverage cannot accidentally pass through Vertex AI, and Vertex AI coverage cannot accidentally pass through the API-key path.
 
 ## Contributing
 
