@@ -1,13 +1,16 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-3.5-flash";
+const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
+const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
 
 const AUTH_TEST_CONFIG_KEYS = {
   ENABLE_API_KEY_AUTH_TESTS: "ENABLE_API_KEY_AUTH_TESTS",
   ENABLE_VERTEX_AI_AUTH_TESTS: "ENABLE_VERTEX_AI_AUTH_TESTS",
   GEMINI_API_KEY: "GEMINI_API_KEY",
   VERTEX_AI_GCP_PROJECT_ID: "VERTEX_AI_GCP_PROJECT_ID",
-  VERTEX_AI_GCP_REGION: "VERTEX_AI_GCP_REGION"
+  VERTEX_AI_GCP_REGION: "VERTEX_AI_GCP_REGION",
+  OPEN_AI_API_KEY: "OPEN_AI_API_KEY"
 };
 
 /**
@@ -45,6 +48,9 @@ function getAuthTestConfigValue(name, defaultValue) {
   }
   if (name === AUTH_TEST_CONFIG_KEYS.VERTEX_AI_GCP_REGION && typeof VERTEX_AI_GCP_REGION !== "undefined") {
     return VERTEX_AI_GCP_REGION;
+  }
+  if (name === AUTH_TEST_CONFIG_KEYS.OPEN_AI_API_KEY && typeof OPEN_AI_API_KEY !== "undefined") {
+    return OPEN_AI_API_KEY;
   }
 
   return defaultValue;
@@ -113,15 +119,17 @@ function testConfiguredAuthenticationModes() {
 
 function testApiKeyAuthentication() {
   const geminiApiKey = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.GEMINI_API_KEY, "API key authentication");
+  const openAiApiKey = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.OPEN_AI_API_KEY, "API key authentication");
 
   // Force the Gemini public API-key path and clear Vertex settings so this
   // test cannot accidentally pass with Vertex AI credentials.
   GenAIApp.setGeminiAuth(null, null);
   GenAIApp.setGeminiAPIKey(geminiApiKey);
+  GenAIApp.setOpenAIAPIKey(openAiApiKey);
 
   const chat = GenAIApp.newChat();
   chat.addMessage("Reply with exactly: API key authentication ok");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 64 });
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 512 });
   console.log(`[GenAIApp tests] API key authentication completed with response length ${String(response).length}.`);
 }
 
@@ -136,7 +144,7 @@ function testVertexAiAuthentication() {
 
   const chat = GenAIApp.newChat();
   chat.addMessage("Reply with exactly: Vertex AI authentication ok");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 64 });
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 512 });
   console.log(`[GenAIApp tests] Vertex AI authentication completed with response length ${String(response).length}.`);
 }
 

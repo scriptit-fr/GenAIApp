@@ -320,7 +320,9 @@ const GenAIApp = (function () {
         if (containerId) {
           this._codeInterpreterContainerId = containerId;
         }
-        
+        return this;
+      };
+      
        /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
