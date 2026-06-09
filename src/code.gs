@@ -355,11 +355,8 @@ const GenAIApp = (function () {
         }
         return this;
       };
-       return this;
-     };
  
       /** OPTIONAL
-       /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
@@ -1029,7 +1026,7 @@ const GenAIApp = (function () {
         else if (typeof fileIdOrIndex === "string" && fileIdOrIndex.trim() === "") {
           targetFile = this._generatedFiles[0];
         }
-        if (typeof fileIdOrIndex === "number") {
+        else if (typeof fileIdOrIndex === "number") {
           targetFile = this._generatedFiles[fileIdOrIndex];
         }
         else if (typeof fileIdOrIndex === "string") {
