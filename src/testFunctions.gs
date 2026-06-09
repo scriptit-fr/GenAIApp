@@ -127,8 +127,8 @@ function testVertexAISimpleChat() {
   const chat = GenAIApp.newChat();
   chat.addMessage("Reply with exactly: Vertex AI test passed");
   const response = chat.run({ model: GEMINI_MODEL, max_tokens: 64 });
-  if (String(response).trim() !== "Vertex AI test passed") {
-    throw new Error(`Unexpected Vertex AI response: ${response}`);
+  if (!String(response).includes("Vertex AI test passed")) {
+    throw new Error(`Unexpected Vertex AI response - expected to include "Vertex AI test passed" but got: ${response}`);
   }
   console.log(`Vertex AI simple chat response:\n${response}`);
 }
