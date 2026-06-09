@@ -2310,6 +2310,10 @@ const GenAIApp = (function () {
       throw new Error('[GenAIApp] - Invalid XLSX input. Please provide a valid Blob.');
     }
 
+    if (typeof Drive === 'undefined' || !Drive.Files || typeof Drive.Files.insert !== 'function') {
+      throw new Error('[GenAIApp] - Advanced Drive Service is required for XLSX to CSV conversion. Please enable it in your Apps Script project.');
+    }
+
     const originalFilename = blob.getName() || 'spreadsheet.xlsx';
     _assertBlobSizeWithinLimit(blob, originalFilename);
 
