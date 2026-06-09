@@ -302,8 +302,10 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Enables OpenAI Code Interpreter support for this chat.
-       * @param {string} [containerId] - OPTIONAL - Explicit container ID to reuse.
+       * Enables code execution support for this chat.
+       * For OpenAI models, the optional containerId reuses an existing code interpreter container.
+       * For Gemini models, containerId is ignored because Gemini code execution is stateless and has no container concept.
+       * @param {string} [containerId] - OPTIONAL - Explicit OpenAI container ID to reuse. Ignored for Gemini models.
        * @returns {Chat} - The current Chat instance.
        * @example
        * const chat = GenAIApp.newChat()
@@ -320,7 +322,9 @@ const GenAIApp = (function () {
         if (containerId) {
           this._codeInterpreterContainerId = containerId;
         }
-        
+        return this;
+      };
+
        /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
@@ -548,16 +552,23 @@ const GenAIApp = (function () {
               console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
-          this._generatedFiles = this._extractContainerFileCitations(responseMessage);
-          if (this._generatedFiles.length > 0) {
-            this._lastContainerId = this._generatedFiles[0].containerId;
-            const blob = this._downloadContainerFile(
-              this._generatedFiles[0].containerId,
-              this._generatedFiles[0].fileId,
-              this._generatedFiles[0].filename
-            );
-            const createdFile = DriveApp.createFile(blob);
-            this._lastGeneratedDriveFileUrl = createdFile.getUrl();
+          if (model.includes("gemini")) {
+            if (this._codeInterpreterEnabled) {
+              this._generatedFiles = this._generatedFiles.concat(this._extractGeminiInlineArtifacts(responseMessage));
+            }
+          }
+          else {
+            this._generatedFiles = this._extractContainerFileCitations(responseMessage);
+            if (this._generatedFiles.length > 0) {
+              this._lastContainerId = this._generatedFiles[0].containerId;
+              const blob = this._downloadContainerFile(
+                this._generatedFiles[0].containerId,
+                this._generatedFiles[0].fileId,
+                this._generatedFiles[0].filename
+              );
+              const createdFile = DriveApp.createFile(blob);
+              this._lastGeneratedDriveFileUrl = createdFile.getUrl();
+            }
           }
 
           // OpenAI Responses API returns top-level "id"
@@ -844,6 +855,64 @@ const GenAIApp = (function () {
         return Object.keys(citationsById).map(fileId => citationsById[fileId]);
       };
 
+      this._extractGeminiInlineArtifacts = function (responseMessage) {
+        const parts = responseMessage?.parts || [];
+        if (!Array.isArray(parts)) {
+          return [];
+        }
+
+        const inputInlineData = {};
+        const collectInputInlineData = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(collectInputInlineData);
+            return;
+          }
+          if (typeof node !== "object") return;
+
+          const inlineData = node.inlineData || node.inline_data;
+          if (inlineData?.data) {
+            inputInlineData[inlineData.data] = true;
+          }
+          Object.keys(node).forEach(key => collectInputInlineData(node[key]));
+        };
+        collectInputInlineData(contents);
+
+        const extensionByMimeType = {
+          "application/json": "json",
+          "application/pdf": "pdf",
+          "application/zip": "zip",
+          "image/gif": "gif",
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/svg+xml": "svg",
+          "text/csv": "csv",
+          "text/html": "html",
+          "text/plain": "txt"
+        };
+
+        const getExtension = (mimeType) => {
+          if (!mimeType) return "bin";
+          return extensionByMimeType[mimeType] || mimeType.split("/").pop().split(";")[0].replace(/^x-/, "") || "bin";
+        };
+
+        const artifacts = [];
+        parts.forEach(part => {
+          const inlineData = part?.inlineData;
+          if (!inlineData?.data || inputInlineData[inlineData.data]) {
+            return;
+          }
+          const mimeType = inlineData.mimeType || inlineData.mime_type || "application/octet-stream";
+          artifacts.push({
+            mimeType: mimeType,
+            data: inlineData.data,
+            filename: `artifact_${artifacts.length}.${getExtension(mimeType)}`
+          });
+        });
+
+        return artifacts;
+      };
+
       this._downloadContainerFile = function (containerId, fileId, filename) {
         const endpointUrl = `${apiBaseUrl}/v1/containers/${containerId}/files/${fileId}/content`;
         const response = _callGenAIApi(endpointUrl, null, "GET", true);
@@ -860,7 +929,10 @@ const GenAIApp = (function () {
 
       /**
        * Returns generated files from the last run call.
-       * @returns {{containerId: string, fileId: string, filename: string}[]} Generated files metadata.
+       * The metadata structure is provider-specific: Gemini code execution artifacts are
+       * returned as {mimeType, data, filename}, while OpenAI code interpreter files are
+       * returned as {containerId, fileId, filename}.
+       * @returns {({mimeType: string, data: string, filename: string}|{containerId: string, fileId: string, filename: string})[]} Generated files metadata.
        */
       this.getGeneratedFiles = function () {
         return this._generatedFiles;
@@ -868,7 +940,9 @@ const GenAIApp = (function () {
 
       /**
        * Downloads a generated file from the last run.
-       * @param {string|number} fileIdOrIndex - File ID or index from getGeneratedFiles().
+       * Gemini files are returned from in-memory base64 artifact data, while OpenAI files
+       * require an API call to download the file from the referenced code interpreter container.
+       * @param {string|number} fileIdOrIndex - File ID, filename, or index from getGeneratedFiles().
        * @returns {Blob} Downloaded file blob that can be stored with DriveApp.createFile(blob).
        * @example
        * const chat = GenAIApp.newChat()
@@ -892,15 +966,27 @@ const GenAIApp = (function () {
           targetFile = this._generatedFiles[fileIdOrIndex];
         }
         else if (typeof fileIdOrIndex === "string") {
-          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex);
+          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex || file.filename === fileIdOrIndex);
         }
         if (!targetFile) {
-          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID or index from getGeneratedFiles().");
+          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID, filename, or index from getGeneratedFiles().");
+        }
+        if (targetFile.data) {
+          const blob = Utilities.newBlob(Utilities.base64Decode(targetFile.data), targetFile.mimeType, targetFile.filename);
+          return blob;
         }
         return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
       };
 
+      /**
+       * Returns the OpenAI code interpreter container ID associated with generated files.
+       * Gemini code execution is stateless and has no container concept, so this returns null for Gemini models.
+       * @returns {string|null} OpenAI container ID, or null for Gemini models/no container.
+       */
       this.getContainerId = function () {
+        if (model.includes("gemini")) {
+          return null;
+        }
         if (this._lastContainerId) {
           return this._lastContainerId;
         }
@@ -970,6 +1056,12 @@ const GenAIApp = (function () {
           });
           payload.tools.push({
             google_search: {}
+          });
+        }
+
+        if (this._codeInterpreterEnabled) {
+          payload.tools.push({
+            code_execution: {}
           });
         }
 

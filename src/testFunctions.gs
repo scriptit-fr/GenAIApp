@@ -15,6 +15,8 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
+  testGeminiCodeExecution();
+  testGeminiCodeExecutionWithArtifact();
   // OpenAI-only tests - require valid Drive file IDs.
   if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
     testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
@@ -182,6 +184,83 @@ function testCodeInterpreterPDF(driveFileId) {
   const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
   console.log(`Generated PDF file url: ${response}`);
   console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+}
+
+function testGeminiCodeExecution() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+
+  const chat = GenAIApp.newChat();
+  chat
+    .enableCodeInterpreter()
+    .addMessage("Use code execution to compute the mean, median, and sum of this list: [4, 8, 15, 16, 23, 42]. Return the numeric results in your final answer.");
+
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 4000 });
+  if (!response) {
+    throw new Error("Gemini code execution test failed: expected a response.");
+  }
+  if (chat.getContainerId() !== null) {
+    throw new Error("Gemini code execution test failed: Gemini should not return a container ID.");
+  }
+
+  const generatedFiles = chat.getGeneratedFiles();
+  console.log(`Gemini code execution response:
+${response}`);
+  console.log(`Gemini code execution generated files:
+${JSON.stringify(generatedFiles)}`);
+
+  generatedFiles.forEach((artifact, index) => {
+    assertGeminiArtifactMetadata(artifact, `Gemini code execution artifact ${index}`);
+    const blob = chat.downloadGeneratedFile(index);
+    assertBlobLike(blob, `Gemini code execution artifact ${index}`);
+  });
+}
+
+function testGeminiCodeExecutionWithArtifact() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+
+  const chat = GenAIApp.newChat();
+  chat
+    .enableCodeInterpreter()
+    .addMessage("Use code execution to create a PNG bar chart file showing quarterly revenue values Q1=12, Q2=18, Q3=9, Q4=24. Return the chart as an output artifact.");
+
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 4000 });
+  if (!response) {
+    throw new Error("Gemini artifact test failed: expected a response.");
+  }
+
+  const generatedFiles = chat.getGeneratedFiles();
+  console.log(`Gemini code execution artifact response:
+${response}`);
+  console.log(`Gemini code execution artifact files:
+${JSON.stringify(generatedFiles)}`);
+
+  if (generatedFiles.length === 0) {
+    throw new Error("Gemini artifact test failed: expected at least one generated artifact.");
+  }
+
+  generatedFiles.forEach((artifact, index) => {
+    assertGeminiArtifactMetadata(artifact, `Gemini artifact ${index}`);
+    const blob = chat.downloadGeneratedFile(artifact.filename);
+    assertBlobLike(blob, `Gemini artifact ${index}`);
+    if (blob.getContentType() !== artifact.mimeType) {
+      throw new Error(`Gemini artifact ${index} failed: blob mime type ${blob.getContentType()} did not match ${artifact.mimeType}.`);
+    }
+  });
+
+  const savedFile = DriveApp.createFile(chat.downloadGeneratedFile(0));
+  console.log(`Gemini generated artifact file url: ${savedFile.getUrl()}`);
+}
+
+function assertGeminiArtifactMetadata(artifact, label) {
+  if (!artifact || !artifact.mimeType || !artifact.data || !artifact.filename) {
+    throw new Error(`${label} failed: expected mimeType, data, and filename fields.`);
+  }
+}
+
+function assertBlobLike(blob, label) {
+  if (!blob || typeof blob.getBytes !== "function" || blob.getBytes().length === 0) {
+    throw new Error(`${label} failed: expected a non-empty Blob.`);
+  }
 }
 
 // Weather function implementation
