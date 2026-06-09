@@ -1,0 +1,378 @@
+name: Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_remote_tests:
+        description: "Run remote Apps Script tests against the configured SCRIPT_ID"
+        required: false
+        default: false
+        type: boolean
+      enable-api-key-tests:
+        description: "Run Apps Script tests that require OPEN_AI_API_KEY and GEMINI_API_KEY secrets"
+        required: false
+        default: false
+        type: boolean
+      enable-vertex-ai-tests:
+        description: "Run Apps Script tests that require Vertex AI configuration secrets"
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ENABLE_API_KEY_TESTS: true
+  ENABLE_VERTEX_AI_TESTS: false
+  AUTH_TESTS_REQUESTED: true
+  API_KEY_TEST_FUNCTIONS: ${{ vars.API_KEY_TEST_FUNCTIONS || 'testSimpleChatInstance' }}
+  VERTEX_AI_TEST_FUNCTIONS: ${{ vars.VERTEX_AI_TEST_FUNCTIONS || 'testVertexAISimpleChat' }}
+  VERTEX_AI_LOCATION: ${{ vars.VERTEX_AI_LOCATION || secrets.VERTEX_AI_LOCATION || 'global' }}
+
+jobs:
+  syntax-validation:
+    name: Syntax validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate Apps Script source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find src -type f -name '*.gs' -print | sort)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No .gs files found under src/; nothing to validate."
+            exit 0
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+
+          echo "Validating Apps Script source files with node --check:"
+          for file in "${files[@]}"; do
+            echo "- ${file}"
+            tmp_file="${tmp_dir}/$(basename "${file%.gs}").js"
+            cp "$file" "$tmp_file"
+            node --check "$tmp_file"
+          done
+
+  apps-script-tests:
+    name: Apps Script remote tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: syntax-validation
+    concurrency:
+      group: ${{ github.repository }}-${{ github.workflow }}-apps-script-tests
+      cancel-in-progress: false
+    outputs:
+      clasp-available: ${{ steps.clasp-setup.outputs.available }}
+      clasp-authenticated: ${{ steps.clasp-auth.outputs.authenticated }}
+
+    env:
+      HAS_CLASPRC_JSON: ${{ secrets.CLASPRC_JSON != '' }}
+      HAS_SCRIPT_ID: ${{ secrets.SCRIPT_ID != '' }}
+      HAS_OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY != '' }}
+      HAS_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
+      HAS_VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID != '' }}
+      HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON != '' }}
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+      OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID }}
+      VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Mask configured secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in "$CLASPRC_JSON" "$SCRIPT_ID" "$OPEN_AI_API_KEY" "$GEMINI_API_KEY" "$VERTEX_AI_PROJECT_ID" "$VERTEX_AI_SERVICE_ACCOUNT_JSON"; do
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+            fi
+          done
+
+      - name: Install clasp
+        run: npm install --global @google/clasp
+
+      - name: Validate API key test secrets
+        if: env.ENABLE_API_KEY_TESTS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          if [ "$HAS_OPEN_AI_API_KEY" != "true" ]; then
+            missing+=("OPEN_AI_API_KEY")
+          fi
+          if [ "$HAS_GEMINI_API_KEY" != "true" ]; then
+            missing+=("GEMINI_API_KEY")
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::API key tests were requested but required secret(s) are missing: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          echo "API key test secrets are configured."
+
+      - name: Validate Vertex AI secrets
+        if: env.ENABLE_VERTEX_AI_TESTS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          if [ "$HAS_VERTEX_AI_PROJECT_ID" != "true" ]; then
+            missing+=("VERTEX_AI_PROJECT_ID")
+          fi
+          if [ -z "$VERTEX_AI_LOCATION" ]; then
+            missing+=("VERTEX_AI_LOCATION repository variable or secret")
+          fi
+          if [ "$HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON" != "true" ]; then
+            missing+=("VERTEX_AI_SERVICE_ACCOUNT_JSON")
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Vertex AI tests were requested but required configuration value(s) are missing: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          printf '%s' "$VERTEX_AI_SERVICE_ACCOUNT_JSON" > "$GITHUB_WORKSPACE/vertex-ai-service-account.json"
+          node -e 'const fs = require("fs"); const p = process.env.GITHUB_WORKSPACE + "/vertex-ai-service-account.json"; const text = fs.readFileSync(p, "utf8"); JSON.parse(text); console.log("Vertex AI service account JSON is valid and written to", p);'
+
+          echo "Vertex AI test configuration is present."
+
+      - name: Prepare clasp project and credentials
+        id: clasp-setup
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$HAS_CLASPRC_JSON" != "true" ]; then
+            echo "CLASPRC_JSON secret not configured - skipping clasp setup."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$HAS_SCRIPT_ID" != "true" ]; then
+            echo "SCRIPT_ID secret not configured - skipping clasp setup."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+          node -e 'const fs = require("fs"); const scriptId = process.env.SCRIPT_ID; fs.writeFileSync(".clasp.json", JSON.stringify({ scriptId, rootDir: "." }, null, 2) + "\n");'
+
+          echo "Generated .clasp.json from SCRIPT_ID and restored ~/.clasprc.json from CLASPRC_JSON."
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate clasp authentication
+        id: clasp-auth
+        if: steps.clasp-setup.outputs.available == 'true'
+        shell: bash
+        run: |
+          set +e
+          output="$(clasp login --status 2>&1)"
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo "$output"
+            if [ "$AUTH_TESTS_REQUESTED" = "true" ]; then
+              echo "::error::Clasp credentials are present but authentication failed - credentials may be expired or revoked. Please regenerate CLASPRC_JSON."
+            else
+              echo "Clasp credentials are present but authentication failed; no auth tests were requested, so remote Apps Script tests will be skipped."
+            fi
+            echo "authenticated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$output"
+          echo "clasp authentication is valid."
+          echo "authenticated=true" >> "$GITHUB_OUTPUT"
+
+      - name: Fail when requested auth tests cannot use clasp
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated != 'true'
+        shell: bash
+        run: |
+          echo "::error::Auth tests were requested but clasp authentication failed. Ensure CLASPRC_JSON and SCRIPT_ID secrets are configured and credentials are valid."
+          exit 1
+
+      - name: Skip API key tests
+        if: env.ENABLE_API_KEY_TESTS != 'true'
+        run: |
+          echo "Skipping API key tests: not enabled via workflow input."
+
+      - name: Skip Vertex AI tests
+        if: env.ENABLE_VERTEX_AI_TESTS != 'true'
+        run: |
+          echo "Skipping Vertex AI tests: not enabled via workflow input."
+
+      - name: Skip remote Apps Script tests when clasp is unavailable
+        if: env.AUTH_TESTS_REQUESTED != 'true' && steps.clasp-auth.outputs.authenticated != 'true'
+        run: |
+          echo "No auth tests requested and clasp is unavailable; skipping clasp-dependent remote Apps Script tests."
+
+      - name: Validate remote test configuration
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: .github/scripts/prepare-tests.sh
+
+      - name: Push clean source to Apps Script
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        run: clasp push --force
+      
+      - name: Backup existing script properties
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          output="$(clasp run backupCITestScriptProperties 2>&1 | tail -n 1)"
+          status=$?
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Failed to backup existing CI test properties. clasp run exit status: $status. Output: $output"
+            echo "PROPERTY_BACKUP_FAILED=true" >> "$GITHUB_ENV"
+            echo "PROPERTY_BACKUP={}" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          if [ -z "$output" ]; then
+            echo "::error::Backup command returned empty output. PROPERTY_BACKUP cannot be determined."
+            echo "PROPERTY_BACKUP_FAILED=true" >> "$GITHUB_ENV"
+            echo "PROPERTY_BACKUP={}" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          echo "PROPERTY_BACKUP=$output" >> "$GITHUB_ENV"
+          if [ "$output" = "{}" ]; then
+            echo "No existing CI test properties were found; PROPERTY_BACKUP is empty JSON."
+          fi
+          echo "Backed up existing properties: $output"
+
+      - name: Provision test script properties
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          params="$(node -e '
+            const properties = {};
+            if (process.env.ENABLE_API_KEY_TESTS === "true") {
+              properties.OPEN_AI_API_KEY = process.env.OPEN_AI_API_KEY;
+              properties.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+            }
+            if (process.env.ENABLE_VERTEX_AI_TESTS === "true") {
+              properties.VERTEX_AI_PROJECT_ID = process.env.VERTEX_AI_PROJECT_ID;
+              properties.VERTEX_AI_LOCATION = process.env.VERTEX_AI_LOCATION;
+            }
+            process.stdout.write(JSON.stringify([properties]));
+          ')"
+          clasp run setCITestScriptProperties --params "$params"
+
+      - name: Run API key Apps Script tests
+        if: env.ENABLE_API_KEY_TESTS == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra functions <<< "$API_KEY_TEST_FUNCTIONS"
+          for function_name in "${functions[@]}"; do
+            function_name="${function_name//[[:space:]]/}"
+            if [ -z "$function_name" ]; then
+              continue
+            fi
+
+            echo "Running API key Apps Script test function: ${function_name}"
+            clasp run "$function_name"
+          done
+
+      - name: Run Vertex AI Apps Script tests
+        if: env.ENABLE_VERTEX_AI_TESTS == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra functions <<< "$VERTEX_AI_TEST_FUNCTIONS"
+          for function_name in "${functions[@]}"; do
+            function_name="${function_name//[[:space:]]/}"
+            if [ -z "$function_name" ]; then
+              continue
+            fi
+
+            echo "Running Vertex AI Apps Script test function: ${function_name}"
+            clasp run "$function_name"
+          done
+
+      - name: Cleanup Vertex AI service account file
+        if: always() && env.ENABLE_VERTEX_AI_TESTS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$GITHUB_WORKSPACE/vertex-ai-service-account.json"
+          if [ -f "$file" ]; then
+            rm -f "$file"
+            echo "Removed Vertex AI service account file: $file"
+          else
+            echo "No vertex-ai-service-account.json file present."
+          fi
+
+      - name: Restore backed-up script properties
+        if: always() && env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # First clear all CI test properties
+          params="$(node -e '
+            const propertyNames = [
+              "OPEN_AI_API_KEY",
+              "GEMINI_API_KEY",
+              "VERTEX_AI_PROJECT_ID",
+              "VERTEX_AI_LOCATION"
+            ];
+            process.stdout.write(JSON.stringify([propertyNames]));
+          ')"
+          clasp run clearCITestScriptProperties --params "$params"
+
+          # Then restore any backed-up values that existed before the test run
+          backup="${PROPERTY_BACKUP:-{}}"
+
+          if [ "$backup" != "{}" ] && [ -n "$backup" ]; then
+            echo "Restoring backed-up properties: $backup"
+
+            clasp run restoreCITestScriptProperties --params "$(node -e 'process.stdout.write(JSON.stringify([process.env.PROPERTY_BACKUP || "{}"]))')"
+          else
+            echo "No backed-up properties to restore."
+          fi

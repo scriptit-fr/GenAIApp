@@ -1,0 +1,35 @@
+# Ignore everything by default so Apps Script receives only the manifest and src/.
+**
+
+# Required Apps Script manifest.
+!appsscript.json
+
+# Application source files.
+!src/
+!src/**
+
+# Documentation files — intentionally ignored; do not deploy to Apps Script
+README.md
+LICENSE
+
+# CI and clasp template files.
+.github/
+.github/**
+.clasp.json.example
+
+# Future Node.js tooling and dependency files.
+package.json
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
+pnpm-workspace.yaml
+node_modules/
+node_modules/**
+.npmrc
+.yarnrc
+.yarnrc.yml
+.pnpm-store/
+.pnpm-store/**
+.yarn/
+.yarn/**

@@ -1,0 +1,13 @@
+{
+  "timeZone": "Etc/UTC",
+  "runtimeVersion": "V8",
+  "executionApi": {
+    "access": "MYSELF"
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/aiplatform",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.storage"
+  ]
+}
