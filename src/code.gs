@@ -540,7 +540,7 @@ const GenAIApp = (function () {
               }
             }
           }
-          if (model.includes("gemini") && !geminiKey && payload?.tool_config?.includeServerSideToolInvocations === false) { // VertexAI does not support server-side tool invocation metadata in the response at the moment
+          if (model.includes("gemini") && !geminiKey && !payload?.tool_config?.includeServerSideToolInvocations) { // VertexAI does not support server-side tool invocation metadata in the response at the moment
             responseMessage = _callVertexAi(endpointUrl, payload);
           }
           else {
