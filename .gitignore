@@ -1,0 +1,9 @@
+# Local clasp configuration generated from the SCRIPT_ID secret in CI.
+.clasp.json
+
+# Local dependencies and tooling artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

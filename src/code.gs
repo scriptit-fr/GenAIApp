@@ -1050,9 +1050,10 @@ const GenAIApp = (function () {
           mimeType: mimeType,
           blob: blob
         };
-      }
+      };
     }
   }
+  } // End Chat class.
 
   /**
  * @class

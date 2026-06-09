@@ -7,6 +7,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Continuous Integration (CI/CD)](#continuous-integration-cicd)
 - [Usage](#usage)
   - [Setting API Keys](#setting-api-keys)
   - [Creating a New Chat](#creating-a-new-chat)
@@ -73,6 +74,161 @@ Ensure to link your Google Apps Script project to a GCP project with Vertex AI e
 ## Installation
 
 To start using the library, include the **GenAIApp** code in your Google Apps Script project environment. 
+
+## Continuous Integration (CI/CD)
+
+This repository includes GitHub Actions, clasp, and Apps Script project infrastructure for CI-based validation and optional remote test execution. The workflow lives at `.github/workflows/test.yml`; helper files include `appsscript.json`, `.claspignore`, `.clasp.json.example`, and `.github/scripts/prepare-tests.sh`. The real `.clasp.json` file is intentionally ignored by Git and generated dynamically in CI from the `SCRIPT_ID` secret before `clasp push` or `clasp run` is executed.
+
+### What the workflow validates
+
+The **Test** workflow has two layers:
+
+1. **Syntax validation** always runs. It checks out the repository, sets up Node.js, lists every `.gs` file under `src/`, copies each file to a temporary `.js` file, and runs `node --check` to catch JavaScript syntax errors. This job does **not** require clasp credentials, Apps Script authentication, script IDs, or API keys.
+2. **Optional remote Apps Script tests** run only when explicitly enabled from the manual workflow inputs. When enabled and correctly configured, CI installs clasp, recreates clasp credentials, generates `.clasp.json`, pushes the repository to the Apps Script test deployment, and invokes configured Apps Script test functions with `clasp run`.
+
+### Workflow triggers
+
+The workflow runs automatically for:
+
+- Pushes to the `main` branch.
+- Pull requests targeting the `main` branch.
+
+Automatic runs keep remote/authenticated tests disabled by default, so they provide always-on syntax validation without requiring repository secrets to be available to every event.
+
+To run the workflow manually:
+
+1. Open the repository on GitHub.
+2. Go to **Actions**.
+3. Select the **Test** workflow.
+4. Click **Run workflow**.
+5. Choose the branch and set `enable-api-key-tests` and/or `enable-vertex-ai-tests` to `true` only for the remote test modes you want to run.
+
+### Required GitHub secrets
+
+Configure secrets in **GitHub repository → Settings → Secrets and variables → Actions → Repository secrets**. Never commit these values to the repository.
+
+| Secret or variable | Required when | How to obtain it |
+| --- | --- | --- |
+| `CLASPRC_JSON` | Any remote Apps Script test mode is enabled | Install and authenticate clasp locally with `clasp login`, then copy the full contents of `~/.clasprc.json` into a GitHub repository secret. |
+| `SCRIPT_ID` | Any remote Apps Script test mode is enabled | Open the Apps Script project used for CI tests and copy its script ID from **Project Settings → Script ID**, or from the Apps Script URL. |
+| `OPEN_AI_API_KEY` | `enable-api-key-tests=true` | Create/copy an OpenAI API key from your OpenAI account and store only the key value as the secret. |
+| `GEMINI_API_KEY` | `enable-api-key-tests=true` | Create/copy a Gemini API key from Google AI Studio or the Google Cloud API credentials page and store only the key value as the secret. |
+| `VERTEX_AI_PROJECT_ID` | `enable-vertex-ai-tests=true` | Use the Google Cloud project ID for the standard GCP project linked to the Apps Script project and with Vertex AI enabled. |
+| `VERTEX_AI_LOCATION` | `enable-vertex-ai-tests=true` unless you accept the workflow default of `global` | Configure it as either a repository variable or secret. Use the Vertex AI location you want the tests to call, such as `global` or `us-central1`. |
+| `VERTEX_AI_SERVICE_ACCOUNT_JSON` | `enable-vertex-ai-tests=true` | Create a Google Cloud service account with the permissions your Vertex AI test flow requires, create a JSON key if your organization allows key-based CI credentials, and store the complete JSON document as the secret. |
+
+> **Note:** The current Apps Script Vertex AI smoke test authenticates through the linked Apps Script/GCP project via `ScriptApp.getOAuthToken()` after CI pushes the code. The workflow still validates `VERTEX_AI_SERVICE_ACCOUNT_JSON` when Vertex AI tests are requested so the repository has an explicit place for future Vertex AI CI credential needs.
+
+#### Creating and maintaining `CLASPRC_JSON`
+
+`CLASPRC_JSON` is the serialized clasp OAuth credential file used by CI. To generate it:
+
+1. Install clasp locally if needed: `npm install --global @google/clasp`.
+2. Run `clasp login`.
+3. Complete the browser-based Google OAuth flow with the Google account that has access to the Apps Script test project.
+4. Locate the generated file at `~/.clasprc.json`.
+5. Copy the entire JSON file contents.
+6. Create or update the GitHub repository secret named `CLASPRC_JSON` with that JSON content.
+
+Regenerate and update `CLASPRC_JSON` when:
+
+- CI reports clasp authentication failures, invalid credentials, or expired/revoked tokens.
+- You change the Google account used for CI deployments.
+- Required Apps Script OAuth scopes change and clasp needs to reauthorize.
+- Google revokes the credential, an administrator resets access, or token refresh starts failing.
+- Credentials expire. This can happen without warning, so periodic regeneration may be required even if no repository files changed.
+
+### Workflow inputs and behavior
+
+| Manual input | Default | What it controls | Required configuration |
+| --- | --- | --- | --- |
+| `enable-api-key-tests` | `false` | Runs remote Apps Script tests that use the OpenAI and Gemini API-key paths. | `CLASPRC_JSON`, `SCRIPT_ID`, `OPEN_AI_API_KEY`, and `GEMINI_API_KEY`. |
+| `enable-vertex-ai-tests` | `false` | Runs remote Apps Script tests that use the Vertex AI authentication path. | `CLASPRC_JSON`, `SCRIPT_ID`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`, and `VERTEX_AI_SERVICE_ACCOUNT_JSON`. |
+
+Skip and failure behavior is intentional:
+
+- If a mode is disabled, the workflow logs a message such as `Skipping API key tests: not enabled via workflow input` or `Skipping Vertex AI tests: not enabled via workflow input`.
+- If both auth modes are disabled and clasp credentials are missing or invalid, the remote test steps are skipped and syntax validation can still pass.
+- If any auth mode is enabled and `CLASPRC_JSON`, `SCRIPT_ID`, or clasp authentication is missing/invalid, the workflow fails with an actionable message telling you to configure or regenerate clasp credentials.
+- If API-key tests are enabled but `OPEN_AI_API_KEY` or `GEMINI_API_KEY` is missing, the workflow fails before pushing or running remote tests.
+- If Vertex AI tests are enabled but the required Vertex AI configuration is missing, the workflow fails before pushing or running remote tests.
+
+Example scenarios:
+
+- **Syntax validation only:** leave both inputs set to `false`. This is the default for manual runs and automatic `main`/PR runs.
+- **Run only API-key tests:** set `enable-api-key-tests=true` and `enable-vertex-ai-tests=false`; configure `CLASPRC_JSON`, `SCRIPT_ID`, `OPEN_AI_API_KEY`, and `GEMINI_API_KEY`.
+- **Run only Vertex AI tests:** set `enable-api-key-tests=false` and `enable-vertex-ai-tests=true`; configure `CLASPRC_JSON`, `SCRIPT_ID`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`, and `VERTEX_AI_SERVICE_ACCOUNT_JSON`.
+- **Run all remote tests:** set both inputs to `true` and configure every secret listed above.
+
+The remote test functions can be customized with repository variables:
+
+- `API_KEY_TEST_FUNCTIONS`: comma-separated Apps Script function names for API-key tests. Defaults to `testSimpleChatInstance`.
+- `VERTEX_AI_TEST_FUNCTIONS`: comma-separated Apps Script function names for Vertex AI tests. Defaults to `testVertexAISimpleChat`, which is generated by the CI prepare script.
+
+### CI to local setup mapping
+
+Local Apps Script development and CI use the same script-level variable names, but they are populated differently. Locally, define the values directly in your Apps Script project or test file. In CI, `.github/scripts/prepare-tests.sh` injects `const` declarations at the top of `src/testFunctions.gs` in the temporary workflow checkout immediately before `clasp push`; those changes are not committed.
+
+| GitHub secret/variable | Local Apps Script variable or setting | Used by |
+| --- | --- | --- |
+| `OPEN_AI_API_KEY` | `const OPEN_AI_API_KEY = '...'` | `GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY)` in tests. |
+| `GEMINI_API_KEY` | `const GEMINI_API_KEY = '...'` | `GenAIApp.setGeminiAPIKey(GEMINI_API_KEY)` in tests. |
+| `VERTEX_AI_PROJECT_ID` | `const VERTEX_AI_PROJECT_ID = '...'` | `GenAIApp.setGeminiAuth(VERTEX_AI_PROJECT_ID, VERTEX_AI_LOCATION)` in Vertex AI tests. |
+| `VERTEX_AI_LOCATION` | `const VERTEX_AI_LOCATION = 'global'` or another region | Vertex AI location passed to `setGeminiAuth`. |
+| `SCRIPT_ID` | Local `.clasp.json` `scriptId` | Determines which Apps Script project clasp pushes/runs against. |
+| `CLASPRC_JSON` | Local `~/.clasprc.json` | Authenticates clasp as the selected Google account. |
+| `VERTEX_AI_SERVICE_ACCOUNT_JSON` | Service account JSON kept outside Apps Script source | Reserved/validated for Vertex AI CI credentials and future workflow expansion. |
+
+Important local/CI differences:
+
+- Locally, you may already have `.clasp.json` and `~/.clasprc.json`; CI recreates both from secrets every run.
+- Locally, test constants can be manually defined; CI injects them automatically and discards the modified test file when the runner is destroyed.
+- CI uses `.claspignore` so only `appsscript.json` and `src/` contents are pushed to Apps Script.
+- CI remote tests run in the Apps Script environment through `clasp run`, so failures may involve Apps Script permissions, OAuth scopes, linked Google Cloud project configuration, or API quotas in addition to JavaScript errors.
+
+### Troubleshooting CI/CD
+
+#### Clasp credential failures
+
+In CI logs, inspect the **Validate clasp authentication** step. Credential problems commonly show up as:
+
+- `clasp login --status` failures.
+- Messages stating that clasp credentials are present but authentication failed, invalid, expired, or revoked.
+- A follow-up failure that says auth tests were requested but clasp authentication failed.
+
+To regenerate `CLASPRC_JSON`:
+
+1. On your local machine, run `clasp logout` to clear existing clasp credentials.
+2. Run `clasp login`.
+3. Complete the OAuth flow in the browser.
+4. Confirm local authentication works with `clasp login --status`.
+5. Open `~/.clasprc.json` and copy the full JSON content.
+6. In GitHub, go to **Settings → Secrets and variables → Actions → Repository secrets**.
+7. Update the `CLASPRC_JSON` secret with the new JSON content.
+8. Re-run the GitHub Actions workflow.
+
+Before updating CI, it is useful to verify clasp works locally against the intended script:
+
+```bash
+clasp login --status
+cat > .clasp.json <<'EOF'
+{"scriptId":"YOUR_SCRIPT_ID","rootDir":"."}
+EOF
+clasp push --dry-run
+```
+
+#### Common failures and resolutions
+
+| Symptom in CI logs | Likely cause | Resolution |
+| --- | --- | --- |
+| `401 Unauthorized`, invalid credentials, or expired token messages | `CLASPRC_JSON` is expired or revoked. | Regenerate `CLASPRC_JSON` with `clasp logout` and `clasp login`, then update the GitHub secret. |
+| `Script not found` or permission denied for the script | `SCRIPT_ID` is wrong, or the Google account in `CLASPRC_JSON` does not have access to that Apps Script project. | Confirm the Apps Script project ID and share the project with the clasp-authenticated Google account. |
+| `CLASPRC_JSON secret not configured - skipping clasp setup` | The secret is missing. | Add `CLASPRC_JSON` if you want remote Apps Script tests. Leave it unset for syntax-only CI. |
+| `SCRIPT_ID secret not configured - skipping clasp setup` | The target Apps Script project ID is missing. | Add the `SCRIPT_ID` repository secret. |
+| Missing `OPEN_AI_API_KEY` or `GEMINI_API_KEY` errors | API-key tests were enabled without required API-key secrets. | Add both API-key secrets or disable `enable-api-key-tests`. |
+| Missing Vertex AI configuration errors | Vertex AI tests were enabled without required Vertex AI values. | Add `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_LOCATION`, and `VERTEX_AI_SERVICE_ACCOUNT_JSON`, or disable `enable-vertex-ai-tests`. |
+| Apps Script OAuth scope errors after `clasp run` | The Apps Script project needs reauthorization after scopes changed. | Re-run local clasp authentication and ensure the Apps Script project has the manifest scopes in `appsscript.json`; regenerate `CLASPRC_JSON` if needed. |
+| API quota or permission errors from OpenAI, Gemini, or Vertex AI | External API credentials, linked GCP project, billing, API enablement, or quotas are not ready. | Verify the relevant API key/project/service account locally first, then re-run CI. |
 
 ## Usage
 
