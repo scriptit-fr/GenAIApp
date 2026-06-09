@@ -3,6 +3,11 @@ name: Test
 on:
   workflow_dispatch:
     inputs:
+      run_remote_tests:
+        description: "Run remote Apps Script tests against the configured SCRIPT_ID"
+        required: false
+        default: false
+        type: boolean
       enable-api-key-tests:
         description: "Run Apps Script tests that require OPEN_AI_API_KEY and GEMINI_API_KEY secrets"
         required: false
@@ -24,9 +29,9 @@ permissions:
   contents: read
 
 env:
-  ENABLE_API_KEY_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs['enable-api-key-tests'] || false }}
-  ENABLE_VERTEX_AI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs['enable-vertex-ai-tests'] || false }}
-  AUTH_TESTS_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && (inputs['enable-api-key-tests'] || inputs['enable-vertex-ai-tests']) || false }}
+  ENABLE_API_KEY_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-api-key-tests'] || false }}
+  ENABLE_VERTEX_AI_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && inputs['enable-vertex-ai-tests'] || false }}
+  AUTH_TESTS_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true' && (inputs['enable-api-key-tests'] || inputs['enable-vertex-ai-tests']) || false }}
   API_KEY_TEST_FUNCTIONS: ${{ vars.API_KEY_TEST_FUNCTIONS || 'testSimpleChatInstance' }}
   VERTEX_AI_TEST_FUNCTIONS: ${{ vars.VERTEX_AI_TEST_FUNCTIONS || 'testVertexAISimpleChat' }}
   VERTEX_AI_LOCATION: ${{ vars.VERTEX_AI_LOCATION || secrets.VERTEX_AI_LOCATION || 'global' }}
@@ -71,8 +76,12 @@ jobs:
 
   apps-script-tests:
     name: Apps Script remote tests
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_remote_tests == 'true'
     runs-on: ubuntu-latest
     needs: syntax-validation
+    concurrency:
+      group: ${{ github.repository }}-${{ github.workflow }}-apps-script-tests
+      cancel-in-progress: true
     outputs:
       clasp-available: ${{ steps.clasp-setup.outputs.available }}
       clasp-authenticated: ${{ steps.clasp-auth.outputs.authenticated }}
@@ -83,13 +92,11 @@ jobs:
       HAS_OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY != '' }}
       HAS_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
       HAS_VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID != '' }}
-      HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON != '' }}
       CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
       SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
       OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       VERTEX_AI_PROJECT_ID: ${{ secrets.VERTEX_AI_PROJECT_ID }}
-      VERTEX_AI_SERVICE_ACCOUNT_JSON: ${{ secrets.VERTEX_AI_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - name: Check out repository
@@ -106,7 +113,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for value in "$CLASPRC_JSON" "$SCRIPT_ID" "$OPEN_AI_API_KEY" "$GEMINI_API_KEY" "$VERTEX_AI_PROJECT_ID" "$VERTEX_AI_SERVICE_ACCOUNT_JSON"; do
+          for value in "$CLASPRC_JSON" "$SCRIPT_ID" "$OPEN_AI_API_KEY" "$GEMINI_API_KEY" "$VERTEX_AI_PROJECT_ID"; do
             if [ -n "$value" ]; then
               echo "::add-mask::$value"
             fi
@@ -146,9 +153,6 @@ jobs:
           fi
           if [ -z "$VERTEX_AI_LOCATION" ]; then
             missing+=("VERTEX_AI_LOCATION repository variable or secret")
-          fi
-          if [ "$HAS_VERTEX_AI_SERVICE_ACCOUNT_JSON" != "true" ]; then
-            missing+=("VERTEX_AI_SERVICE_ACCOUNT_JSON")
           fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -231,14 +235,33 @@ jobs:
         run: |
           echo "No auth tests requested and clasp is unavailable; skipping clasp-dependent remote Apps Script tests."
 
-      - name: Prepare remote test source
+      - name: Validate remote test configuration
         if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
         shell: bash
         run: .github/scripts/prepare-tests.sh
 
-      - name: Push source to Apps Script
+      - name: Push clean source to Apps Script
         if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
         run: clasp push --force
+
+      - name: Provision test script properties
+        if: env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          params="$(node -e '
+            const properties = {};
+            if (process.env.ENABLE_API_KEY_TESTS === "true") {
+              properties.OPEN_AI_API_KEY = process.env.OPEN_AI_API_KEY;
+              properties.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+            }
+            if (process.env.ENABLE_VERTEX_AI_TESTS === "true") {
+              properties.VERTEX_AI_PROJECT_ID = process.env.VERTEX_AI_PROJECT_ID;
+              properties.VERTEX_AI_LOCATION = process.env.VERTEX_AI_LOCATION;
+            }
+            process.stdout.write(JSON.stringify([properties]));
+          ')"
+          clasp run setCITestScriptProperties --params "$params"
 
       - name: Run API key Apps Script tests
         if: env.ENABLE_API_KEY_TESTS == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
@@ -271,3 +294,19 @@ jobs:
             echo "Running Vertex AI Apps Script test function: ${function_name}"
             clasp run "$function_name"
           done
+
+      - name: Clear test script properties
+        if: always() && env.AUTH_TESTS_REQUESTED == 'true' && steps.clasp-auth.outputs.authenticated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          params="$(node -e '
+            const propertyNames = [
+              "OPEN_AI_API_KEY",
+              "GEMINI_API_KEY",
+              "VERTEX_AI_PROJECT_ID",
+              "VERTEX_AI_LOCATION"
+            ];
+            process.stdout.write(JSON.stringify([propertyNames]));
+          ')"
+          clasp run clearCITestScriptProperties --params "$params"

@@ -3,6 +3,75 @@ const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-2.5-pro";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
+const CI_TEST_PROPERTY_NAMES = [
+  "OPEN_AI_API_KEY",
+  "GEMINI_API_KEY",
+  "VERTEX_AI_PROJECT_ID",
+  "VERTEX_AI_LOCATION"
+];
+
+function getRequiredTestScriptProperty(name) {
+  const value = PropertiesService.getScriptProperties().getProperty(name);
+  if (!value) {
+    throw new Error(`Missing required script property: ${name}`);
+  }
+  return value;
+}
+
+function setApiKeyAuthForTests() {
+  GenAIApp.setGeminiAPIKey(getRequiredTestScriptProperty("GEMINI_API_KEY"));
+  GenAIApp.setOpenAIAPIKey(getRequiredTestScriptProperty("OPEN_AI_API_KEY"));
+}
+
+function setOpenAIAuthForTests() {
+  GenAIApp.setOpenAIAPIKey(getRequiredTestScriptProperty("OPEN_AI_API_KEY"));
+}
+
+function setVertexAIAuthForTests() {
+  GenAIApp.setGeminiAuth(
+    getRequiredTestScriptProperty("VERTEX_AI_PROJECT_ID"),
+    getRequiredTestScriptProperty("VERTEX_AI_LOCATION")
+  );
+}
+
+function setCITestScriptProperties(properties) {
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    throw new Error("CI test properties must be provided as an object.");
+  }
+
+  const scriptProperties = {};
+  CI_TEST_PROPERTY_NAMES.forEach(name => {
+    if (Object.prototype.hasOwnProperty.call(properties, name) && properties[name]) {
+      scriptProperties[name] = String(properties[name]);
+    }
+  });
+
+  const propertyNames = Object.keys(scriptProperties);
+  if (propertyNames.length === 0) {
+    throw new Error("No recognized CI test properties were provided.");
+  }
+
+  const propertyStore = PropertiesService.getScriptProperties();
+  CI_TEST_PROPERTY_NAMES.forEach(name => propertyStore.deleteProperty(name));
+  propertyStore.setProperties(scriptProperties, false);
+  return propertyNames;
+}
+
+function clearCITestScriptProperties(propertyNames) {
+  if (!Array.isArray(propertyNames)) {
+    throw new Error("CI test property names must be provided as an array.");
+  }
+
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const clearedNames = [];
+  propertyNames.forEach(name => {
+    if (CI_TEST_PROPERTY_NAMES.indexOf(name) !== -1) {
+      scriptProperties.deleteProperty(name);
+      clearedNames.push(name);
+    }
+  });
+  return clearedNames;
+}
 
 // Run all tests
 function testAll() {
@@ -27,9 +96,7 @@ function testAll() {
 
 // Helper to set API keys and run tests across models
 function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
-  // Set API keys once per batch
-  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  setApiKeyAuthForTests();
 
   const models = [
     { name: GPT_MODEL, label: "GPT" },
@@ -53,6 +120,17 @@ function testSimpleChatInstance() {
       .addMessage("You're name is Tom, you're a Google Developper Expert and always willing to give useful tips. Always answer in a friendly manner, and include one joke at the end of your messages.", true)
       .addMessage("What are the best pratices to document a project?");
   }, { max_tokens: 1000 });
+}
+
+function testVertexAISimpleChat() {
+  setVertexAIAuthForTests();
+  const chat = GenAIApp.newChat();
+  chat.addMessage("Reply with exactly: Vertex AI test passed");
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 64 });
+  if (String(response).trim() !== "Vertex AI test passed") {
+    throw new Error(`Unexpected Vertex AI response: ${response}`);
+  }
+  console.log(`Vertex AI simple chat response:\n${response}`);
 }
 
 function testFunctionCalling() {
@@ -135,7 +213,7 @@ function testMaximumAPICalls() {
 
 
 function testInputTokenWarning() {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  setOpenAIAuthForTests();
 
   // Case 1: low threshold should log warning (manual log inspection).
   const lowThresholdChat = GenAIApp.newChat();
@@ -159,7 +237,7 @@ ${highThresholdResponse}`);
 }
 
 function testCodeInterpreterExcel(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  setOpenAIAuthForTests();
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
   const chat = GenAIApp.newChat();
   chat
@@ -172,7 +250,7 @@ function testCodeInterpreterExcel(driveFileId) {
 }
 
 function testCodeInterpreterPDF(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
+  setOpenAIAuthForTests();
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
   const chat = GenAIApp.newChat();
   chat
