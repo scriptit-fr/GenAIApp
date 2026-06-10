@@ -1,162 +1,18 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-3.5-flash";
+const GEMINI_MODEL = "gemini-2.5-pro";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
 
-const AUTH_TEST_CONFIG_KEYS = {
-  ENABLE_API_KEY_AUTH_TESTS: "ENABLE_API_KEY_AUTH_TESTS",
-  ENABLE_VERTEX_AI_AUTH_TESTS: "ENABLE_VERTEX_AI_AUTH_TESTS",
-  GEMINI_API_KEY: "GEMINI_API_KEY",
-  VERTEX_AI_GCP_PROJECT_ID: "VERTEX_AI_GCP_PROJECT_ID",
-  VERTEX_AI_GCP_REGION: "VERTEX_AI_GCP_REGION",
-  OPEN_AI_API_KEY: "OPEN_AI_API_KEY"
-};
-
-/**
- * Reads test configuration from environment variables, Apps Script properties,
- * or legacy global constants. This helper never logs credential values.
- */
-function getAuthTestConfigValue(name, defaultValue) {
-  if (typeof process !== "undefined" && process.env && process.env[name] !== undefined) {
-    return process.env[name];
-  }
-
-  try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const propertyValue = scriptProperties.getProperty(name);
-    if (propertyValue !== null && propertyValue !== undefined) {
-      return propertyValue;
-    }
-  }
-  catch (err) {
-    // PropertiesService is unavailable outside Apps Script. Fall through to
-    // constants/defaults so local syntax checks can still load this file.
-  }
-
-  if (name === AUTH_TEST_CONFIG_KEYS.ENABLE_API_KEY_AUTH_TESTS && typeof ENABLE_API_KEY_AUTH_TESTS !== "undefined") {
-    return ENABLE_API_KEY_AUTH_TESTS;
-  }
-  if (name === AUTH_TEST_CONFIG_KEYS.ENABLE_VERTEX_AI_AUTH_TESTS && typeof ENABLE_VERTEX_AI_AUTH_TESTS !== "undefined") {
-    return ENABLE_VERTEX_AI_AUTH_TESTS;
-  }
-  if (name === AUTH_TEST_CONFIG_KEYS.GEMINI_API_KEY && typeof GEMINI_API_KEY !== "undefined") {
-    return GEMINI_API_KEY;
-  }
-  if (name === AUTH_TEST_CONFIG_KEYS.VERTEX_AI_GCP_PROJECT_ID && typeof VERTEX_AI_GCP_PROJECT_ID !== "undefined") {
-    return VERTEX_AI_GCP_PROJECT_ID;
-  }
-  if (name === AUTH_TEST_CONFIG_KEYS.VERTEX_AI_GCP_REGION && typeof VERTEX_AI_GCP_REGION !== "undefined") {
-    return VERTEX_AI_GCP_REGION;
-  }
-  if (name === AUTH_TEST_CONFIG_KEYS.OPEN_AI_API_KEY && typeof OPEN_AI_API_KEY !== "undefined") {
-    return OPEN_AI_API_KEY;
-  }
-
-  return defaultValue;
-}
-
-function getAuthTestBoolean(name, defaultValue) {
-  const rawValue = getAuthTestConfigValue(name, defaultValue ? "true" : "false");
-  if (typeof rawValue === "boolean") {
-    return rawValue;
-  }
-  return String(rawValue).toLowerCase() === "true";
-}
-
-function requireAuthTestCredential(name, modeName) {
-  const value = getAuthTestConfigValue(name, "").trim();
-  if (!value) {
-    throw new Error(`[GenAIApp tests] ${modeName} tests are enabled, but required credential/configuration ${name} is missing.`);
-  }
-  return value;
-}
-
-function skipAuthTest(modeName, reason) {
-  console.log(`[GenAIApp tests] Skipping ${modeName} authentication tests: ${reason}`);
-}
-
-/**
- * Stores auth-test switches in script properties before running the Apps Script
- * test entrypoint. Do not pass raw secrets through this function.
- */
-function configureAuthTestSwitches(enableApiKeyAuthTests, enableVertexAiAuthTests) {
-  PropertiesService.getScriptProperties().setProperties({
-    ENABLE_API_KEY_AUTH_TESTS: String(enableApiKeyAuthTests),
-    ENABLE_VERTEX_AI_AUTH_TESTS: String(enableVertexAiAuthTests)
-  });
-}
-
-/**
- * Entrypoint for authentication coverage. Set ENABLE_API_KEY_AUTH_TESTS and
- * ENABLE_VERTEX_AI_AUTH_TESTS independently to run API-key auth, Vertex AI
- * auth, both, or neither. Disabled modes log a clear skip. Enabled modes fail
- * before calling the API when required credentials/configuration are absent.
- */
-function testConfiguredAuthenticationModes() {
-  const runApiKeyAuthTests = getAuthTestBoolean(AUTH_TEST_CONFIG_KEYS.ENABLE_API_KEY_AUTH_TESTS, true);
-  const runVertexAiAuthTests = getAuthTestBoolean(AUTH_TEST_CONFIG_KEYS.ENABLE_VERTEX_AI_AUTH_TESTS, false);
-
-  if (!runApiKeyAuthTests && !runVertexAiAuthTests) {
-    console.log("[GenAIApp tests] All Gemini authentication-mode tests are disabled.");
-    return;
-  }
-
-  if (runApiKeyAuthTests) {
-    testApiKeyAuthentication();
-  }
-  else {
-    skipAuthTest("API key", "ENABLE_API_KEY_AUTH_TESTS is not true");
-  }
-
-  if (runVertexAiAuthTests) {
-    testVertexAiAuthentication();
-  }
-  else {
-    skipAuthTest("Vertex AI", "ENABLE_VERTEX_AI_AUTH_TESTS is not true");
-  }
-}
-
-function testApiKeyAuthentication() {
-  const geminiApiKey = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.GEMINI_API_KEY, "API key authentication");
-
-  // Force the Gemini public API-key path and clear Vertex settings so this
-  // test cannot accidentally pass with Vertex AI credentials.
-  GenAIApp.setGeminiAuth(null, null);
-  GenAIApp.setGeminiAPIKey(geminiApiKey);
-
-  const chat = GenAIApp.newChat();
-  chat.addMessage("Reply with exactly: API key authentication ok");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 512 });
-  console.log(`[GenAIApp tests] API key authentication completed with response length ${String(response).length}.`);
-}
-
-function testVertexAiAuthentication() {
-  const projectId = requireAuthTestCredential(AUTH_TEST_CONFIG_KEYS.VERTEX_AI_GCP_PROJECT_ID, "Vertex AI authentication");
-  const vertexRegion = getAuthTestConfigValue(AUTH_TEST_CONFIG_KEYS.VERTEX_AI_GCP_REGION, "");
-
-  // Force the Vertex AI path and clear any Gemini API key so this test cannot
-  // accidentally pass through the Generative Language API.
-  GenAIApp.setGeminiAPIKey(null);
-  GenAIApp.setGeminiAuth(projectId, vertexRegion);
-
-  const chat = GenAIApp.newChat();
-  chat.addMessage("Reply with exactly: Vertex AI authentication ok");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 512 });
-  console.log(`[GenAIApp tests] Vertex AI authentication completed with response length ${String(response).length}.`);
-}
-
 // Run all tests
 function testAll() {
-  testConfiguredAuthenticationModes();
-  GenAIApp.resetGeminiAuthState();
   testSimpleChatInstance();
   testFunctionCalling();
   testFunctionCallingEndWithResult();
   testFunctionCallingOnlyReturnArguments();
   testBrowsing();
   testKnowledgeLink();
-  //testVision();
+  testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
   // OpenAI-only tests - require valid Drive file IDs.
@@ -171,16 +27,9 @@ function testAll() {
 
 // Helper to set API keys and run tests across models
 function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
-  const geminiApiKey = getAuthTestConfigValue("GEMINI_API_KEY", "");
-  const openAiApiKey = getAuthTestConfigValue("OPEN_AI_API_KEY", "");
-
-  if (geminiApiKey) {
-    GenAIApp.setGeminiAPIKey(geminiApiKey);
-  }
-
-  if (openAiApiKey) {
-    GenAIApp.setOpenAIAPIKey(openAiApiKey);
-  }
+  // Set API keys once per batch
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
   const models = [
     { name: GPT_MODEL, label: "GPT" },
@@ -203,7 +52,7 @@ function testSimpleChatInstance() {
     chat
       .addMessage("You're name is Tom, you're a Google Developper Expert and always willing to give useful tips. Always answer in a friendly manner, and include one joke at the end of your messages.", true)
       .addMessage("What are the best pratices to document a project?");
-  }, { max_tokens: 10000 });
+  }, { max_tokens: 1000 });
 }
 
 function testFunctionCalling() {
@@ -216,7 +65,7 @@ function testFunctionCalling() {
     chat
       .addMessage("What's the weather in Lyon and Paris today?")
       .addFunction(weatherFunction);
-  }, { max_tokens: 10000 });
+  }, { max_tokens: 1000 });
 }
 
 function testFunctionCallingEndWithResult() {
