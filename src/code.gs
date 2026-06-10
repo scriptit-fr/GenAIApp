@@ -34,11 +34,6 @@ const GenAIApp = (function () {
   const addedVectorStores = {};
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
-  
-  // Timeout for HTTP requests: Workspace accounts allow up to 30 minutes (1800s),
-  // but consumer accounts are limited to 6 minutes (360s). This value is configurable
-  // via Apps Script properties and should only be increased for Workspace accounts.
-  const TIMEOUT_SECONDS = parseInt(PropertiesService.getScriptProperties().getProperty('TIMEOUT_SECONDS') || '360');
 
   /**
    * @class
@@ -1831,7 +1826,7 @@ const GenAIApp = (function () {
       const options = {
         method: method.toLowerCase(),
         headers: headers,
-        timeoutSeconds: TIMEOUT_SECONDS,
+        timeoutSeconds: 30 * 60,
         muteHttpExceptions: true
       };
       if (payload !== null && payload !== undefined) {
