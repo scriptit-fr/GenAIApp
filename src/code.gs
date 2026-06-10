@@ -319,7 +319,8 @@ const GenAIApp = (function () {
         if (containerId) {
           this._codeInterpreterContainerId = containerId;
         }
-      };
+        return this;
+      };  
 
       /**
        * Includes the content of a web page in the prompt sent to openAI
