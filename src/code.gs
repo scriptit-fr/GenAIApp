@@ -770,20 +770,17 @@ const GenAIApp = (function () {
           }
 
           // When exporting Google Sheets/Docs/Presentations, _getBlobFromGoogleDrive returns
-          // an exported blob (PDF/DOCX/etc.). Use the blob's actual content type and filename
-          // to ensure metadata matches the exported content, not the original file type.
+          // an exported blob, which for Google Apps files is PDF. Use the blob's actual
+          // content type and ensure the filename extension matches the exported content.
           let mimeType = fileInfo.mimeType;
           let fileName = fileInfo.fileName;
           if (fileInfo.mimeType === 'application/vnd.google-apps.spreadsheet' ||
               fileInfo.mimeType === 'application/vnd.google-apps.document' ||
               fileInfo.mimeType === 'application/vnd.google-apps.presentation') {
             mimeType = fileInfo.blob.getContentType() || fileInfo.mimeType;
-            // Update file extension to match actual content type
-            const extension = mimeType.includes('pdf') ? '.pdf' :
-                             mimeType.includes('document') ? '.docx' :
-                             mimeType.includes('presentation') ? '.pptx' : '';
+            const extension = mimeType.includes('pdf') ? '.pdf' : '';
             if (extension) {
-              fileName = fileName.replace(/\.[^/.]+$/, extension);
+              fileName = fileName.replace(/(\.[^/.]+)?$/, extension);
             }
           }
 
