@@ -162,27 +162,59 @@ const GenAIApp = (function () {
       this.addFile = function (fileInput) {
         let fileInfo;
         let blobToBase64;
+        let sourceFileId = null;
+        let sourceBlob = null;
 
         if (typeof fileInput == 'string') {
           // assume the input is a Google Drive ID
-          fileInfo = this._getBlobFromGoogleDrive(fileInput);
-          blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
+          sourceFileId = fileInput;
+          const file = DriveApp.getFileById(fileInput);
+          fileInfo = {
+            mimeType: file.getMimeType(),
+            fileName: file.getName()
+          };
+          if (!_isSpreadsheetMimeType(fileInfo.mimeType)) {
+            fileInfo = this._getBlobFromGoogleDrive(fileInput);
+            blobToBase64 = Utilities.base64Encode(fileInfo.blob.getBytes());
+          }
         }
         else if (isBlobLike(fileInput)) {
           // the input is a Blob
-          const fileBytes = fileInput.getBytes();
-          const fileSize = fileBytes.length;
-          if (fileSize > MAX_FILE_SIZE) {
-            throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
-          }
-          blobToBase64 = Utilities.base64Encode(fileBytes);
+          sourceBlob = fileInput;
           fileInfo = {
             mimeType: fileInput.getContentType(),
             fileName: fileInput.getName()
           };
+          if (!_isSpreadsheetMimeType(fileInfo.mimeType)) {
+            const fileBytes = fileInput.getBytes();
+            const fileSize = fileBytes.length;
+            if (fileSize > MAX_FILE_SIZE) {
+              throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+            }
+            blobToBase64 = Utilities.base64Encode(fileBytes);
+          }
         }
         else {
           throw new Error('Invalid file input provided to addFile() method. Please provide a valid Google Drive file ID or a Blob.');
+        }
+
+        if (_isSpreadsheetMimeType(fileInfo.mimeType)) {
+          const lazySpreadsheetPart = {
+            _needsSpreadsheetConversion: true,
+            _sourceFileId: sourceFileId,
+            _sourceBlob: sourceBlob,
+            _mimeType: fileInfo.mimeType,
+            _fileName: fileInfo.fileName
+          };
+          messages.push({
+            role: "user",
+            content: [lazySpreadsheetPart]
+          });
+          contents.push({
+            role: 'user',
+            parts: [lazySpreadsheetPart]
+          });
+          return this;
         }
 
         // OpenAI
@@ -204,7 +236,6 @@ const GenAIApp = (function () {
           content: [contentObj]
         });
 
-        // Gemini
         contents.push({
           role: 'user',
           parts: [{
@@ -302,8 +333,10 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Enables OpenAI Code Interpreter support for this chat.
-       * @param {string} [containerId] - OPTIONAL - Explicit container ID to reuse.
+       * Enables code execution support for this chat.
+       * For OpenAI models, the optional containerId reuses an existing code interpreter container.
+       * For Gemini models, containerId is ignored because Gemini code execution is stateless and has no container concept.
+       * @param {string} [containerId] - OPTIONAL - Explicit OpenAI container ID to reuse. Ignored for Gemini models.
        * @returns {Chat} - The current Chat instance.
        * @example
        * const chat = GenAIApp.newChat()
@@ -322,8 +355,8 @@ const GenAIApp = (function () {
         }
         return this;
       };
-        
-       /** OPTIONAL
+
+      /** OPTIONAL
        * 
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
@@ -550,16 +583,23 @@ const GenAIApp = (function () {
               console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
-          this._generatedFiles = this._extractContainerFileCitations(responseMessage);
-          if (this._generatedFiles.length > 0) {
-            this._lastContainerId = this._generatedFiles[0].containerId;
-            const blob = this._downloadContainerFile(
-              this._generatedFiles[0].containerId,
-              this._generatedFiles[0].fileId,
-              this._generatedFiles[0].filename
-            );
-            const createdFile = DriveApp.createFile(blob);
-            this._lastGeneratedDriveFileUrl = createdFile.getUrl();
+          if (model.includes("gemini")) {
+            if (this._codeInterpreterEnabled) {
+              this._generatedFiles = this._generatedFiles.concat(this._extractGeminiInlineArtifacts(responseMessage));
+            }
+          }
+          else {
+            this._generatedFiles = this._extractContainerFileCitations(responseMessage);
+            if (this._generatedFiles.length > 0) {
+              this._lastContainerId = this._generatedFiles[0].containerId;
+              const blob = this._downloadContainerFile(
+                this._generatedFiles[0].containerId,
+                this._generatedFiles[0].fileId,
+                this._generatedFiles[0].filename
+              );
+              const createdFile = DriveApp.createFile(blob);
+              this._lastGeneratedDriveFileUrl = createdFile.getUrl();
+            }
           }
 
           // OpenAI Responses API returns top-level "id"
@@ -711,12 +751,60 @@ const GenAIApp = (function () {
 
         let systemInstructions = "";
         const userMessages = [];
+        const resolveOpenAIContentPart = (part) => {
+          if (!part?._needsSpreadsheetConversion) {
+            return part;
+          }
+
+          const fileInfo = part._sourceFileId
+            ? this._getBlobFromGoogleDrive(part._sourceFileId)
+            : {
+              blob: part._sourceBlob,
+              mimeType: part._mimeType,
+              fileName: part._fileName
+            };
+          const fileBytes = fileInfo.blob.getBytes();
+          const fileSize = fileBytes.length;
+          if (fileSize > MAX_FILE_SIZE) {
+            throw new Error(`File too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+          }
+
+          // When exporting Google Sheets/Docs/Presentations, _getBlobFromGoogleDrive returns
+          // an exported blob, which for Google Apps files is PDF. Use the blob's actual
+          // content type and ensure the filename extension matches the exported content.
+          let mimeType = fileInfo.mimeType;
+          let fileName = fileInfo.fileName;
+          if (fileInfo.mimeType === 'application/vnd.google-apps.spreadsheet' ||
+              fileInfo.mimeType === 'application/vnd.google-apps.document' ||
+              fileInfo.mimeType === 'application/vnd.google-apps.presentation') {
+            mimeType = fileInfo.blob.getContentType() || fileInfo.mimeType;
+            const extension = mimeType.includes('pdf') ? '.pdf' : '';
+            if (extension) {
+              fileName = fileName.replace(/(\.[^/.]+)?$/, extension);
+            }
+          }
+
+          return createOpenAIInputFileContent(
+            mimeType,
+            Utilities.base64Encode(fileBytes),
+            fileName
+          );
+        };
+
         for (const message of messages) {
           if (message.role === "system") {
             systemInstructions += message.content + "\n";
           }
           else {
-            userMessages.push(message);
+            if (Array.isArray(message.content)) {
+              userMessages.push({
+                ...message,
+                content: message.content.map(resolveOpenAIContentPart)
+              });
+            }
+            else {
+              userMessages.push(message);
+            }
           }
         }
         if (systemInstructions !== "") {
@@ -846,6 +934,64 @@ const GenAIApp = (function () {
         return Object.keys(citationsById).map(fileId => citationsById[fileId]);
       };
 
+      this._extractGeminiInlineArtifacts = function (responseMessage) {
+        const parts = responseMessage?.parts || [];
+        if (!Array.isArray(parts)) {
+          return [];
+        }
+
+        const inputInlineData = {};
+        const collectInputInlineData = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(collectInputInlineData);
+            return;
+          }
+          if (typeof node !== "object") return;
+
+          const inlineData = node.inlineData || node.inline_data;
+          if (inlineData?.data) {
+            inputInlineData[inlineData.data] = true;
+          }
+          Object.keys(node).forEach(key => collectInputInlineData(node[key]));
+        };
+        collectInputInlineData(contents);
+
+        const extensionByMimeType = {
+          "application/json": "json",
+          "application/pdf": "pdf",
+          "application/zip": "zip",
+          "image/gif": "gif",
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/svg+xml": "svg",
+          "text/csv": "csv",
+          "text/html": "html",
+          "text/plain": "txt"
+        };
+
+        const getExtension = (mimeType) => {
+          if (!mimeType) return "bin";
+          return extensionByMimeType[mimeType] || mimeType.split("/").pop().split(";")[0].replace(/^x-/, "") || "bin";
+        };
+
+        const artifacts = [];
+        parts.forEach(part => {
+          const inlineData = part?.inlineData || part?.inline_data;
+          if (!inlineData?.data || inputInlineData[inlineData.data]) {
+            return;
+          }
+          const mimeType = inlineData.mimeType || inlineData.mime_type || "application/octet-stream";
+          artifacts.push({
+            mimeType: mimeType,
+            data: inlineData.data,
+            filename: `artifact_${artifacts.length}.${getExtension(mimeType)}`
+          });
+        });
+
+        return artifacts;
+      };
+
       this._downloadContainerFile = function (containerId, fileId, filename) {
         const endpointUrl = `${apiBaseUrl}/v1/containers/${containerId}/files/${fileId}/content`;
         const response = _callGenAIApi(endpointUrl, null, "GET", true);
@@ -862,7 +1008,10 @@ const GenAIApp = (function () {
 
       /**
        * Returns generated files from the last run call.
-       * @returns {{containerId: string, fileId: string, filename: string}[]} Generated files metadata.
+       * The metadata structure is provider-specific: Gemini code execution artifacts are
+       * returned as {mimeType, data, filename}, while OpenAI code interpreter files are
+       * returned as {containerId, fileId, filename}.
+       * @returns {({mimeType: string, data: string, filename: string}|{containerId: string, fileId: string, filename: string})[]} Generated files metadata.
        */
       this.getGeneratedFiles = function () {
         return this._generatedFiles;
@@ -870,7 +1019,9 @@ const GenAIApp = (function () {
 
       /**
        * Downloads a generated file from the last run.
-       * @param {string|number} fileIdOrIndex - File ID or index from getGeneratedFiles().
+       * Gemini files are returned from in-memory base64 artifact data, while OpenAI files
+       * require an API call to download the file from the referenced code interpreter container.
+       * @param {string|number} fileIdOrIndex - File ID, filename, or index from getGeneratedFiles().
        * @returns {Blob} Downloaded file blob that can be stored with DriveApp.createFile(blob).
        * @example
        * const chat = GenAIApp.newChat()
@@ -890,19 +1041,31 @@ const GenAIApp = (function () {
         else if (typeof fileIdOrIndex === "string" && fileIdOrIndex.trim() === "") {
           targetFile = this._generatedFiles[0];
         }
-        if (typeof fileIdOrIndex === "number") {
+        else if (typeof fileIdOrIndex === "number") {
           targetFile = this._generatedFiles[fileIdOrIndex];
         }
         else if (typeof fileIdOrIndex === "string") {
-          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex);
+          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex || file.filename === fileIdOrIndex);
         }
         if (!targetFile) {
-          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID or index from getGeneratedFiles().");
+          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID, filename, or index from getGeneratedFiles().");
+        }
+        if (targetFile.data) {
+          const blob = Utilities.newBlob(Utilities.base64Decode(targetFile.data), targetFile.mimeType, targetFile.filename);
+          return blob;
         }
         return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
       };
 
+      /**
+       * Returns the OpenAI code interpreter container ID associated with generated files.
+       * Gemini code execution is stateless and has no container concept, so this returns null for Gemini models.
+       * @returns {string|null} OpenAI container ID, or null for Gemini models/no container.
+       */
       this.getContainerId = function () {
+        if (model.includes("gemini")) {
+          return null;
+        }
         if (this._lastContainerId) {
           return this._lastContainerId;
         }
@@ -922,8 +1085,65 @@ const GenAIApp = (function () {
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
+        // Process contents array to handle lazy spreadsheet conversion
+        const processedContents = contents.map(content => {
+          if (content.role === 'user' && content.parts) {
+            const contentParts = Array.isArray(content.parts)
+              ? content.parts
+              : [content.parts];
+
+            const processedParts = contentParts.map(part => {
+              if (part._needsSpreadsheetConversion) {
+                let csvResult;
+
+                if (part._sourceFileId && part._mimeType === 'application/vnd.google-apps.spreadsheet') {
+                  csvResult = _exportGoogleSheetsToCsv(part._sourceFileId);
+                } else {
+                  const sourceBlob = part._sourceBlob || (
+                    part._sourceFileId
+                      ? DriveApp.getFileById(part._sourceFileId).getBlob()
+                      : null
+                  );
+
+                  if (!sourceBlob) {
+                    throw new Error('[GenAIApp] - Spreadsheet conversion failed: missing source blob or source file ID.');
+                  }
+
+                  csvResult = _convertXlsxBlobToCsv(sourceBlob);
+                }
+
+                const csvWithMetadata = _formatSpreadsheetCsvForGemini(csvResult);
+
+                const csvByteLength = Utilities.newBlob(csvWithMetadata).getBytes().length;
+                const base64Size = Math.ceil(csvByteLength / 3) * 4;
+                const MAX_INLINE_UPLOAD_SIZE = 20 * 1024 * 1024;
+
+                if (base64Size > MAX_INLINE_UPLOAD_SIZE) {
+                  throw new Error(`[GenAIApp] - Spreadsheet CSV too large after conversion (${base64Size} bytes base64-encoded). Maximum allowed size for inline upload is ${MAX_INLINE_UPLOAD_SIZE} bytes.`);
+                }
+
+                return {
+                  inline_data: {
+                    mime_type: 'text/csv',
+                    data: Utilities.base64Encode(csvWithMetadata)
+                  }
+                };
+              }
+
+              return part;
+            });
+
+            return {
+              ...content,
+              parts: processedParts
+            };
+          }
+
+          return content;
+        });
+
         const payload = {
-          'contents': contents,
+          'contents': processedContents,
           'model': model,
           'generationConfig': {
             maxOutputTokens: max_tokens,
@@ -975,6 +1195,12 @@ const GenAIApp = (function () {
           });
         }
 
+        if (this._codeInterpreterEnabled) {
+          payload.tools.push({
+            code_execution: {}
+          });
+        }
+
         return payload;
       }
 
@@ -1007,6 +1233,9 @@ const GenAIApp = (function () {
           case 'image/jpeg':
           case 'image/gif':
           case 'image/webp':
+          case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+          case 'application/vnd.ms-excel':
+          case 'application/vnd.oasis.opendocument.spreadsheet':
             blob = file.getBlob();
             break;
 
@@ -1594,7 +1823,7 @@ const GenAIApp = (function () {
       const options = {
         method: method.toLowerCase(),
         headers: headers,
-        timeoutSeconds: 30 * 60, 
+        timeoutSeconds: 30 * 60,
         muteHttpExceptions: true
       };
       if (payload !== null && payload !== undefined) {
@@ -2053,6 +2282,23 @@ const GenAIApp = (function () {
     typeof x.getBytes === "function" &&
     typeof x.getContentType === "function";
 
+  /**
+   * Returns true when a MIME type identifies a spreadsheet file that can be
+   * converted to CSV for Gemini prompts.
+   *
+   * @private
+   * @param {string} mimeType - MIME type to inspect.
+   * @returns {boolean} Whether the MIME type is a supported spreadsheet.
+   */
+  function _isSpreadsheetMimeType(mimeType) {
+    return [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.google-apps.spreadsheet',
+      'application/vnd.ms-excel',
+      'application/vnd.oasis.opendocument.spreadsheet'
+    ].includes(mimeType);
+  }
+
   // OpenAI-only helper: creates a Responses API input_file content object.
   const createOpenAIInputFileContent = (mimeType, base64Data, filename) => ({
     type: "input_file",
@@ -2081,6 +2327,179 @@ const GenAIApp = (function () {
       blob.getName()
     );
   };
+
+  const MAX_SPREADSHEET_CELLS = 500000;
+
+  /**
+   * Converts an uploaded XLSX blob into CSV text by temporarily converting it to
+   * a native Google Sheets file.
+   *
+   * @private
+   * @param {Blob} blob - The XLSX blob to convert.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} Conversion result and metadata.
+   */
+  function _convertXlsxBlobToCsv(blob) {
+    if (!isBlobLike(blob)) {
+      throw new Error('[GenAIApp] - Invalid XLSX input. Please provide a valid Blob.');
+    }
+
+    if (typeof Drive === 'undefined') {
+      throw new Error('[GenAIApp] - Advanced Drive Service is required for XLSX to CSV conversion. Please enable it in your Apps Script project.');
+    }
+
+    const originalFilename = blob.getName() || 'spreadsheet.xlsx';
+    _assertBlobSizeWithinLimit(blob, originalFilename);
+
+    let convertedFileId;
+
+    try {
+      // Use Advanced Drive Service to perform XLSX -> Google Sheets conversion
+      const resource = {
+        name: originalFilename,
+        mimeType: MimeType.GOOGLE_SHEETS
+      };
+
+      const file = Drive.Files.create(resource, blob, {
+        convert: true
+      });
+
+      convertedFileId = file.id;
+
+      const spreadsheet = SpreadsheetApp.openById(convertedFileId);
+      return _spreadsheetToCsvResult(spreadsheet, originalFilename);
+    } finally {
+      if (convertedFileId && typeof Drive.Files.remove === 'function') {
+        Drive.Files.remove(convertedFileId);
+      }
+    }
+  }
+
+  /**
+   * Exports a native Google Sheets file to concatenated CSV text. Hidden and
+   * empty sheets are omitted.
+   *
+   * @private
+   * @param {string} fileId - The Google Sheets Drive file ID.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} Export result and metadata.
+   */
+  function _exportGoogleSheetsToCsv(fileId) {
+    const file = DriveApp.getFileById(fileId);
+    const fileSize = file.getSize();
+    if (fileSize > MAX_FILE_SIZE) {
+      throw new Error(`[GenAIApp] - Spreadsheet file too large (${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(fileId);
+    return _spreadsheetToCsvResult(spreadsheet, file.getName());
+  }
+
+  /**
+   * Converts a two-dimensional array to RFC 4180-compatible CSV text.
+   *
+   * @private
+   * @param {Array[]} dataArray - Two-dimensional row/cell array.
+   * @returns {string} CSV text.
+   */
+  function _arrayToCsv(dataArray) {
+    if (!dataArray || dataArray.length === 0) {
+      return '';
+    }
+
+    return dataArray.map(row => {
+      const cells = Array.isArray(row) ? row : [row];
+      return cells.map(cell => {
+        const value = cell === null || typeof cell === 'undefined' ? '' : String(cell);
+        const escapedValue = value.replace(/"/g, '""');
+        return /[",\r\n]/.test(value) ? `"${escapedValue}"` : escapedValue;
+      }).join(',');
+    }).join('\n');
+  }
+
+  /**
+   * Creates a concatenated CSV export from visible, non-empty spreadsheet sheets.
+   *
+   * @private
+   * @param {Spreadsheet} spreadsheet - The spreadsheet to export.
+   * @param {string} originalFilename - Source filename for metadata.
+   * @returns {{csvText: string, originalFilename: string, sheetNames: string[]}} CSV export and metadata.
+   */
+  function _spreadsheetToCsvResult(spreadsheet, originalFilename) {
+    const csvSections = [];
+    const sheetNames = [];
+    let totalCells = 0;
+
+    spreadsheet.getSheets().forEach(sheet => {
+      if (sheet.isSheetHidden()) {
+        return;
+      }
+
+      const lastRow = sheet.getLastRow();
+      const lastColumn = sheet.getLastColumn();
+      if (lastRow === 0 || lastColumn === 0) {
+        return;
+      }
+
+      totalCells += lastRow * lastColumn;
+      if (totalCells > MAX_SPREADSHEET_CELLS) {
+        throw new Error(`[GenAIApp] - Spreadsheet too large to convert (${totalCells} populated-range cells). Maximum allowed is ${MAX_SPREADSHEET_CELLS} cells.`);
+      }
+
+      const values = sheet.getDataRange().getDisplayValues();
+      if (_isEmptySheetData(values)) {
+        return;
+      }
+
+      sheetNames.push(sheet.getName());
+      csvSections.push(`--- Sheet: ${sheet.getName()} ---\n${_arrayToCsv(values)}`);
+    });
+
+    return {
+      csvText: csvSections.join('\n\n'),
+      originalFilename: originalFilename,
+      sheetNames: sheetNames
+    };
+  }
+
+  /**
+   * Formats converted spreadsheet CSV with a filename/sheet metadata preamble for Gemini.
+   *
+   * @private
+   * @param {{csvText: string, originalFilename: string, sheetNames: string[]}} csvResult - Spreadsheet CSV result.
+   * @returns {string} CSV text prefixed with spreadsheet metadata.
+   */
+  function _formatSpreadsheetCsvForGemini(csvResult) {
+    const sheetNames = csvResult.sheetNames && csvResult.sheetNames.length > 0
+      ? csvResult.sheetNames.join(', ')
+      : 'None';
+    return `[Spreadsheet: ${csvResult.originalFilename} | Sheets: ${sheetNames}]\n\n${csvResult.csvText}`;
+  }
+
+  /**
+   * Throws when a blob exceeds the shared maximum file size.
+   *
+   * @private
+   * @param {Blob} blob - Blob to check.
+   * @param {string} filename - Filename used in the error message.
+   */
+  function _assertBlobSizeWithinLimit(blob, filename) {
+    const fileSize = blob.getBytes().length;
+    if (fileSize > MAX_FILE_SIZE) {
+      throw new Error(`[GenAIApp] - Spreadsheet file too large (${filename}, ${fileSize} bytes). Maximum allowed size is ${MAX_FILE_SIZE} bytes.`);
+    }
+  }
+
+  /**
+   * Returns true when a sheet data array contains no non-empty values.
+   *
+   * @private
+   * @param {Array[]} values - Sheet values from getValues().
+   * @returns {boolean} Whether the sheet data is empty.
+   */
+  function _isEmptySheetData(values) {
+    return !values || values.length === 0 || values.every(row =>
+      !row || row.every(cell => cell === null || typeof cell === 'undefined' || cell === '')
+    );
+  }
 
   /**
    * Uploads a file to OpenAI and returns the file ID.

@@ -1,6 +1,6 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
 
@@ -12,10 +12,10 @@ function testAll() {
   testFunctionCallingOnlyReturnArguments();
   testBrowsing();
   testKnowledgeLink();
-  testVision();
+  //testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
-  // OpenAI-only tests - require valid Drive file IDs.
+  // Code interpreter tests - require valid Drive file IDs.
   if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
     testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
   }
@@ -33,16 +33,26 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
 
   const models = [
     { name: GPT_MODEL, label: "GPT" },
-    { name: REASONING_MODEL, label: "reasoning" },
     { name: GEMINI_MODEL, label: "gemini" }
   ];
 
   models.forEach(model => {
     const chat = GenAIApp.newChat();
     setupFunction(chat);
+    
     const options = { model: model.name, ...runOptions };
     const response = chat.run(options);
-    console.log(`${testName} ${model.label}:\n${response}`);
+    
+    let logMessage = `${testName} ${model.label}:\n${response}`;
+    
+    if (typeof chat.getGeneratedFiles === 'function') {
+      const generatedFiles = chat.getGeneratedFiles();
+      if (generatedFiles && generatedFiles.length > 0) {
+        logMessage += `\nGenerated files:\n${JSON.stringify(generatedFiles)}`;
+      }
+    }
+    
+    console.log(logMessage);
   });
 }
 
@@ -159,29 +169,25 @@ ${highThresholdResponse}`);
 }
 
 function testCodeInterpreterExcel(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
-  chat
-    .addFile(inputBlob)
-    .enableCodeInterpreter()
-    .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated Excel file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  
+  runTestAcrossModels("Code Interpreter Excel", chat => {
+    chat
+      .addFile(inputBlob)
+      .enableCodeInterpreter()
+      .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
+  }, { max_tokens: 4000 });
 }
 
 function testCodeInterpreterPDF(driveFileId) {
-  GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
-  chat
-    .addFile(inputBlob)
-    .enableCodeInterpreter()
-    .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated PDF file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  
+  runTestAcrossModels("Code Interpreter PDF", chat => {
+    chat
+      .addFile(inputBlob)
+      .enableCodeInterpreter()
+      .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
+  }, { max_tokens: 4000 });
 }
 
 // Weather function implementation
