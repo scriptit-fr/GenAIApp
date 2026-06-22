@@ -15,6 +15,9 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
+  testGeminiInteractionThreading();
+  testGeminiRetrieveLastInteractionId();
+  testGeminiFunctionCallingInteractionContinuation();
   // OpenAI-only tests - require valid Drive file IDs.
   if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
     testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
@@ -187,4 +190,65 @@ function testCodeInterpreterPDF(driveFileId) {
 // Weather function implementation
 function getWeather(cityName) {
   return `The weather in ${cityName} is 19°C today.`;
+}
+
+function testGeminiInteractionThreading() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+  const chat = GenAIApp.newChat();
+  chat.addMessage("Remember this keyword for the next turn: papaya.");
+  const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+  const interactionId = chat.retrieveLastInteractionId();
+  if (!interactionId) {
+    throw new Error("Gemini interaction ID was not captured after the first response.");
+  }
+  console.log(`Gemini first interaction id: ${interactionId}`);
+  chat.addMessage("What keyword did I ask you to remember?");
+  const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+  console.log(`Gemini threaded response:\n${secondResponse}`);
+}
+
+function testGeminiRetrieveLastInteractionId() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+  const chat = GenAIApp.newChat();
+  chat.addMessage("Reply with one short sentence about Apps Script.");
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 300 });
+  const interactionId = chat.retrieveLastInteractionId();
+  if (typeof interactionId !== "string" || interactionId.length === 0) {
+    throw new Error("retrieveLastInteractionId() did not return a valid Gemini interaction ID.");
+  }
+  console.log(`Gemini retrieveLastInteractionId response:\n${response}`);
+  console.log(`Gemini retrieved interaction id: ${interactionId}`);
+}
+
+function testGeminiFunctionCallingInteractionContinuation() {
+  GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
+  const weatherFunction = GenAIApp.newFunction()
+    .setName("getWeather")
+    .setDescription("To retrieve the weather in a city in °C")
+    .addParameter("cityName", "string", "The name of the city.");
+
+  const chat = GenAIApp.newChat();
+  chat
+    .addMessage("What's the weather in Paris? Use the available function, then answer normally.")
+    .addFunction(weatherFunction);
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 1000 });
+  const interactionId = chat.retrieveLastInteractionId();
+  if (!interactionId) {
+    throw new Error("Gemini interaction ID was not captured after function-call continuation.");
+  }
+  console.log(`Gemini function continuation response:\n${response}`);
+  console.log(`Gemini function continuation interaction id: ${interactionId}`);
+}
+
+function testGeminiVertexInteractionThreading() {
+  GenAIApp.setGeminiAuth(GCP_PROJECT_ID, REGION);
+  const chat = GenAIApp.newChat();
+  chat.addMessage("Reply with the word vertex and a one-sentence explanation of interactions.");
+  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+  const interactionId = chat.retrieveLastInteractionId();
+  if (!interactionId) {
+    throw new Error("Vertex Gemini interaction ID was not captured.");
+  }
+  console.log(`Vertex Gemini interaction response:\n${response}`);
+  console.log(`Vertex Gemini interaction id: ${interactionId}`);
 }
