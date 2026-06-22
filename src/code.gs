@@ -1743,25 +1743,25 @@ const GenAIApp = (function () {
   function _geminiContentsToInteractionInput(contents) {
     return (contents || []).map(content => {
       const parts = Array.isArray(content.parts) ? content.parts : [content.parts];
-      const item = {
-        role: content.role === "model" ? "assistant" : content.role,
+      const step = {
+        type: content.role === "model" ? "model_output" : "user_input",
         content: []
       };
       parts.forEach(part => {
         if (!part) return;
         if (part.text) {
-          item.content.push({ type: "text", text: part.text });
+          step.content.push({ type: "text", text: part.text });
         }
         else if (part.inline_data) {
-          item.content.push({
+          step.content.push({
             type: part.inline_data.mime_type?.startsWith("image/") ? "image" : "document",
             mime_type: part.inline_data.mime_type,
             data: part.inline_data.data
           });
         }
       });
-      return item;
-    }).filter(item => item.content.length > 0);
+      return step;
+    }).filter(step => step.content.length > 0);
   }
 
   function _extractGeminiResponseText(responseMessage) {
@@ -1871,7 +1871,10 @@ const GenAIApp = (function () {
         type: "function_result",
         call_id: functionCall.id,
         name: functionName,
-        result: functionResponse
+        result: [{
+          type: "text",
+          text: functionResponse
+        }]
       });
     });
 
@@ -1881,7 +1884,7 @@ const GenAIApp = (function () {
         parts: functionResults.map(result => ({
           functionResponse: {
             name: result.name,
-            response: { functionResponse: result.result }
+            response: { functionResponse: result.result?.[0]?.text ?? result.result }
           }
         }))
       });

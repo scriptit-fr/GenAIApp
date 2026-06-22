@@ -1,8 +1,37 @@
 const GPT_MODEL = "gpt-5.4";
 const REASONING_MODEL = "o4-mini";
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
+let TEST_MODEL_TARGETS = ["gpt", "thinking", "gemini"];
+
+/**
+ * Restrict cross-model tests to one or more model families: "gpt", "thinking", or "gemini".
+ * @param {string|string[]} targets - A model family label or list of labels.
+ */
+function setTestModelTargets(targets) {
+  TEST_MODEL_TARGETS = (Array.isArray(targets) ? targets : [targets])
+    .map(target => String(target).toLowerCase());
+}
+
+function testAllGpt() {
+  setTestModelTargets("gpt");
+  testAll();
+}
+
+function testAllThinking() {
+  setTestModelTargets("thinking");
+  testAll();
+}
+
+function testAllGemini() {
+  setTestModelTargets("gemini");
+  testAll();
+}
+
+function _shouldRunModelLabel(label) {
+  return TEST_MODEL_TARGETS.indexOf(String(label).toLowerCase()) !== -1;
+}
 
 // Run all tests
 function testAll() {
@@ -15,14 +44,16 @@ function testAll() {
   testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
-  testGeminiInteractionThreading();
-  testGeminiRetrieveLastInteractionId();
-  testGeminiFunctionCallingInteractionContinuation();
+  if (_shouldRunModelLabel("gemini")) {
+    testGeminiInteractionThreading();
+    testGeminiRetrieveLastInteractionId();
+    testGeminiFunctionCallingInteractionContinuation();
+  }
   // OpenAI-only tests - require valid Drive file IDs.
-  if (TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
+  if (_shouldRunModelLabel("gpt") && TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID) {
     testCodeInterpreterExcel(TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID);
   }
-  if (TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID) {
+  if (_shouldRunModelLabel("gpt") && TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID) {
     testCodeInterpreterPDF(TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID);
   }
 }
@@ -35,10 +66,10 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
   const models = [
-    { name: GPT_MODEL, label: "GPT" },
-    { name: REASONING_MODEL, label: "reasoning" },
+    { name: GPT_MODEL, label: "gpt" },
+    { name: REASONING_MODEL, label: "thinking" },
     { name: GEMINI_MODEL, label: "gemini" }
-  ];
+  ].filter(model => _shouldRunModelLabel(model.label));
 
   models.forEach(model => {
     const chat = GenAIApp.newChat();
@@ -138,6 +169,10 @@ function testMaximumAPICalls() {
 
 
 function testInputTokenWarning() {
+  if (!_shouldRunModelLabel("gpt")) {
+    console.log("Input token warning test skipped because GPT tests are disabled.");
+    return;
+  }
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
   // Case 1: low threshold should log warning (manual log inspection).
