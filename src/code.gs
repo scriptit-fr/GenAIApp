@@ -568,9 +568,10 @@ const GenAIApp = (function () {
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+            const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
             if (this._inputTokenWarningThreshold !== null
-              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
-              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
+              && inputTokens > this._inputTokenWarningThreshold) {
+              console.warn(`[GenAIApp] - Warning: input token usage (${inputTokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
           this._generatedFiles = this._extractContainerFileCitations(responseMessage);
@@ -948,8 +949,10 @@ const GenAIApp = (function () {
         const payload = {
           model: model,
           input: pending_gemini_input || _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
-          max_output_tokens: max_tokens,
-          temperature: temperature,
+          generation_config: {
+            max_output_tokens: max_tokens,
+            temperature: temperature
+          },
           tools: []
         };
         pending_gemini_input = null;
@@ -966,10 +969,12 @@ const GenAIApp = (function () {
 
         if (advancedParametersObject?.function_call) {
           payload.tool_choice = {
-            type: "function",
-            allowed_function_names: Array.isArray(advancedParametersObject.function_call)
-              ? advancedParametersObject.function_call
-              : [advancedParametersObject.function_call]
+            allowed_tools: {
+              mode: "any",
+              tools: Array.isArray(advancedParametersObject.function_call)
+                ? advancedParametersObject.function_call
+                : [advancedParametersObject.function_call]
+            }
           };
           delete advancedParametersObject.function_call;
         }
@@ -1745,11 +1750,11 @@ const GenAIApp = (function () {
       parts.forEach(part => {
         if (!part) return;
         if (part.text) {
-          item.content.push({ type: "input_text", text: part.text });
+          item.content.push({ type: "text", text: part.text });
         }
         else if (part.inline_data) {
           item.content.push({
-            type: "input_file",
+            type: part.inline_data.mime_type?.startsWith("image/") ? "image" : "document",
             mime_type: part.inline_data.mime_type,
             data: part.inline_data.data
           });
