@@ -3,6 +3,7 @@ const REASONING_MODEL = "o4-mini";
 const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";
+const TEST_MAX_TOKENS = 20000;
 let TEST_MODEL_TARGETS = ["gpt", "thinking", "gemini"];
 
 /**
@@ -95,7 +96,7 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}, validateR
     _runSingleTest(testName, model.label, () => {
       const chat = GenAIApp.newChat().disableLogs(true);
       setupFunction(chat);
-      const response = chat.run({ model: model.name, ...runOptions });
+      const response = chat.run({ model: model.name, ...runOptions, max_tokens: runOptions.max_tokens ?? TEST_MAX_TOKENS });
       if (!validateResponse(response, chat, model)) {
         throw new Error("Unexpected response");
       }
@@ -110,7 +111,7 @@ function testSimpleChatInstance() {
     chat
       .addMessage("You're name is Tom, you're a Google Developper Expert and always willing to give useful tips. Always answer in a friendly manner, and include one joke at the end of your messages.", true)
       .addMessage("What are the best pratices to document a project?");
-  }, { max_tokens: 1000 });
+  }, { max_tokens: TEST_MAX_TOKENS });
 }
 
 function testFunctionCalling() {
@@ -123,7 +124,7 @@ function testFunctionCalling() {
     chat
       .addMessage("What's the weather in Lyon and Paris today?")
       .addFunction(weatherFunction);
-  }, { max_tokens: 1000 });
+  }, { max_tokens: TEST_MAX_TOKENS });
 }
 
 function testFunctionCallingEndWithResult() {
@@ -160,7 +161,7 @@ function testBrowsing() {
     chat
       .addMessage("Find the latest news about Google Apps Script")
       .enableBrowsing(true);
-  }, { max_tokens: 10000 });
+  }, { max_tokens: TEST_MAX_TOKENS });
 }
 
 function testKnowledgeLink() {
@@ -192,7 +193,7 @@ function testInputTokenWarning() {
     chat
       .warnIfResponseTokenUsageAbove(1000000)
       .addMessage("In one sentence, explain what token usage means for an API call.");
-    const response = chat.run({ model: GPT_MODEL, max_tokens: 200 });
+    const response = chat.run({ model: GPT_MODEL, max_tokens: TEST_MAX_TOKENS });
     if (!_isNonEmptyResponse(response) || !chat._lastUsage) {
       throw new Error("Expected a response and usage information");
     }
@@ -209,7 +210,7 @@ function testCodeInterpreterExcel(driveFileId) {
     .enableCodeInterpreter()
     .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
   _runSingleTest("Code interpreter Excel", "gpt", () => {
-    const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+    const response = chat.run({ model: GPT_MODEL, max_tokens: TEST_MAX_TOKENS });
     if (!_isNonEmptyResponse(response) || chat.getGeneratedFiles().length === 0) {
       throw new Error("Expected a generated file");
     }
@@ -226,7 +227,7 @@ function testCodeInterpreterPDF(driveFileId) {
     .enableCodeInterpreter()
     .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
   _runSingleTest("Code interpreter PDF", "gpt", () => {
-    const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+    const response = chat.run({ model: GPT_MODEL, max_tokens: TEST_MAX_TOKENS });
     if (!_isNonEmptyResponse(response) || chat.getGeneratedFiles().length === 0) {
       throw new Error("Expected a generated file");
     }
@@ -244,13 +245,13 @@ function testGeminiInteractionThreading() {
   _runSingleTest("Gemini interaction threading", "gemini", () => {
     const chat = GenAIApp.newChat().disableLogs(true);
     chat.addMessage("Remember this keyword for the next turn: papaya.");
-    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     const interactionId = chat.retrieveLastInteractionId();
     if (!_isNonEmptyResponse(firstResponse) || !interactionId) {
       throw new Error("Expected first response and interaction ID");
     }
     chat.addMessage("What keyword did I ask you to remember?");
-    const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     if (!_isNonEmptyResponse(secondResponse)) {
       throw new Error("Expected threaded response");
     }
@@ -263,7 +264,7 @@ function testGeminiRetrieveLastInteractionId() {
   _runSingleTest("Gemini retrieve last interaction ID", "gemini", () => {
     const chat = GenAIApp.newChat().disableLogs(true);
     chat.addMessage("Reply with one short sentence about Apps Script.");
-    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 300 });
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     const interactionId = chat.retrieveLastInteractionId();
     if (!_isNonEmptyResponse(response) || typeof interactionId !== "string" || interactionId.length === 0) {
       throw new Error("Expected response and valid interaction ID");
@@ -284,7 +285,7 @@ function testGeminiFunctionCallingInteractionContinuation() {
     chat
       .addMessage("What's the weather in Paris? Use the available function, then answer normally.")
       .addFunction(weatherFunction);
-    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 1000 });
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     const interactionId = chat.retrieveLastInteractionId();
     if (!_isNonEmptyResponse(response) || !interactionId) {
       throw new Error("Expected function-call response and interaction ID");
@@ -298,7 +299,7 @@ function testGeminiVertexInteractionThreading() {
   _runSingleTest("Gemini Vertex interaction threading", "gemini", () => {
     const chat = GenAIApp.newChat().disableLogs(true);
     chat.addMessage("Reply with the word vertex and a one-sentence explanation of interactions.");
-    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     const interactionId = chat.retrieveLastInteractionId();
     if (!_isNonEmptyResponse(response) || !interactionId) {
       throw new Error("Expected Vertex response and interaction ID");
