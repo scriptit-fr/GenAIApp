@@ -65,7 +65,6 @@ const GenAIApp = (function () {
       let last_response_id = null;
       let previous_interaction_id;
       let last_gemini_interaction_id = null;
-      let pending_gemini_input = null;
       let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
@@ -457,7 +456,6 @@ const GenAIApp = (function () {
       this._toJson = function () {
         return {
           messages: messages,
-          contents: contents,
           tools: tools,
           model: model,
           temperature: temperature,
@@ -466,8 +464,7 @@ const GenAIApp = (function () {
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
-          numberOfAPICalls: numberOfAPICalls,
-          last_gemini_interaction_id: last_gemini_interaction_id
+          numberOfAPICalls: numberOfAPICalls
         };
       };
 
@@ -628,21 +625,19 @@ const GenAIApp = (function () {
           if (model.includes("gemini")) {
             const functionCalls = _extractGeminiFunctionCalls(responseMessage);
             if (functionCalls.length > 0) {
-              const geminiToolResult = _handleGeminiToolCalls(responseMessage, tools, contents);
-              contents = geminiToolResult.contents;
-              pending_gemini_input = geminiToolResult.input;
+              contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
-              if (geminiToolResult.endWithResult) {
+              if (contents._geminiEndWithResult) {
                 if (verbose) {
                   console.log("[GenAIApp] - Conversation stopped because end function has been called");
                 }
                 return "OK";
               }
-              else if (geminiToolResult.onlyReturnArguments) {
+              else if (contents._geminiOnlyReturnArguments !== undefined) {
                 if (verbose) {
                   console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                 }
-                return geminiToolResult.onlyReturnArguments;
+                return contents._geminiOnlyReturnArguments;
               }
             }
             else {
@@ -948,14 +943,13 @@ const GenAIApp = (function () {
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
           model: model,
-          input: pending_gemini_input || _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
+          input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
             max_output_tokens: max_tokens,
             temperature: temperature
           },
           tools: []
         };
-        pending_gemini_input = null;
 
         // Continue Gemini conversations using the Interactions API state handle instead of resending
         // the full previous contents array.
@@ -1741,27 +1735,36 @@ const GenAIApp = (function () {
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
   function _geminiContentsToInteractionInput(contents) {
-    return (contents || []).map(content => {
-      const parts = Array.isArray(content.parts) ? content.parts : [content.parts];
-      const step = {
+    return (contents || []).flatMap(content => {
+      const textStep = {
         type: content.role === "model" ? "model_output" : "user_input",
         content: []
       };
+      const resultSteps = [];
+      const parts = Array.isArray(content.parts) ? content.parts : [content.parts];
       parts.forEach(part => {
         if (!part) return;
         if (part.text) {
-          step.content.push({ type: "text", text: part.text });
+          textStep.content.push({ type: "text", text: part.text });
         }
         else if (part.inline_data) {
-          step.content.push({
+          textStep.content.push({
             type: part.inline_data.mime_type?.startsWith("image/") ? "image" : "document",
             mime_type: part.inline_data.mime_type,
             data: part.inline_data.data
           });
         }
+        else if (part.functionResponse) {
+          resultSteps.push({
+            type: "function_result",
+            call_id: part.functionResponse.call_id,
+            name: part.functionResponse.name,
+            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }]
+          });
+        }
       });
-      return step;
-    }).filter(step => step.content.length > 0);
+      return textStep.content.length > 0 ? [textStep, ...resultSteps] : resultSteps;
+    });
   }
 
   function _extractGeminiResponseText(responseMessage) {
@@ -1868,13 +1871,9 @@ const GenAIApp = (function () {
       }
 
       functionResults.push({
-        type: "function_result",
         call_id: functionCall.id,
         name: functionName,
-        result: [{
-          type: "text",
-          text: functionResponse
-        }]
+        response: { functionResponse }
       });
     });
 
@@ -1882,20 +1881,16 @@ const GenAIApp = (function () {
       contents.push({
         role: 'user',
         parts: functionResults.map(result => ({
-          functionResponse: {
-            name: result.name,
-            response: { functionResponse: result.result?.[0]?.text ?? result.result }
-          }
+          functionResponse: result
         }))
       });
     }
 
-    return {
-      contents: contents,
-      input: functionResults,
-      endWithResult: shouldEndWithResult,
-      onlyReturnArguments: onlyReturnArguments
-    };
+    contents._geminiEndWithResult = shouldEndWithResult;
+    if (onlyReturnArguments !== null) {
+      contents._geminiOnlyReturnArguments = onlyReturnArguments;
+    }
+    return contents;
   }
 
   /**
