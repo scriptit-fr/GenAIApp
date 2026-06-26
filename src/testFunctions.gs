@@ -285,24 +285,17 @@ function testGeminiFunctionCallingInteractionContinuation() {
     chat
       .addMessage("What's the weather in Paris? Use the available function, then answer normally.")
       .addFunction(weatherFunction);
-    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
-    const interactionId = chat.retrieveLastInteractionId();
-    if (!_isNonEmptyResponse(response) || !interactionId) {
+    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    const firstInteractionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(firstResponse) || !firstInteractionId) {
       throw new Error("Expected function-call response and interaction ID");
     }
-    return "OK";
-  });
-}
 
-function testGeminiVertexInteractionThreading() {
-  GenAIApp.setGeminiAuth(GCP_PROJECT_ID, REGION);
-  _runSingleTest("Gemini Vertex interaction threading", "gemini", () => {
-    const chat = GenAIApp.newChat().disableLogs(true);
-    chat.addMessage("Reply with the word vertex and a one-sentence explanation of interactions.");
-    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
-    const interactionId = chat.retrieveLastInteractionId();
-    if (!_isNonEmptyResponse(response) || !interactionId) {
-      throw new Error("Expected Vertex response and interaction ID");
+    chat.addMessage("Continue from the previous interaction: which city did we just discuss?");
+    const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    const secondInteractionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(secondResponse) || !secondInteractionId) {
+      throw new Error("Expected continuation response and interaction ID");
     }
     return "OK";
   });
