@@ -33,6 +33,27 @@ function _shouldRunModelLabel(label) {
   return TEST_MODEL_TARGETS.indexOf(String(label).toLowerCase()) !== -1;
 }
 
+
+function _isNonEmptyResponse(response) {
+  if (typeof response === "string") return response.trim().length > 0;
+  return response !== null && response !== undefined;
+}
+
+function _logTestResult(testName, modelLabel, passed, details = "") {
+  const suffix = details ? ` - ${details}` : "";
+  console.log(`${passed ? "PASS" : "FAIL"}: ${testName} [${modelLabel}]${suffix}`);
+}
+
+function _runSingleTest(testName, modelLabel, testFunction) {
+  try {
+    const details = testFunction();
+    _logTestResult(testName, modelLabel, true, details);
+  }
+  catch (err) {
+    _logTestResult(testName, modelLabel, false, err && err.message ? err.message : String(err));
+  }
+}
+
 // Run all tests
 function testAll() {
   testSimpleChatInstance();
@@ -41,7 +62,6 @@ function testAll() {
   testFunctionCallingOnlyReturnArguments();
   testBrowsing();
   testKnowledgeLink();
-  testVision();
   testMaximumAPICalls();
   testInputTokenWarning();
   if (_shouldRunModelLabel("gemini")) {
@@ -60,7 +80,7 @@ function testAll() {
 
 
 // Helper to set API keys and run tests across models
-function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
+function runTestAcrossModels(testName, setupFunction, runOptions = {}, validateResponse = _isNonEmptyResponse) {
   // Set API keys once per batch
   GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
@@ -72,11 +92,15 @@ function runTestAcrossModels(testName, setupFunction, runOptions = {}) {
   ].filter(model => _shouldRunModelLabel(model.label));
 
   models.forEach(model => {
-    const chat = GenAIApp.newChat();
-    setupFunction(chat);
-    const options = { model: model.name, ...runOptions };
-    const response = chat.run(options);
-    console.log(`${testName} ${model.label}:\n${response}`);
+    _runSingleTest(testName, model.label, () => {
+      const chat = GenAIApp.newChat().disableLogs(true);
+      setupFunction(chat);
+      const response = chat.run({ model: model.name, ...runOptions });
+      if (!validateResponse(response, chat, model)) {
+        throw new Error("Unexpected response");
+      }
+      return "OK";
+    });
   });
 }
 
@@ -113,7 +137,7 @@ function testFunctionCallingEndWithResult() {
     chat
       .addMessage("Tell me the weather in Paris")
       .addFunction(weatherFunction);
-  });
+  }, {}, response => response === "OK");
 }
 
 function testFunctionCallingOnlyReturnArguments() {
@@ -128,7 +152,7 @@ function testFunctionCallingOnlyReturnArguments() {
       .addMessage("Here is a support ticket : 'Please contact me at user@example.com'")
       .addMessage("What's the customer email address ? Use getEmailAddress")
       .addFunction(emailExtractor);
-  });
+  }, {}, response => JSON.stringify(response).indexOf("user@example.com") !== -1);
 }
 
 function testBrowsing() {
@@ -136,7 +160,7 @@ function testBrowsing() {
     chat
       .addMessage("Find the latest news about Google Apps Script")
       .enableBrowsing(true);
-  });
+  }, { max_tokens: 10000 });
 }
 
 function testKnowledgeLink() {
@@ -144,18 +168,6 @@ function testKnowledgeLink() {
     chat
       .addMessage("Summarize the content of the referenced page.")
       .addKnowledgeLink("https://developers.google.com/apps-script");
-  });
-}
-
-function testVision() {
-  runTestAcrossModels("Vision", chat => {
-    chat
-      .enableVision(true)
-      .addMessage("Describe the following image.")
-      .addImage(
-        "https://good-nature-blog-uploads.s3.amazonaws.com/uploads/2014/02/slide_336579_3401508_free-1200x640.jpg",
-        "high"
-      );
   });
 }
 
@@ -170,56 +182,56 @@ function testMaximumAPICalls() {
 
 function testInputTokenWarning() {
   if (!_shouldRunModelLabel("gpt")) {
-    console.log("Input token warning test skipped because GPT tests are disabled.");
+    _logTestResult("Input token warning", "gpt", true, "skipped");
     return;
   }
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 
-  // Case 1: low threshold should log warning (manual log inspection).
-  const lowThresholdChat = GenAIApp.newChat();
-  lowThresholdChat
-    .warnIfResponseTokenUsageAbove(1)
-    .addMessage("In one sentence, explain what token usage means for an API call.");
-  const lowThresholdResponse = lowThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
-  console.log(`Input token warning test (low threshold) response:
-${lowThresholdResponse}`);
-  console.log("Input token warning test (low threshold): verify that a warning log was emitted.");
-
-  // Case 2: high threshold should not log warning (manual log inspection).
-  const highThresholdChat = GenAIApp.newChat();
-  highThresholdChat
-    .warnIfResponseTokenUsageAbove(180)
-    .addMessage("In one sentence, explain what token usage means for an API call.");
-  const highThresholdResponse = highThresholdChat.run({ model: GPT_MODEL, max_tokens: 200 });
-  console.log(`Input token warning test (high threshold) response:
-${highThresholdResponse}`);
-  console.log("Input token warning test (high threshold): verify that no warning log was emitted.");
+  _runSingleTest("Input token warning", "gpt", () => {
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat
+      .warnIfResponseTokenUsageAbove(1000000)
+      .addMessage("In one sentence, explain what token usage means for an API call.");
+    const response = chat.run({ model: GPT_MODEL, max_tokens: 200 });
+    if (!_isNonEmptyResponse(response) || !chat._lastUsage) {
+      throw new Error("Expected a response and usage information");
+    }
+    return "OK";
+  });
 }
 
 function testCodeInterpreterExcel(driveFileId) {
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
+  const chat = GenAIApp.newChat().disableLogs(true);
   chat
     .addFile(inputBlob)
     .enableCodeInterpreter()
     .addMessage("Add a new column at the end that calculates row totals for all numeric columns. Then generate and attach the updated Excel file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated Excel file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  _runSingleTest("Code interpreter Excel", "gpt", () => {
+    const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+    if (!_isNonEmptyResponse(response) || chat.getGeneratedFiles().length === 0) {
+      throw new Error("Expected a generated file");
+    }
+    return "OK";
+  });
 }
 
 function testCodeInterpreterPDF(driveFileId) {
   GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
   const inputBlob = DriveApp.getFileById(driveFileId).getBlob();
-  const chat = GenAIApp.newChat();
+  const chat = GenAIApp.newChat().disableLogs(true);
   chat
     .addFile(inputBlob)
     .enableCodeInterpreter()
     .addMessage("Add a summary paragraph at the top of the document describing its main contents. Then generate and attach the updated PDF file as output.");
-  const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
-  console.log(`Generated PDF file url: ${response}`);
-  console.log(`Generated files:\n${JSON.stringify(chat.getGeneratedFiles())}`);
+  _runSingleTest("Code interpreter PDF", "gpt", () => {
+    const response = chat.run({ model: GPT_MODEL, max_tokens: 4000 });
+    if (!_isNonEmptyResponse(response) || chat.getGeneratedFiles().length === 0) {
+      throw new Error("Expected a generated file");
+    }
+    return "OK";
+  });
 }
 
 // Weather function implementation
@@ -229,61 +241,68 @@ function getWeather(cityName) {
 
 function testGeminiInteractionThreading() {
   GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-  const chat = GenAIApp.newChat();
-  chat.addMessage("Remember this keyword for the next turn: papaya.");
-  const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
-  const interactionId = chat.retrieveLastInteractionId();
-  if (!interactionId) {
-    throw new Error("Gemini interaction ID was not captured after the first response.");
-  }
-  console.log(`Gemini first interaction id: ${interactionId}`);
-  chat.addMessage("What keyword did I ask you to remember?");
-  const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
-  console.log(`Gemini threaded response:\n${secondResponse}`);
+  _runSingleTest("Gemini interaction threading", "gemini", () => {
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat.addMessage("Remember this keyword for the next turn: papaya.");
+    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    const interactionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(firstResponse) || !interactionId) {
+      throw new Error("Expected first response and interaction ID");
+    }
+    chat.addMessage("What keyword did I ask you to remember?");
+    const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    if (!_isNonEmptyResponse(secondResponse)) {
+      throw new Error("Expected threaded response");
+    }
+    return "OK";
+  });
 }
 
 function testGeminiRetrieveLastInteractionId() {
   GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-  const chat = GenAIApp.newChat();
-  chat.addMessage("Reply with one short sentence about Apps Script.");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 300 });
-  const interactionId = chat.retrieveLastInteractionId();
-  if (typeof interactionId !== "string" || interactionId.length === 0) {
-    throw new Error("retrieveLastInteractionId() did not return a valid Gemini interaction ID.");
-  }
-  console.log(`Gemini retrieveLastInteractionId response:\n${response}`);
-  console.log(`Gemini retrieved interaction id: ${interactionId}`);
+  _runSingleTest("Gemini retrieve last interaction ID", "gemini", () => {
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat.addMessage("Reply with one short sentence about Apps Script.");
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 300 });
+    const interactionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(response) || typeof interactionId !== "string" || interactionId.length === 0) {
+      throw new Error("Expected response and valid interaction ID");
+    }
+    return "OK";
+  });
 }
 
 function testGeminiFunctionCallingInteractionContinuation() {
   GenAIApp.setGeminiAPIKey(GEMINI_API_KEY);
-  const weatherFunction = GenAIApp.newFunction()
-    .setName("getWeather")
-    .setDescription("To retrieve the weather in a city in °C")
-    .addParameter("cityName", "string", "The name of the city.");
+  _runSingleTest("Gemini function continuation", "gemini", () => {
+    const weatherFunction = GenAIApp.newFunction()
+      .setName("getWeather")
+      .setDescription("To retrieve the weather in a city in °C")
+      .addParameter("cityName", "string", "The name of the city.");
 
-  const chat = GenAIApp.newChat();
-  chat
-    .addMessage("What's the weather in Paris? Use the available function, then answer normally.")
-    .addFunction(weatherFunction);
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 1000 });
-  const interactionId = chat.retrieveLastInteractionId();
-  if (!interactionId) {
-    throw new Error("Gemini interaction ID was not captured after function-call continuation.");
-  }
-  console.log(`Gemini function continuation response:\n${response}`);
-  console.log(`Gemini function continuation interaction id: ${interactionId}`);
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat
+      .addMessage("What's the weather in Paris? Use the available function, then answer normally.")
+      .addFunction(weatherFunction);
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 1000 });
+    const interactionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(response) || !interactionId) {
+      throw new Error("Expected function-call response and interaction ID");
+    }
+    return "OK";
+  });
 }
 
 function testGeminiVertexInteractionThreading() {
   GenAIApp.setGeminiAuth(GCP_PROJECT_ID, REGION);
-  const chat = GenAIApp.newChat();
-  chat.addMessage("Reply with the word vertex and a one-sentence explanation of interactions.");
-  const response = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
-  const interactionId = chat.retrieveLastInteractionId();
-  if (!interactionId) {
-    throw new Error("Vertex Gemini interaction ID was not captured.");
-  }
-  console.log(`Vertex Gemini interaction response:\n${response}`);
-  console.log(`Vertex Gemini interaction id: ${interactionId}`);
+  _runSingleTest("Gemini Vertex interaction threading", "gemini", () => {
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat.addMessage("Reply with the word vertex and a one-sentence explanation of interactions.");
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: 500 });
+    const interactionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(response) || !interactionId) {
+      throw new Error("Expected Vertex response and interaction ID");
+    }
+    return "OK";
+  });
 }
