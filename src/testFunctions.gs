@@ -30,6 +30,11 @@ function testAllGemini() {
   testAll();
 }
 
+function testAllModels() {
+  setTestModelTargets(["gpt", "thinking", "gemini"]);
+  testAll();
+}
+
 function _shouldRunModelLabel(label) {
   return TEST_MODEL_TARGETS.indexOf(String(label).toLowerCase()) !== -1;
 }
