@@ -464,7 +464,8 @@ const GenAIApp = (function () {
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
-          numberOfAPICalls: numberOfAPICalls
+          numberOfAPICalls: numberOfAPICalls,
+          last_gemini_interaction_id: last_gemini_interaction_id
         };
       };
 
