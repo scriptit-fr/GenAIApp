@@ -299,8 +299,11 @@ function testGeminiFunctionCallingInteractionContinuation() {
     chat.addMessage("Continue from the previous interaction: which city did we just discuss?");
     const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     const secondInteractionId = chat.retrieveLastInteractionId();
-    if (!_isNonEmptyResponse(secondResponse) || !secondInteractionId) {
+    if (!_isNonEmptyResponse(secondResponse) || !secondInteractionId || secondInteractionId === firstInteractionId) {
       throw new Error("Expected continuation response and interaction ID");
+    }
+    if (!/paris/i.test(secondResponse)) {
+      throw new Error("Gemini function-call continuation did not preserve context.");
     }
     return "OK";
   });
