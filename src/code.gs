@@ -1888,6 +1888,7 @@ const GenAIApp = (function () {
     }
 
     contents._geminiEndWithResult = shouldEndWithResult;
+    delete contents._geminiOnlyReturnArguments;
     if (onlyReturnArguments !== null) {
       contents._geminiOnlyReturnArguments = onlyReturnArguments;
     }
