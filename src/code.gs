@@ -63,6 +63,9 @@ const GenAIApp = (function () {
 
       let previous_response_id;
       let last_response_id = null;
+      let previous_interaction_id;
+      let last_gemini_interaction_id = null;
+      let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
@@ -367,6 +370,13 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Returns the last Gemini Interactions API interaction Id for this chat.
+       */
+      this.retrieveLastInteractionId = function () {
+        return last_gemini_interaction_id;
+      };
+
+      /**
        * Defines the input token threshold that should trigger a warning log.
        * @param {number} input_token_threshold - Input token threshold for warning.
        * @returns {Chat} - The current Chat instance.
@@ -385,6 +395,16 @@ const GenAIApp = (function () {
        */
       this.setPreviousResponseId = function (previousResponseId) {
         previous_response_id = previousResponseId;
+        return this;
+      };
+
+      /**
+       * Sets the previous Gemini Interactions API interaction Id used to continue a conversation.
+       * @param {string} previousInteractionId - The id of the previous Gemini interaction.
+       */
+      this.setPreviousInteractionId = function (previousInteractionId) {
+        previous_interaction_id = previousInteractionId;
+        last_gemini_interaction_id = previousInteractionId || last_gemini_interaction_id;
         return this;
       };
 
@@ -444,7 +464,8 @@ const GenAIApp = (function () {
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
-          numberOfAPICalls: numberOfAPICalls
+          numberOfAPICalls: numberOfAPICalls,
+          last_gemini_interaction_id: last_gemini_interaction_id
         };
       };
 
@@ -528,26 +549,27 @@ const GenAIApp = (function () {
             if (geminiKey) {
               // Public endpoint / Generative Language API
               // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/interactions`;
             }
             else {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
               if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/interactions`;
               }
               else {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/interactions`;
               }
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+            const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
             if (this._inputTokenWarningThreshold !== null
-              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
-              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
+              && inputTokens > this._inputTokenWarningThreshold) {
+              console.warn(`[GenAIApp] - Warning: input token usage (${inputTokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
           this._generatedFiles = this._extractContainerFileCitations(responseMessage);
@@ -562,9 +584,14 @@ const GenAIApp = (function () {
             this._lastGeneratedDriveFileUrl = createdFile.getUrl();
           }
 
-          // OpenAI Responses API returns top-level "id"
+          // OpenAI Responses API and Gemini Interactions API return a top-level "id".
           if (!model.includes("gemini")) {
             last_response_id = responseMessage?.id ?? null;
+          }
+          else {
+            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
+            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
+            last_gemini_content_count = contents.length;
           }
           numberOfAPICalls++;
         }
@@ -597,32 +624,26 @@ const GenAIApp = (function () {
         if (tools.length > 0) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
-            if (responseMessage?.parts?.some(p => p?.functionCall)) {
+            const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+            if (functionCalls.length > 0) {
               contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
-              if (contents[contents.length - 1].role == "model") {
-                if (contents[contents.length - 1].parts.text == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
+              if (contents._geminiEndWithResult) {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
                 }
-                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return contents[contents.length - 2].parts
-                    .find(p => p && p.functionCall)
-                    ?.functionCall.args;
+                return "OK";
+              }
+              else if (contents._geminiOnlyReturnArguments !== undefined) {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                 }
+                return contents._geminiOnlyReturnArguments;
               }
             }
             else {
               // if no function has been found, stop here
-              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-              return part?.text || null;
+              return _extractGeminiResponseText(responseMessage);
             }
           }
           else {
@@ -666,8 +687,7 @@ const GenAIApp = (function () {
         }
         else {
           if (model.includes("gemini")) {
-            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-            return part?.text || null;
+            return _extractGeminiResponseText(responseMessage);
           }
           else {
             if (this._lastGeneratedDriveFileUrl) {
@@ -923,31 +943,41 @@ const GenAIApp = (function () {
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
-          'contents': contents,
-          'model': model,
-          'generationConfig': {
-            maxOutputTokens: max_tokens,
-            temperature: temperature,
-          },
-          'tool_config': {
-            function_calling_config: {
-              mode: "AUTO"
-            },
-            includeServerSideToolInvocations: tool_combination_enabled
+          model: model,
+          input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
+          generation_config: {
+            max_output_tokens: max_tokens,
+            temperature: temperature
           },
           tools: []
         };
 
+        // Continue Gemini conversations using the Interactions API state handle instead of resending
+        // the full previous contents array.
+        if (previous_interaction_id) {
+          payload.previous_interaction_id = previous_interaction_id;
+        }
+
+        if (tool_combination_enabled) {
+          payload.include_server_side_tool_invocations = true;
+        }
+
         if (advancedParametersObject?.function_call) {
-          payload.tool_config.function_calling_config.mode = "ANY";
-          payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
+          payload.tool_choice = {
+            allowed_tools: {
+              mode: "any",
+              tools: Array.isArray(advancedParametersObject.function_call)
+                ? advancedParametersObject.function_call
+                : [advancedParametersObject.function_call]
+            }
+          };
           delete advancedParametersObject.function_call;
         }
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          const payloadTools = Object.keys(tools).map(t => {
-            const toolFunction = tools[t].function._toJson();
+          payload.tools = tools.map(t => {
+            const toolFunction = t.function._toJson();
 
             const parameters = toolFunction.parameters;
             if (parameters?.type) {
@@ -955,23 +985,20 @@ const GenAIApp = (function () {
             }
 
             return {
+              type: "function",
               name: toolFunction.name,
               description: toolFunction.description,
               parameters: toolFunction.parameters
             };
           });
-
-          payload.tools = [{
-            functionDeclarations: payloadTools
-          }];
         }
 
         if (browsing) {
           payload.tools.push({
-            url_context: {}
+            type: "url_context"
           });
           payload.tools.push({
-            google_search: {}
+            type: "google_search"
           });
         }
 
@@ -1629,9 +1656,11 @@ const GenAIApp = (function () {
         // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
-          const firstCandidate = parsedResponse.candidates?.[0];
-          responseMessage = firstCandidate?.content || null;
-          finish_reason = firstCandidate?.finishReason || null;
+          responseMessage = parsedResponse;
+          finish_reason = parsedResponse.status
+            || parsedResponse.finishReason
+            || parsedResponse.finish_reason
+            || (_extractGeminiFunctionCalls(parsedResponse).length > 0 ? "tool_calls" : "completed");
         }
         else {
           responseMessage = parsedResponse;
@@ -1706,47 +1735,128 @@ const GenAIApp = (function () {
    * @param {Array} contents - Array representing the conversational content, updated with each tool call and its result.
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
+  function _geminiContentsToInteractionInput(contents) {
+    return (contents || []).flatMap(content => {
+      const textStep = {
+        type: content.role === "model" ? "model_output" : "user_input",
+        content: []
+      };
+      const resultSteps = [];
+      const parts = Array.isArray(content.parts) ? content.parts : [content.parts];
+      parts.forEach(part => {
+        if (!part) return;
+        if (part.text) {
+          textStep.content.push({ type: "text", text: part.text });
+        }
+        else if (part.inline_data) {
+          textStep.content.push({
+            type: part.inline_data.mime_type?.startsWith("image/") ? "image" : "document",
+            mime_type: part.inline_data.mime_type,
+            data: part.inline_data.data
+          });
+        }
+        else if (part.functionResponse) {
+          resultSteps.push({
+            type: "function_result",
+            call_id: part.functionResponse.call_id,
+            name: part.functionResponse.name,
+            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }]
+          });
+        }
+      });
+      return textStep.content.length > 0 ? [textStep, ...resultSteps] : resultSteps;
+    });
+  }
+
+  function _extractGeminiResponseText(responseMessage) {
+    const steps = responseMessage?.steps || [];
+    const texts = [];
+    steps.forEach(step => {
+      if (step?.type !== "model_output") return;
+      const content = Array.isArray(step.content) ? step.content : [step.content];
+      content.forEach(item => {
+        if (!item) return;
+        if (typeof item === "string") texts.push(item);
+        else if (item.text) texts.push(item.text);
+        else if (item.type === "text" && item.content) texts.push(item.content);
+        else if (item.type === "output_text" && item.text) texts.push(item.text);
+      });
+      if (step.text) texts.push(step.text);
+      if (step.output_text) texts.push(step.output_text);
+    });
+    if (texts.length > 0) return texts.join("\n");
+
+    // Backward-compatible fallback for legacy content-shaped responses.
+    const parts = responseMessage?.parts || [];
+    const part = parts.find(p => !p.thought && p.text);
+    return part?.text || responseMessage?.output_text || null;
+  }
+
+  function _extractGeminiFunctionCalls(responseMessage) {
+    const calls = [];
+    const steps = responseMessage?.steps || [];
+    steps.forEach(step => {
+      if (step?.type !== "function_call") return;
+      calls.push({
+        id: step.id || step.call_id || step.function_call_id,
+        name: step.name || step.function?.name || step.functionCall?.name,
+        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {}
+      });
+    });
+    if (calls.length > 0) return calls;
+
+    // Backward-compatible fallback for legacy content-shaped responses.
+    const parts = responseMessage?.parts || [];
+    parts.forEach(part => {
+      if (part?.functionCall?.name) {
+        calls.push({
+          id: part.functionCall.id,
+          name: part.functionCall.name,
+          args: part.functionCall.args || {}
+        });
+      }
+    });
+    return calls;
+  }
+
+  /**
+   * Processes tool calls from a Gemini Interactions API response message.
+   *
+   * @private
+   * @param {Object} responseMessage - The response message from Gemini containing tool-call steps.
+   * @param {Array} tools - List of available tools, each with metadata including function names and argument requirements.
+   * @param {Array} contents - Array representing the conversational content, updated for backward compatibility.
+   * @returns {Object} - Tool continuation input and state flags for the Chat run loop.
+   */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
-    // Append function call to contents
-    // The thought signature is also sent back
-    // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#thinking
-    // Note: thoughtSignature seems to be only included in Generative Language API, not Vertex AI API
-    contents.push(responseMessage);
-
-    const parts = (responseMessage && responseMessage.parts) || [];
-    const responseParts = [];
+    const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+    const functionResults = [];
     let shouldEndWithResult = false;
+    let onlyReturnArguments = null;
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i] || {};
-      if (!part.functionCall || !part.functionCall.name) continue;
-
-      const functionName = part.functionCall.name;
-      const functionArgs = part.functionCall.args;
+    functionCalls.forEach(functionCall => {
+      const functionName = functionCall.name;
+      const functionArgs = functionCall.args || {};
+      if (!functionName) return;
 
       let argsOrder = [];
       let endWithResult = false;
-      let onlyReturnArguments = false;
+      let onlyArgs = false;
 
       for (const t in tools) {
         const currentFunction = tools[t].function._toJson();
         if (currentFunction.name == functionName) {
-          argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
+          argsOrder = currentFunction.argumentsInRightOrder;
           endWithResult = currentFunction.endingFunction;
-          onlyReturnArguments = currentFunction.onlyArgs;
+          onlyArgs = currentFunction.onlyArgs;
           break;
         }
       }
 
       // No actual call to the function
-      if (onlyReturnArguments) {
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "onlyReturnArguments"
-          }
-        });
-        return contents;
+      if (onlyArgs) {
+        onlyReturnArguments = functionArgs;
+        return;
       }
 
       if (endWithResult) {
@@ -1758,42 +1868,30 @@ const GenAIApp = (function () {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
       }
       if (typeof functionResponse != "string") {
-        if (typeof functionResponse == "object") {
-          functionResponse = JSON.stringify(functionResponse);
-        }
-        else {
-          functionResponse = String(functionResponse);
-        }
+        functionResponse = typeof functionResponse == "object" ? JSON.stringify(functionResponse) : String(functionResponse);
       }
 
-      // Append result of the function execution to contents
-      // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
-      responseParts.push({
-        functionResponse: {
-          name: functionName,
-          response: { functionResponse }
-        }
+      functionResults.push({
+        call_id: functionCall.id,
+        name: functionName,
+        response: { functionResponse }
       });
-    }
+    });
 
-    // Append all function results in a single turn
-    if (responseParts.length > 0) {
+    if (functionResults.length > 0) {
       contents.push({
         role: 'user',
-        parts: responseParts
+        parts: functionResults.map(result => ({
+          functionResponse: result
+        }))
       });
     }
 
-    if (shouldEndWithResult) {
-      // User defined that if this function has been called, we do not call back the AI endpoint.
-      contents.push({
-        "role": "model",
-        "parts": {
-          text: "endWithResult"
-        }
-      });
+    contents._geminiEndWithResult = shouldEndWithResult;
+    delete contents._geminiOnlyReturnArguments;
+    if (onlyReturnArguments !== null) {
+      contents._geminiOnlyReturnArguments = onlyReturnArguments;
     }
-
     return contents;
   }
 
