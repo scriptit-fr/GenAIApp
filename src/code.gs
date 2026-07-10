@@ -963,7 +963,10 @@ const GenAIApp = (function () {
         }
 
         if (advancedParametersObject?.function_call) {
-          payload.tool_choice = {
+          // The Gemini Interactions API expects forced tool selection under
+          // generation_config.tool_choice. Sending tool_choice at the top level
+          // is rejected as an unknown parameter.
+          payload.generation_config.tool_choice = {
             allowed_tools: {
               mode: "any",
               tools: Array.isArray(advancedParametersObject.function_call)
