@@ -505,7 +505,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
+        if ((model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
           console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
@@ -716,7 +716,7 @@ const GenAIApp = (function () {
           parallel_tool_calls: true,
           tools: []
         };
-        if (model.startsWith('o') || model.startsWith("gpt-5")) {
+        if (model.startsWith("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
