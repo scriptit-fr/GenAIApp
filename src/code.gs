@@ -313,7 +313,7 @@ const GenAIApp = (function () {
        *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
        *   .enableCodeInterpreter()
        *   .addMessage("Process this file and generate an updated version.");
-       * chat.run({ model: "gpt-5.6-terra" });
+       * chat.run();
        * const generatedFiles = chat.getGeneratedFiles();
        * const blob = chat.downloadGeneratedFile(0);
        * DriveApp.createFile(blob);
@@ -475,7 +475,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3-flash-preview" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
+       * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
@@ -897,7 +897,7 @@ const GenAIApp = (function () {
        *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
        *   .enableCodeInterpreter()
        *   .addMessage("Process this file and generate an updated version.");
-       * chat.run({ model: "gpt-5.6-terra" });
+       * chat.run();
        * const files = chat.getGeneratedFiles();
        * const blob = chat.downloadGeneratedFile(files[0].fileId);
        * DriveApp.createFile(blob);

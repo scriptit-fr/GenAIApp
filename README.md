@@ -248,13 +248,9 @@ let response = chat.run({
 
 console.log(response);
 ```
-The library supports the following models:
-1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
+The library supports the following models (this list is not exhaustive):
+1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.5-flash"
 2. OpenAI: "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
-
-⚠️ **Warning:** the "function_call" advanced parameter is supported by:
-  - OpenAI models (including GPT-5.6 Sol, Terra, and Luna)
-  - Gemini 2.5 variants (gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-native-audio)
 
   The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 ⚠️ **Warning:** The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
