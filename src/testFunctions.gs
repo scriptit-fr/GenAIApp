@@ -1,5 +1,5 @@
-const GPT_MODEL = "gpt-5.4";
-const REASONING_MODEL = "o4-mini";
+const GPT_MODEL = "gpt-5.6-terra";
+const REASONING_MODEL = "gpt-5.6-sol";
 const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";

@@ -1,15 +1,15 @@
 /*
  GenAIApp
  https://github.com/scriptit-fr/GenAIApp
- 
+
  Copyright (c) 2024 Guillemine Allavena - Romain Vialard
- 
+
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
- 
+
  http://www.apache.org/licenses/LICENSE-2.0
- 
+
  Unless required by applicable law or agreed to in writing, software
  distributed under the License is distributed on an "AS IS" BASIS,
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -45,7 +45,7 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
-      let model = "gpt-5.2"; // default 
+      let model = "gpt-5.6-terra"; // default
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
@@ -81,7 +81,7 @@ const GenAIApp = (function () {
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
-       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user. 
+       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user.
        * @returns {Chat} - The current Chat instance.
        */
       this.addMessage = function (messageContent, system) {
@@ -222,7 +222,7 @@ const GenAIApp = (function () {
 
       /**
        * Adds an item (key/value pair) to the metadata that will be passed to the OpenAI API.
-       * 
+       *
        * @param {string} key - The key of the object that should be added.
        * @param {string} value - The value of the object that should be added.
        */
@@ -288,10 +288,10 @@ const GenAIApp = (function () {
 
       /**
        * OPTIONAL
-       * 
+       *
        * Allow openAI to browse the web.
        * @param {true} scope - set to true to enable full browsing
-       * @param {string} [url] - A specific site you want to restrict the search on . 
+       * @param {string} [url] - A specific site you want to restrict the search on .
        * @returns {Chat} - The current Chat instance.
        */
       this.enableBrowsing = function (scope, url) {
@@ -313,7 +313,7 @@ const GenAIApp = (function () {
        *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
        *   .enableCodeInterpreter()
        *   .addMessage("Process this file and generate an updated version.");
-       * chat.run({ model: "gpt-5.4" });
+       * chat.run();
        * const generatedFiles = chat.getGeneratedFiles();
        * const blob = chat.downloadGeneratedFile(0);
        * DriveApp.createFile(blob);
@@ -325,9 +325,9 @@ const GenAIApp = (function () {
         }
         return this;
       };
-        
+
        /** OPTIONAL
-       * 
+       *
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
        * @returns {Chat} - The current Chat instance.
@@ -355,7 +355,7 @@ const GenAIApp = (function () {
       /**
        * If you want to limit the number of calls to the OpenAI API
        * A good way to avoid infinity loops and manage your budget.
-       * @param {number} maxAPICalls - 
+       * @param {number} maxAPICalls -
        */
       this.setMaximumAPICalls = function (maxAPICalls) {
         maximumAPICalls = maxAPICalls;
@@ -431,7 +431,7 @@ const GenAIApp = (function () {
 
       /**
        * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
-       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs 
+       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs
        */
       this.addVectorStores = function (vectorStoreIds) {
         const ids = vectorStoreIds.split(',').map(id => id.trim());
@@ -475,12 +475,12 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3-flash-preview" | "gemini-3.5-flash" | "gpt-5.4" | "gpt-5.5" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
-       * @returns {object} - the last message of the chat 
+       * @returns {object} - the last message of the chat
        */
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
@@ -699,13 +699,13 @@ const GenAIApp = (function () {
       }
 
       /**
-       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
-       * tool-specific configurations for browsing, image description, and assistant functionalities. 
-       * Configures tool choices based on recent interactions, message content, and options in 
+       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and
+       * tool-specific configurations for browsing, image description, and assistant functionalities.
+       * Configures tool choices based on recent interactions, message content, and options in
        * `advancedParametersObject`.
        *
        * @private
-       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
+       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections
        *                     for OpenAI's API.
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
@@ -897,7 +897,7 @@ const GenAIApp = (function () {
        *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
        *   .enableCodeInterpreter()
        *   .addMessage("Process this file and generate an updated version.");
-       * chat.run({ model: "gpt-5.4" });
+       * chat.run();
        * const files = chat.getGeneratedFiles();
        * const blob = chat.downloadGeneratedFile(files[0].fileId);
        * DriveApp.createFile(blob);
@@ -930,14 +930,14 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
-       * and tool settings based on advanced options and feature flags such as browsing. 
+       * Builds and returns a payload for a Gemini API call, configuring content, model parameters,
+       * and tool settings based on advanced options and feature flags such as browsing.
        * Adapts the payload for specific function calls and tools.
        *
        * @private
-       * @param {Object} advancedParametersObject - An object with optional advanced parameters, 
+       * @param {Object} advancedParametersObject - An object with optional advanced parameters,
        *                                            such as function call preferences.
-       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
+       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings,
        *                     generation configuration, and available tools.
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
@@ -1146,8 +1146,8 @@ const GenAIApp = (function () {
 
       /**
        * Initializes a new vector store object from an existing Open AI vector store id. This allows a user to interact with an existing vector store.
-       * 
-       * @param {string} vectorStoreId - The Open AI API vector store id. 
+       *
+       * @param {string} vectorStoreId - The Open AI API vector store id.
        */
       this.initializeFromId = function (vectorStoreId) {
         try {
@@ -1495,8 +1495,8 @@ const GenAIApp = (function () {
       /**
        * OPTIONAL
        * If enabled, the conversation with the chat will automatically end when this function is called.
-       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly. 
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
+       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly.
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
        * @returns {FunctionObject} - The current Function instance.
        */
       this.endWithResult = function (bool) {
@@ -1554,7 +1554,7 @@ const GenAIApp = (function () {
        * OPTIONAL
        * If enabled, the conversation will automatically end when this function is called and the chat will return the arguments in a stringified JSON object.
        * Default : false
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
        * @returns {FunctionObject} - The current Function instance.
        */
       this.onlyReturnArguments = function (bool) {
@@ -1624,7 +1624,7 @@ const GenAIApp = (function () {
       const options = {
         method: method.toLowerCase(),
         headers: headers,
-        timeoutSeconds: 30 * 60, 
+        timeoutSeconds: 30 * 60,
         muteHttpExceptions: true
       };
       if (payload !== null && payload !== undefined) {
@@ -1728,7 +1728,7 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling, 
+   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling,
    * and special actions for web search and URL fetch calls. It dynamically builds a conversation flow and manages the end
    * condition based on tool specifications.
    *
@@ -1900,7 +1900,7 @@ const GenAIApp = (function () {
 
   /**
    * Processes OpenAI tool calls from a response message, handling function executions, argument ordering, and
-   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with 
+   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
@@ -1989,12 +1989,12 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          // Reset the previous messages, 
+          // Reset the previous messages,
           // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
           // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
           // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
           if (!messages.every(msg => msg.type === "function_call_output" || msg.role === "system")) {
-            // Reset only if it contains other messages than function_call_output 
+            // Reset only if it contains other messages than function_call_output
             // to allow for parallel function calling
             // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
             // Preserve only system messages
@@ -2016,7 +2016,7 @@ const GenAIApp = (function () {
    * Extracts assistant text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
    * Falls back to the last available assistant message text when no explicit final answer exists.
-   * 
+   *
    * Logs a warning when compaction was used for the response.
    *
    * @private
@@ -2056,8 +2056,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Calls an internal or dynamically referenced function based on the provided function name, 
-   * with arguments parsed and ordered as specified. Handles specific functions directly and 
+   * Calls an internal or dynamically referenced function based on the provided function name,
+   * with arguments parsed and ordered as specified. Handles specific functions directly and
    * supports dynamic function calling from the global context.
    *
    * @private
@@ -2088,8 +2088,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Attempts to parse a JSON response string into an object. If the response contains errors, 
-   * such as missing values, colons, or braces, it applies corrective measures to reconstruct 
+   * Attempts to parse a JSON response string into an object. If the response contains errors,
+   * such as missing values, colons, or braces, it applies corrective measures to reconstruct
    * and parse the JSON structure. Logs warnings if parsing fails after corrections.
    *
    * @private
@@ -2185,7 +2185,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
-   * 
+   *
    * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
    * @returns {string} The OpenAI file ID.
    */
@@ -2248,7 +2248,7 @@ const GenAIApp = (function () {
    *
    * @private
    * @param {string} url - The URL of the webpage to fetch.
-   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
+   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200,
    *                          or an error message in JSON format if access is denied or an error occurs.
    */
   function _urlFetch(url) {
@@ -2276,9 +2276,9 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes, 
-   * and handling common HTML elements such as anchors, headings, lists, tables, images, 
-   * inline code, and preformatted text. Also removes script and style content, and 
+   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes,
+   * and handling common HTML elements such as anchors, headings, lists, tables, images,
+   * inline code, and preformatted text. Also removes script and style content, and
    * cleans up excess whitespace.
    *
    * @private
@@ -2374,7 +2374,7 @@ const GenAIApp = (function () {
 
   /**
    * Makes the API call to Open AI to create a new vector store.
-   * 
+   *
    * @param {string} vectorStoreName - The vectorStoreName to help build the vector store's name.
    * @returns {string} id - The id of the vector store that was just created.
    */
@@ -2416,8 +2416,8 @@ const GenAIApp = (function () {
 
   /**
    * Retrieves information avout a specific Vector Store from Open AI's API.
-   * 
-   * @param {string} vectorStoreId - The Open AI API vector store Id.  
+   *
+   * @param {string} vectorStoreId - The Open AI API vector store Id.
    */
   function _retrieveVectorStoreInformation(vectorStoreId) {
     const url = apiBaseUrl + '/v1/vector_stores/' + vectorStoreId;
@@ -2439,7 +2439,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to the Open AI storage.
-   * 
+   *
    * @param {Blob} blob - The file blob.
    * @returns {string} id - The id of the uploaded file.
    */

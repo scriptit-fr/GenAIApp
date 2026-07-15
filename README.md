@@ -56,7 +56,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 
 ## Prerequisites
 
-The setup for **GenAIApp** varies depending on which models you plan to use: 
+The setup for **GenAIApp** varies depending on which models you plan to use:
 1. If you want to use **OpenAI models**: You'll need an **OpenAI API key**
 2. If you want to use **Google Gemini models**: you’ll need a **Google Cloud Platform (GCP) project** with **Vertex AI** enabled for access to Gemini models.
 Ensure to link your Google Apps Script project to a GCP project with Vertex AI enabled, and to include the following scopes in your manifest file:
@@ -72,7 +72,7 @@ Ensure to link your Google Apps Script project to a GCP project with Vertex AI e
 
 ## Installation
 
-To start using the library, include the **GenAIApp** code in your Google Apps Script project environment. 
+To start using the library, include the **GenAIApp** code in your Google Apps Script project environment.
 
 ## Usage
 
@@ -134,7 +134,7 @@ chat.addFunction(myFunction);
 ```
 
 From the moment that you add a function to chat, we will use function calling features.
-For more information : 
+For more information :
 - [https://ai.google.dev/gemini-api/docs/function-calling](https://ai.google.dev/gemini-api/docs/function-calling)
 - [https://platform.openai.com/docs/guides/gpt/function-calling](https://platform.openai.com/docs/guides/gpt/function-calling)
 
@@ -233,7 +233,7 @@ chat.addMCP(customConnector);
 * **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, and `.setServerUrl("https://...")`, and optionally `.setAuthorization()` if the server expects a bearer token.
 * **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
 
-> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `o4-mini`, `o3`, or `gpt-5.4`).
+> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`).
 
 ### Running the Chat
 
@@ -248,13 +248,9 @@ let response = chat.run({
 
 console.log(response);
 ```
-The library supports the following models: 
-1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash"
-2. OpenAI: "gpt-5.4" | "o4-mini" | "o3" | "gpt-5"
-
-⚠️ **Warning:** the "function_call" advanced parameter is supported by:
-  - OpenAI models (including GPT-5)  
-  - Gemini 2.5 variants (gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-native-audio)
+The library supports the following models (this list is not exhaustive):
+1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.5-flash"
+2. OpenAI: "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
 
   The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 ⚠️ **Warning:** The "reasoning_effort" parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
@@ -396,7 +392,7 @@ chat.addMessage('Search my latest unread Gmail message and summarize it.');
 
 // Use Google's Native MCP Endpoint
 const gmailConnector = GenAIApp.newConnector()
-  .setServerUrl('https://gmailmcp.googleapis.com/mcp/v1') 
+  .setServerUrl('https://gmailmcp.googleapis.com/mcp/v1')
   .setLabel('Google_Native_Gmail')
   .setDescription('Official Google Workspace MCP server for Gmail')
   .setAuthorization(ScriptApp.getOAuthToken())
@@ -404,7 +400,7 @@ const gmailConnector = GenAIApp.newConnector()
 
 chat.addMCP(gmailConnector);
 
-const summary = chat.run({ model: 'gpt-5.4', max_tokens: 10000 });
+const summary = chat.run({ model: 'gpt-5.6-terra', max_tokens: 10000 });
 Logger.log(summary);
 ```
 
@@ -427,7 +423,7 @@ const salesforceConnector = GenAIApp.newConnector()
 
 chat.addMCP(salesforceConnector);
 
-const report = chat.run({ model: 'gpt-5.4' });
+const report = chat.run({ model: 'gpt-5.6-terra' });
 Logger.log(report);
 ```
 
@@ -444,7 +440,7 @@ GenAIApp.setOpenAIAPIKey(OPEN_AI_API_KEY);
 const firstChat = GenAIApp.newChat();
 firstChat.addMessage("Explain what Google Apps Script libraries are in 3 short bullet points.");
 
-const firstAnswer = firstChat.run({ model: "gpt-5.4" });
+const firstAnswer = firstChat.run({ model: "gpt-5.6-terra" });
 Logger.log(firstAnswer);
 
 // Save the response id returned by the OpenAI Responses API
@@ -457,7 +453,7 @@ secondChat
   .setPreviousResponseId(previousResponseId)
   .addMessage("Now rewrite your previous answer for a beginner in one short paragraph.");
 
-const secondAnswer = secondChat.run({ model: "gpt-5.4" });
+const secondAnswer = secondChat.run({ model: "gpt-5.6-terra" });
 Logger.log(secondAnswer);
 ```
 
