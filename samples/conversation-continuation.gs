@@ -9,7 +9,7 @@ function conversationContinuationSample() {
 
   const firstChat = GenAIApp.newChat()
     .addMessage('Remember this preference: my dashboard accent color is teal.');
-  Logger.log(firstChat.run({ model: 'gpt-5.4' }));
+  Logger.log(firstChat.run({ model: 'gpt-5.6-terra' }));
 
   const previousResponseId = firstChat.retrieveLastResponseId();
   Logger.log('Previous response ID: ' + previousResponseId);
@@ -18,6 +18,6 @@ function conversationContinuationSample() {
     .setPreviousResponseId(previousResponseId)
     .addMessage('What accent color did I choose?');
 
-  const response = secondChat.run({ model: 'gpt-5.4' });
+  const response = secondChat.run({ model: 'gpt-5.6-terra' });
   Logger.log(response);
 }

@@ -17,6 +17,6 @@ function mcpConnectorsSample() {
     .addMCP(calendar)
     .addMCP(drive);
 
-  const response = chat.run({ model: 'gpt-5.4', max_tokens: 20000 });
+  const response = chat.run({ model: 'gpt-5.6-terra', max_tokens: 20000 });
   Logger.log(response);
 }

@@ -15,6 +15,6 @@ function imageAnalysisSample() {
     .addImage(imageUrl)
     .addImage(imageBlob);
 
-  const response = chat.run({ model: 'gpt-5.4' });
+  const response = chat.run({ model: 'gpt-5.6-terra' });
   Logger.log(response);
 }
