@@ -178,12 +178,10 @@ const myFunction = GenAIApp.newFunction()
 chat.addFunction(myFunction);
 ```
 
-From the moment you add a function to a chat, GenAIApp uses function-calling features.
-
+From the moment that you add a function to chat, we will use function calling features.
 For more information:
-
-- [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling)
-- [OpenAI function calling](https://platform.openai.com/docs/guides/gpt/function-calling)
+- [https://ai.google.dev/gemini-api/docs/function-calling](https://ai.google.dev/gemini-api/docs/function-calling)
+- [https://platform.openai.com/docs/guides/gpt/function-calling](https://platform.openai.com/docs/guides/gpt/function-calling)
 
 ### Enable Web Browsing (Optional)
 
@@ -277,7 +275,7 @@ chat.addMCP(customConnector);
 - **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, `.setServerUrl('https://...')`, and optionally `.setAuthorization()` if the server expects a bearer token.
 - **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
 
-> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models, for example `o4-mini`, `o3`, or `gpt-5.4`.
+> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`).
 
 ### Running the Chat
 
@@ -292,11 +290,9 @@ const response = chat.run({
 
 console.log(response);
 ```
-
-The library supports the following model families:
-
-1. Gemini: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, and `gemini-3.5-flash`.
-2. OpenAI: `gpt-5.4`, `gpt-5.5`, `o4-mini`, and `o3`.
+The library supports the following models (this list is not exhaustive):
+1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.5-flash"
+2. OpenAI: "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
 
 ⚠️ **Warning:** The `reasoning_effort` parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
@@ -338,7 +334,7 @@ const vectorStoreObject = GenAIApp.newVectorStore()
 chat.addVectorStores(vectorStoreObject.getId());
 ```
 
-To find out more, see the [OpenAI vector stores search API reference](https://platform.openai.com/docs/api-reference/vector_stores/search).
+To find out more, see the [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search).
 
 ## Reference
 

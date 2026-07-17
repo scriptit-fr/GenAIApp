@@ -1,15 +1,15 @@
 /*
  GenAIApp
  https://github.com/scriptit-fr/GenAIApp
- 
+
  Copyright (c) 2024 Guillemine Allavena - Romain Vialard
- 
+
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
- 
+
  http://www.apache.org/licenses/LICENSE-2.0
- 
+
  Unless required by applicable law or agreed to in writing, software
  distributed under the License is distributed on an "AS IS" BASIS,
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -45,19 +45,27 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
-      let model = "gpt-5.2"; // default 
+      let model = "gpt-5.6-terra"; // default
       //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
       let temperature = 1;
       let max_tokens = 1000;
       let browsing = false;
       let reasoning_effort = "medium";
       let knowledgeLink = [];
+      this._codeInterpreterEnabled = false;
+      this._codeInterpreterContainerId = null;
+      this._generatedFiles = [];
+      this._lastContainerId = null;
+      this._lastGeneratedDriveFileUrl = null;
       let compaction_enabled = false;
       let compaction_threshold = 10000;
       let tool_combination_enabled = false;
 
       let previous_response_id;
       let last_response_id = null;
+      let previous_interaction_id;
+      let last_gemini_interaction_id = null;
+      let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
       let onlyChunks = false;
@@ -73,7 +81,7 @@ const GenAIApp = (function () {
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
-       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user. 
+       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user.
        * @returns {Chat} - The current Chat instance.
        */
       this.addMessage = function (messageContent, system) {
@@ -214,7 +222,7 @@ const GenAIApp = (function () {
 
       /**
        * Adds an item (key/value pair) to the metadata that will be passed to the OpenAI API.
-       * 
+       *
        * @param {string} key - The key of the object that should be added.
        * @param {string} value - The value of the object that should be added.
        */
@@ -280,10 +288,10 @@ const GenAIApp = (function () {
 
       /**
        * OPTIONAL
-       * 
+       *
        * Allow openAI to browse the web.
        * @param {true} scope - set to true to enable full browsing
-       * @param {string} [url] - A specific site you want to restrict the search on . 
+       * @param {string} [url] - A specific site you want to restrict the search on .
        * @returns {Chat} - The current Chat instance.
        */
       this.enableBrowsing = function (scope, url) {
@@ -297,8 +305,29 @@ const GenAIApp = (function () {
       };
 
       /**
-       * OPTIONAL
-       * 
+       * Enables OpenAI Code Interpreter support for this chat.
+       * @param {string} [containerId] - OPTIONAL - Explicit container ID to reuse.
+       * @returns {Chat} - The current Chat instance.
+       * @example
+       * const chat = GenAIApp.newChat()
+       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
+       *   .enableCodeInterpreter()
+       *   .addMessage("Process this file and generate an updated version.");
+       * chat.run();
+       * const generatedFiles = chat.getGeneratedFiles();
+       * const blob = chat.downloadGeneratedFile(0);
+       * DriveApp.createFile(blob);
+       */
+      this.enableCodeInterpreter = function (containerId) {
+        this._codeInterpreterEnabled = true;
+        if (containerId) {
+          this._codeInterpreterContainerId = containerId;
+        }
+        return this;
+      };
+
+       /** OPTIONAL
+       *
        * Enable or disable server-side tool invocations for Gemini (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
        * @returns {Chat} - The current Chat instance.
@@ -326,7 +355,7 @@ const GenAIApp = (function () {
       /**
        * If you want to limit the number of calls to the OpenAI API
        * A good way to avoid infinity loops and manage your budget.
-       * @param {number} maxAPICalls - 
+       * @param {number} maxAPICalls -
        */
       this.setMaximumAPICalls = function (maxAPICalls) {
         maximumAPICalls = maxAPICalls;
@@ -338,6 +367,13 @@ const GenAIApp = (function () {
        */
       this.retrieveLastResponseId = function () {
         return last_response_id;
+      };
+
+      /**
+       * Returns the last Gemini Interactions API interaction Id for this chat.
+       */
+      this.retrieveLastInteractionId = function () {
+        return last_gemini_interaction_id;
       };
 
       /**
@@ -359,6 +395,16 @@ const GenAIApp = (function () {
        */
       this.setPreviousResponseId = function (previousResponseId) {
         previous_response_id = previousResponseId;
+        return this;
+      };
+
+      /**
+       * Sets the previous Gemini Interactions API interaction Id used to continue a conversation.
+       * @param {string} previousInteractionId - The id of the previous Gemini interaction.
+       */
+      this.setPreviousInteractionId = function (previousInteractionId) {
+        previous_interaction_id = previousInteractionId;
+        last_gemini_interaction_id = previousInteractionId || last_gemini_interaction_id;
         return this;
       };
 
@@ -385,7 +431,7 @@ const GenAIApp = (function () {
 
       /**
        * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
-       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs 
+       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs
        */
       this.addVectorStores = function (vectorStoreIds) {
         const ids = vectorStoreIds.split(',').map(id => id.trim());
@@ -418,7 +464,8 @@ const GenAIApp = (function () {
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
-          numberOfAPICalls: numberOfAPICalls
+          numberOfAPICalls: numberOfAPICalls,
+          last_gemini_interaction_id: last_gemini_interaction_id
         };
       };
 
@@ -428,16 +475,19 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
-       * @param {"gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3-flash-preview" | "gemini-3.5-flash" | "gpt-5.4" | "gpt-5.5" | "o4-mini" | "o3"} [advancedParametersObject.model]
+       * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
-       * @returns {object} - the last message of the chat 
+       * @returns {object} - the last message of the chat
        */
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
         last_response_id = null;
+        this._generatedFiles = [];
+        this._lastContainerId = null;
+        this._lastGeneratedDriveFileUrl = null;
 
         model = advancedParametersObject?.model ?? model;
         temperature = advancedParametersObject?.temperature ?? temperature;
@@ -455,7 +505,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.startsWith("o") || model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
+        if ((model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
           console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
@@ -499,32 +549,49 @@ const GenAIApp = (function () {
             if (geminiKey) {
               // Public endpoint / Generative Language API
               // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/interactions`;
             }
             else {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
               if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/interactions`;
               }
               else {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/interactions`;
               }
             }
           }
           responseMessage = _callGenAIApi(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
+            const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
             if (this._inputTokenWarningThreshold !== null
-              && this._lastUsage?.input_tokens > this._inputTokenWarningThreshold) {
-              console.warn(`[GenAIApp] - Warning: input token usage (${this._lastUsage.input_tokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
+              && inputTokens > this._inputTokenWarningThreshold) {
+              console.warn(`[GenAIApp] - Warning: input token usage (${inputTokens}) exceeded configured threshold (${this._inputTokenWarningThreshold}) for response ${responseMessage.id}`);
             }
           }
+          this._generatedFiles = this._extractContainerFileCitations(responseMessage);
+          if (this._generatedFiles.length > 0) {
+            this._lastContainerId = this._generatedFiles[0].containerId;
+            const blob = this._downloadContainerFile(
+              this._generatedFiles[0].containerId,
+              this._generatedFiles[0].fileId,
+              this._generatedFiles[0].filename
+            );
+            const createdFile = DriveApp.createFile(blob);
+            this._lastGeneratedDriveFileUrl = createdFile.getUrl();
+          }
 
-          // OpenAI Responses API returns top-level "id"
+          // OpenAI Responses API and Gemini Interactions API return a top-level "id".
           if (!model.includes("gemini")) {
             last_response_id = responseMessage?.id ?? null;
+          }
+          else {
+            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
+            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
+            last_gemini_content_count = contents.length;
           }
           numberOfAPICalls++;
         }
@@ -557,32 +624,26 @@ const GenAIApp = (function () {
         if (tools.length > 0) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
-            if (responseMessage?.parts?.some(p => p?.functionCall)) {
+            const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+            if (functionCalls.length > 0) {
               contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
-              if (contents[contents.length - 1].role == "model") {
-                if (contents[contents.length - 1].parts.text == "endWithResult") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because end function has been called");
-                  }
-                  // Do not return anything specific as the goal is simply to end here.
-                  return "OK";
+              if (contents._geminiEndWithResult) {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because end function has been called");
                 }
-                else if (contents[contents.length - 1].parts.text == "onlyReturnArguments") {
-                  if (verbose) {
-                    console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
-                  }
-                  // return the argument(s) of the last function called
-                  return contents[contents.length - 2].parts
-                    .find(p => p && p.functionCall)
-                    ?.functionCall.args;
+                return "OK";
+              }
+              else if (contents._geminiOnlyReturnArguments !== undefined) {
+                if (verbose) {
+                  console.log("[GenAIApp] - Conversation stopped because argument return has been enabled - No function has been called");
                 }
+                return contents._geminiOnlyReturnArguments;
               }
             }
             else {
               // if no function has been found, stop here
-              const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-              return part?.text || null;
+              return _extractGeminiResponseText(responseMessage);
             }
           }
           else {
@@ -611,6 +672,9 @@ const GenAIApp = (function () {
             }
             else {
               // if no function has been found, stop here
+              if (this._lastGeneratedDriveFileUrl) {
+                return this._lastGeneratedDriveFileUrl;
+              }
               return _extractOpenAIResponseText(responseMessage);
             }
           }
@@ -623,23 +687,25 @@ const GenAIApp = (function () {
         }
         else {
           if (model.includes("gemini")) {
-            const part = responseMessage?.parts?.find(p => !p.thought && p.text);
-            return part?.text || null;
+            return _extractGeminiResponseText(responseMessage);
           }
           else {
+            if (this._lastGeneratedDriveFileUrl) {
+              return this._lastGeneratedDriveFileUrl;
+            }
             return _extractOpenAIResponseText(responseMessage);
           }
         }
       }
 
       /**
-       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
-       * tool-specific configurations for browsing, image description, and assistant functionalities. 
-       * Configures tool choices based on recent interactions, message content, and options in 
+       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and
+       * tool-specific configurations for browsing, image description, and assistant functionalities.
+       * Configures tool choices based on recent interactions, message content, and options in
        * `advancedParametersObject`.
        *
        * @private
-       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
+       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections
        *                     for OpenAI's API.
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
@@ -650,7 +716,7 @@ const GenAIApp = (function () {
           parallel_tool_calls: true,
           tools: []
         };
-        if (model.startsWith('o') || model.startsWith("gpt-5")) {
+        if (model.startsWith("gpt-5")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
@@ -738,48 +804,183 @@ const GenAIApp = (function () {
           payload.tools.push(fileSearchTool);
           payload.include = ["file_search_call.results"];
         }
+
+        if (this._codeInterpreterEnabled) {
+          payload.parallel_tool_calls = false;
+          if (this._codeInterpreterContainerId) {
+            payload.tools.push({
+              type: "container",
+              container_id: this._codeInterpreterContainerId
+            });
+          }
+          else {
+            payload.tools.push({
+              type: "code_interpreter",
+              container: {
+                type: "auto"
+              }
+            });
+          }
+        }
         return payload;
       }
 
+      this._extractContainerFileCitations = function (response) {
+        if (!response || !Array.isArray(response.output)) {
+          return [];
+        }
+        const citationsById = {};
+
+        const addCitation = (containerId, fileId, filename) => {
+          if (!containerId || !fileId) return;
+          citationsById[fileId] = {
+            containerId: containerId,
+            fileId: fileId,
+            filename: filename || citationsById[fileId]?.filename || null
+          };
+        };
+
+        const walk = (node) => {
+          if (!node) return;
+          if (Array.isArray(node)) {
+            node.forEach(walk);
+            return;
+          }
+          if (typeof node !== "object") return;
+
+          if (node.type === "container_file_citation") {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+          if (node.container_file_citation) {
+            const c = node.container_file_citation;
+            addCitation(c.container_id, c.file_id, c.filename);
+          }
+          if (node.type === "container_file" && node.file_id) {
+            addCitation(node.container_id, node.file_id, node.filename);
+          }
+
+          Object.keys(node).forEach(key => walk(node[key]));
+        };
+
+        walk(response.output);
+        return Object.keys(citationsById).map(fileId => citationsById[fileId]);
+      };
+
+      this._downloadContainerFile = function (containerId, fileId, filename) {
+        const endpointUrl = `${apiBaseUrl}/v1/containers/${containerId}/files/${fileId}/content`;
+        const response = _callGenAIApi(endpointUrl, null, "GET", true);
+        const blob = response.getBlob();
+        const contentType = response.getHeaders()["Content-Type"] || blob.getContentType();
+        if (contentType) {
+          blob.setContentType(contentType);
+        }
+        if (filename) {
+          blob.setName(filename);
+        }
+        return blob;
+      };
+
       /**
-       * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
-       * and tool settings based on advanced options and feature flags such as browsing. 
+       * Returns generated files from the last run call.
+       * @returns {{containerId: string, fileId: string, filename: string}[]} Generated files metadata.
+       */
+      this.getGeneratedFiles = function () {
+        return this._generatedFiles;
+      };
+
+      /**
+       * Downloads a generated file from the last run.
+       * @param {string|number} fileIdOrIndex - File ID or index from getGeneratedFiles().
+       * @returns {Blob} Downloaded file blob that can be stored with DriveApp.createFile(blob).
+       * @example
+       * const chat = GenAIApp.newChat()
+       *   .addFile(DriveApp.getFileById("YOUR_FILE_ID").getBlob())
+       *   .enableCodeInterpreter()
+       *   .addMessage("Process this file and generate an updated version.");
+       * chat.run();
+       * const files = chat.getGeneratedFiles();
+       * const blob = chat.downloadGeneratedFile(files[0].fileId);
+       * DriveApp.createFile(blob);
+       */
+      this.downloadGeneratedFile = function (fileIdOrIndex) {
+        let targetFile;
+        if (fileIdOrIndex === undefined || fileIdOrIndex === null) {
+          targetFile = this._generatedFiles[0];
+        }
+        else if (typeof fileIdOrIndex === "string" && fileIdOrIndex.trim() === "") {
+          targetFile = this._generatedFiles[0];
+        }
+        if (typeof fileIdOrIndex === "number") {
+          targetFile = this._generatedFiles[fileIdOrIndex];
+        }
+        else if (typeof fileIdOrIndex === "string") {
+          targetFile = this._generatedFiles.find(file => file.fileId === fileIdOrIndex);
+        }
+        if (!targetFile) {
+          throw new Error("[GenAIApp] - Generated file not found. Provide a valid file ID or index from getGeneratedFiles().");
+        }
+        return this._downloadContainerFile(targetFile.containerId, targetFile.fileId, targetFile.filename);
+      };
+
+      this.getContainerId = function () {
+        if (this._lastContainerId) {
+          return this._lastContainerId;
+        }
+        return this._generatedFiles[0]?.containerId || this._codeInterpreterContainerId || null;
+      };
+
+      /**
+       * Builds and returns a payload for a Gemini API call, configuring content, model parameters,
+       * and tool settings based on advanced options and feature flags such as browsing.
        * Adapts the payload for specific function calls and tools.
        *
        * @private
-       * @param {Object} advancedParametersObject - An object with optional advanced parameters, 
+       * @param {Object} advancedParametersObject - An object with optional advanced parameters,
        *                                            such as function call preferences.
-       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
+       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings,
        *                     generation configuration, and available tools.
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
-          'contents': contents,
-          'model': model,
-          'generationConfig': {
-            maxOutputTokens: max_tokens,
-            temperature: temperature,
-          },
-          'tool_config': {
-            function_calling_config: {
-              mode: "AUTO"
-            },
-            includeServerSideToolInvocations: tool_combination_enabled
+          model: model,
+          input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
+          generation_config: {
+            max_output_tokens: max_tokens,
+            temperature: temperature
           },
           tools: []
         };
 
+        // Continue Gemini conversations using the Interactions API state handle instead of resending
+        // the full previous contents array.
+        if (previous_interaction_id) {
+          payload.previous_interaction_id = previous_interaction_id;
+        }
+
+        if (tool_combination_enabled) {
+          payload.include_server_side_tool_invocations = true;
+        }
+
         if (advancedParametersObject?.function_call) {
-          payload.tool_config.function_calling_config.mode = "ANY";
-          payload.tool_config.function_calling_config.allowed_function_names = advancedParametersObject.function_call;
+          // The Gemini Interactions API expects forced tool selection under
+          // generation_config.tool_choice. Sending tool_choice at the top level
+          // is rejected as an unknown parameter.
+          payload.generation_config.tool_choice = {
+            allowed_tools: {
+              mode: "any",
+              tools: Array.isArray(advancedParametersObject.function_call)
+                ? advancedParametersObject.function_call
+                : [advancedParametersObject.function_call]
+            }
+          };
           delete advancedParametersObject.function_call;
         }
 
         if (tools.length > 0) {
           // the user has added functions, enable function calling
-          const payloadTools = Object.keys(tools).map(t => {
-            const toolFunction = tools[t].function._toJson();
+          payload.tools = tools.map(t => {
+            const toolFunction = t.function._toJson();
 
             const parameters = toolFunction.parameters;
             if (parameters?.type) {
@@ -787,23 +988,20 @@ const GenAIApp = (function () {
             }
 
             return {
+              type: "function",
               name: toolFunction.name,
               description: toolFunction.description,
               parameters: toolFunction.parameters
             };
           });
-
-          payload.tools = [{
-            functionDeclarations: payloadTools
-          }];
         }
 
         if (browsing) {
           payload.tools.push({
-            url_context: {}
+            type: "url_context"
           });
           payload.tools.push({
-            google_search: {}
+            type: "google_search"
           });
         }
 
@@ -948,8 +1146,8 @@ const GenAIApp = (function () {
 
       /**
        * Initializes a new vector store object from an existing Open AI vector store id. This allows a user to interact with an existing vector store.
-       * 
-       * @param {string} vectorStoreId - The Open AI API vector store id. 
+       *
+       * @param {string} vectorStoreId - The Open AI API vector store id.
        */
       this.initializeFromId = function (vectorStoreId) {
         try {
@@ -1297,8 +1495,8 @@ const GenAIApp = (function () {
       /**
        * OPTIONAL
        * If enabled, the conversation with the chat will automatically end when this function is called.
-       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly. 
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
+       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly.
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
        * @returns {FunctionObject} - The current Function instance.
        */
       this.endWithResult = function (bool) {
@@ -1356,7 +1554,7 @@ const GenAIApp = (function () {
        * OPTIONAL
        * If enabled, the conversation will automatically end when this function is called and the chat will return the arguments in a stringified JSON object.
        * Default : false
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
        * @returns {FunctionObject} - The current Function instance.
        */
       this.onlyReturnArguments = function (bool) {
@@ -1394,7 +1592,7 @@ const GenAIApp = (function () {
 * @returns {object} - The response message from the GenAI API.
 * @throws {Error} If the API call fails after the maximum number of retries.
 */
-  function _callGenAIApi(endpoint, payload) {
+  function _callGenAIApi(endpoint, payload, method = "post", returnRawResponse = false) {
     let authMethod = 'Bearer ' + openAIKey;
     if (endpoint.includes("google")) {
       if (geminiKey) {
@@ -1424,11 +1622,14 @@ const GenAIApp = (function () {
         headers['x-goog-api-key'] = geminiKey;
       }
       const options = {
-        method: 'post',
+        method: method.toLowerCase(),
         headers: headers,
-        payload: JSON.stringify(payload),
+        timeoutSeconds: 30 * 60,
         muteHttpExceptions: true
       };
+      if (payload !== null && payload !== undefined) {
+        options.payload = JSON.stringify(payload);
+      }
 
       let response;
       // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
@@ -1452,12 +1653,17 @@ const GenAIApp = (function () {
       const responseCode = response.getResponseCode();
 
       if (responseCode === 200) {
+        if (returnRawResponse) {
+          return response;
+        }
         // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(response.getContentText());
         if (endpoint.includes("google")) {
-          const firstCandidate = parsedResponse.candidates?.[0];
-          responseMessage = firstCandidate?.content || null;
-          finish_reason = firstCandidate?.finishReason || null;
+          responseMessage = parsedResponse;
+          finish_reason = parsedResponse.status
+            || parsedResponse.finishReason
+            || parsedResponse.finish_reason
+            || (_extractGeminiFunctionCalls(parsedResponse).length > 0 ? "tool_calls" : "completed");
         }
         else {
           responseMessage = parsedResponse;
@@ -1522,7 +1728,7 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling, 
+   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling,
    * and special actions for web search and URL fetch calls. It dynamically builds a conversation flow and manages the end
    * condition based on tool specifications.
    *
@@ -1532,47 +1738,128 @@ const GenAIApp = (function () {
    * @param {Array} contents - Array representing the conversational content, updated with each tool call and its result.
    * @returns {Array} - The updated contents array, representing the conversation flow with function calls and responses.
    */
+  function _geminiContentsToInteractionInput(contents) {
+    return (contents || []).flatMap(content => {
+      const textStep = {
+        type: content.role === "model" ? "model_output" : "user_input",
+        content: []
+      };
+      const resultSteps = [];
+      const parts = Array.isArray(content.parts) ? content.parts : [content.parts];
+      parts.forEach(part => {
+        if (!part) return;
+        if (part.text) {
+          textStep.content.push({ type: "text", text: part.text });
+        }
+        else if (part.inline_data) {
+          textStep.content.push({
+            type: part.inline_data.mime_type?.startsWith("image/") ? "image" : "document",
+            mime_type: part.inline_data.mime_type,
+            data: part.inline_data.data
+          });
+        }
+        else if (part.functionResponse) {
+          resultSteps.push({
+            type: "function_result",
+            call_id: part.functionResponse.call_id,
+            name: part.functionResponse.name,
+            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }]
+          });
+        }
+      });
+      return textStep.content.length > 0 ? [textStep, ...resultSteps] : resultSteps;
+    });
+  }
+
+  function _extractGeminiResponseText(responseMessage) {
+    const steps = responseMessage?.steps || [];
+    const texts = [];
+    steps.forEach(step => {
+      if (step?.type !== "model_output") return;
+      const content = Array.isArray(step.content) ? step.content : [step.content];
+      content.forEach(item => {
+        if (!item) return;
+        if (typeof item === "string") texts.push(item);
+        else if (item.text) texts.push(item.text);
+        else if (item.type === "text" && item.content) texts.push(item.content);
+        else if (item.type === "output_text" && item.text) texts.push(item.text);
+      });
+      if (step.text) texts.push(step.text);
+      if (step.output_text) texts.push(step.output_text);
+    });
+    if (texts.length > 0) return texts.join("\n");
+
+    // Backward-compatible fallback for legacy content-shaped responses.
+    const parts = responseMessage?.parts || [];
+    const part = parts.find(p => !p.thought && p.text);
+    return part?.text || responseMessage?.output_text || null;
+  }
+
+  function _extractGeminiFunctionCalls(responseMessage) {
+    const calls = [];
+    const steps = responseMessage?.steps || [];
+    steps.forEach(step => {
+      if (step?.type !== "function_call") return;
+      calls.push({
+        id: step.id || step.call_id || step.function_call_id,
+        name: step.name || step.function?.name || step.functionCall?.name,
+        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {}
+      });
+    });
+    if (calls.length > 0) return calls;
+
+    // Backward-compatible fallback for legacy content-shaped responses.
+    const parts = responseMessage?.parts || [];
+    parts.forEach(part => {
+      if (part?.functionCall?.name) {
+        calls.push({
+          id: part.functionCall.id,
+          name: part.functionCall.name,
+          args: part.functionCall.args || {}
+        });
+      }
+    });
+    return calls;
+  }
+
+  /**
+   * Processes tool calls from a Gemini Interactions API response message.
+   *
+   * @private
+   * @param {Object} responseMessage - The response message from Gemini containing tool-call steps.
+   * @param {Array} tools - List of available tools, each with metadata including function names and argument requirements.
+   * @param {Array} contents - Array representing the conversational content, updated for backward compatibility.
+   * @returns {Object} - Tool continuation input and state flags for the Chat run loop.
+   */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
-    // Append function call to contents
-    // The thought signature is also sent back
-    // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#thinking
-    // Note: thoughtSignature seems to be only included in Generative Language API, not Vertex AI API
-    contents.push(responseMessage);
-
-    const parts = (responseMessage && responseMessage.parts) || [];
-    const responseParts = [];
+    const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+    const functionResults = [];
     let shouldEndWithResult = false;
+    let onlyReturnArguments = null;
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i] || {};
-      if (!part.functionCall || !part.functionCall.name) continue;
-
-      const functionName = part.functionCall.name;
-      const functionArgs = part.functionCall.args;
+    functionCalls.forEach(functionCall => {
+      const functionName = functionCall.name;
+      const functionArgs = functionCall.args || {};
+      if (!functionName) return;
 
       let argsOrder = [];
       let endWithResult = false;
-      let onlyReturnArguments = false;
+      let onlyArgs = false;
 
       for (const t in tools) {
         const currentFunction = tools[t].function._toJson();
         if (currentFunction.name == functionName) {
-          argsOrder = currentFunction.argumentsInRightOrder; // get the args in the right order
+          argsOrder = currentFunction.argumentsInRightOrder;
           endWithResult = currentFunction.endingFunction;
-          onlyReturnArguments = currentFunction.onlyArgs;
+          onlyArgs = currentFunction.onlyArgs;
           break;
         }
       }
 
       // No actual call to the function
-      if (onlyReturnArguments) {
-        contents.push({
-          "role": "model",
-          "parts": {
-            text: "onlyReturnArguments"
-          }
-        });
-        return contents;
+      if (onlyArgs) {
+        onlyReturnArguments = functionArgs;
+        return;
       }
 
       if (endWithResult) {
@@ -1584,48 +1871,36 @@ const GenAIApp = (function () {
         console.log(`[GenAIApp] - function ${functionName}() called by Gemini.`);
       }
       if (typeof functionResponse != "string") {
-        if (typeof functionResponse == "object") {
-          functionResponse = JSON.stringify(functionResponse);
-        }
-        else {
-          functionResponse = String(functionResponse);
-        }
+        functionResponse = typeof functionResponse == "object" ? JSON.stringify(functionResponse) : String(functionResponse);
       }
 
-      // Append result of the function execution to contents
-      // https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step-4
-      responseParts.push({
-        functionResponse: {
-          name: functionName,
-          response: { functionResponse }
-        }
+      functionResults.push({
+        call_id: functionCall.id,
+        name: functionName,
+        response: { functionResponse }
       });
-    }
+    });
 
-    // Append all function results in a single turn
-    if (responseParts.length > 0) {
+    if (functionResults.length > 0) {
       contents.push({
         role: 'user',
-        parts: responseParts
+        parts: functionResults.map(result => ({
+          functionResponse: result
+        }))
       });
     }
 
-    if (shouldEndWithResult) {
-      // User defined that if this function has been called, we do not call back the AI endpoint.
-      contents.push({
-        "role": "model",
-        "parts": {
-          text: "endWithResult"
-        }
-      });
+    contents._geminiEndWithResult = shouldEndWithResult;
+    delete contents._geminiOnlyReturnArguments;
+    if (onlyReturnArguments !== null) {
+      contents._geminiOnlyReturnArguments = onlyReturnArguments;
     }
-
     return contents;
   }
 
   /**
    * Processes OpenAI tool calls from a response message, handling function executions, argument ordering, and
-   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with 
+   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
@@ -1714,12 +1989,12 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          // Reset the previous messages, 
+          // Reset the previous messages,
           // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
           // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
           // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
           if (!messages.every(msg => msg.type === "function_call_output" || msg.role === "system")) {
-            // Reset only if it contains other messages than function_call_output 
+            // Reset only if it contains other messages than function_call_output
             // to allow for parallel function calling
             // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
             // Preserve only system messages
@@ -1741,7 +2016,7 @@ const GenAIApp = (function () {
    * Extracts assistant text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
    * Falls back to the last available assistant message text when no explicit final answer exists.
-   * 
+   *
    * Logs a warning when compaction was used for the response.
    *
    * @private
@@ -1781,8 +2056,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Calls an internal or dynamically referenced function based on the provided function name, 
-   * with arguments parsed and ordered as specified. Handles specific functions directly and 
+   * Calls an internal or dynamically referenced function based on the provided function name,
+   * with arguments parsed and ordered as specified. Handles specific functions directly and
    * supports dynamic function calling from the global context.
    *
    * @private
@@ -1813,8 +2088,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Attempts to parse a JSON response string into an object. If the response contains errors, 
-   * such as missing values, colons, or braces, it applies corrective measures to reconstruct 
+   * Attempts to parse a JSON response string into an object. If the response contains errors,
+   * such as missing values, colons, or braces, it applies corrective measures to reconstruct
    * and parse the JSON structure. Logs warnings if parsing fails after corrections.
    *
    * @private
@@ -1910,7 +2185,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
-   * 
+   *
    * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
    * @returns {string} The OpenAI file ID.
    */
@@ -1973,7 +2248,7 @@ const GenAIApp = (function () {
    *
    * @private
    * @param {string} url - The URL of the webpage to fetch.
-   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
+   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200,
    *                          or an error message in JSON format if access is denied or an error occurs.
    */
   function _urlFetch(url) {
@@ -2001,9 +2276,9 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes, 
-   * and handling common HTML elements such as anchors, headings, lists, tables, images, 
-   * inline code, and preformatted text. Also removes script and style content, and 
+   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes,
+   * and handling common HTML elements such as anchors, headings, lists, tables, images,
+   * inline code, and preformatted text. Also removes script and style content, and
    * cleans up excess whitespace.
    *
    * @private
@@ -2099,7 +2374,7 @@ const GenAIApp = (function () {
 
   /**
    * Makes the API call to Open AI to create a new vector store.
-   * 
+   *
    * @param {string} vectorStoreName - The vectorStoreName to help build the vector store's name.
    * @returns {string} id - The id of the vector store that was just created.
    */
@@ -2141,8 +2416,8 @@ const GenAIApp = (function () {
 
   /**
    * Retrieves information avout a specific Vector Store from Open AI's API.
-   * 
-   * @param {string} vectorStoreId - The Open AI API vector store Id.  
+   *
+   * @param {string} vectorStoreId - The Open AI API vector store Id.
    */
   function _retrieveVectorStoreInformation(vectorStoreId) {
     const url = apiBaseUrl + '/v1/vector_stores/' + vectorStoreId;
@@ -2164,7 +2439,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to the Open AI storage.
-   * 
+   *
    * @param {Blob} blob - The file blob.
    * @returns {string} id - The id of the uploaded file.
    */
