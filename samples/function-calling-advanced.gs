@@ -26,7 +26,7 @@ function functionCallingAdvancedSample() {
     .addFunction(extractTicket)
     .addFunction(lookupCustomer);
 
-  const response = chat.run({ model: 'gpt-5.4', function_call: 'extractSupportTicket' });
+  const response = chat.run({ model: 'gpt-5.6-terra', function_call: 'extractSupportTicket' });
   Logger.log(response);
 }
 

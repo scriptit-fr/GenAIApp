@@ -9,7 +9,7 @@ function multiModelUsageSample() {
   GenAIApp.setOpenAIAPIKey(scriptProperties.getProperty('OPENAI_API_KEY'));
   GenAIApp.setGeminiAPIKey(scriptProperties.getProperty('GEMINI_API_KEY'));
 
-  const models = ['gpt-5.4', 'gemini-3.5-flash', 'o4-mini'];
+  const models = ['gpt-5.6-terra', 'gemini-3.5-flash', 'gpt-5.6-sol'];
   models.forEach(function (model) {
     const chat = GenAIApp.newChat()
       .addMessage('Write a haiku about Apps Script automation.');

@@ -11,6 +11,6 @@ function systemPromptsSample() {
     .addMessage('You are a patient librarian. Answer in two calm bullet points.', true)
     .addMessage('How should I choose my next book?');
 
-  const response = chat.run({ model: 'gpt-5.4' });
+  const response = chat.run({ model: 'gpt-5.6-terra' });
   Logger.log(response);
 }

@@ -10,6 +10,6 @@ function simpleChatSample() {
   const chat = GenAIApp.newChat();
   chat.addMessage('Say hello in one friendly sentence.');
 
-  const response = chat.run({ model: 'gpt-5.4' });
+  const response = chat.run({ model: 'gpt-5.6-terra' });
   Logger.log(response);
 }

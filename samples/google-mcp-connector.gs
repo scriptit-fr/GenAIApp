@@ -4,7 +4,7 @@
  * Required config: Store OPENAI_API_KEY in Script Properties; link Apps Script to a standard GCP project with both Gmail API and Gmail MCP API enabled.
  * Expected output: Logs a concise summary after the model uses the authorized Gmail MCP connector.
  */
-function mcpConnectorsSample() {
+function googleMcpConnectorSample() {
   GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
 
   const chat = GenAIApp.newChat()
@@ -19,6 +19,6 @@ function mcpConnectorsSample() {
 
   chat.addMCP(gmailConnector);
 
-  const summary = chat.run({ model: 'gpt-5.4', max_tokens: 10000 });
+  const summary = chat.run({ model: 'gpt-5.6-terra', max_tokens: 10000 });
   Logger.log(summary);
 }

@@ -15,6 +15,6 @@ function configurationOptionsSample() {
     .setCompactionThreshold(10000)
     .addMessage('Summarize three practical ways to keep AI usage predictable in Apps Script.');
 
-  const response = chat.run({ model: 'gpt-5.4', max_tokens: 800 });
+  const response = chat.run({ model: 'gpt-5.6-terra', max_tokens: 800 });
   Logger.log(response);
 }

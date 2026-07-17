@@ -1,7 +1,7 @@
 /*
  * Purpose: Demonstrates document analysis with addFile() using Drive IDs and Blobs.
  * Use case: Summarize PDFs or exported Google Workspace files from Apps Script.
- * Required config: Store OPENAI_API_KEY and SAMPLE_PDF_FILE_ID in Script Properties.
+ * Required config: Store an OpenAI API key in Script Properties as OPENAI_API_KEY.
  * Expected output: Logs three concise bullets summarizing the supplied documents.
  */
 function documentAnalysisSample() {
@@ -26,6 +26,6 @@ function documentAnalysisSample() {
     .addMessage('Summarize the attached file in three bullets.')
     .addFile(textBlob);
 
-  const response = chat.run({ model: 'gpt-5.4' });
+  const response = chat.run({ model: 'gpt-5.6-terra' });
   Logger.log(response);
 }
