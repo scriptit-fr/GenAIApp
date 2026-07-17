@@ -178,7 +178,7 @@ const myFunction = GenAIApp.newFunction()
 chat.addFunction(myFunction);
 ```
 
-From the moment that you add a function to chat, we will use function calling features.
+From the moment that you add a function to chat, we will use function-calling features.
 For more information:
 - [https://ai.google.dev/gemini-api/docs/function-calling](https://ai.google.dev/gemini-api/docs/function-calling)
 - [https://platform.openai.com/docs/guides/gpt/function-calling](https://platform.openai.com/docs/guides/gpt/function-calling)
