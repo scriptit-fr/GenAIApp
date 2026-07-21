@@ -336,6 +336,7 @@ Use a vector store when you want model answers grounded in uploaded source files
 const openAiStore = GenAIApp.newVectorStore('openai')
   .initializeFromId('vs_your_openai_vector_store_id');
 
+const openAiChat = GenAIApp.newChat();
 openAiChat.addVectorStores(openAiStore.getId());
 
 // Google Gemini: pass the File Search Store resource name returned by getId(),
@@ -343,12 +344,13 @@ openAiChat.addVectorStores(openAiStore.getId());
 const geminiStore = GenAIApp.newGeminiFileSearchStore()
   .initializeFromId('fileSearchStores/your-google-store-name');
 
+const geminiChat = GenAIApp.newChat();
 geminiChat.addVectorStores(geminiStore.getId());
 ```
 
 For OpenAI, `addVectorStores()` sends `vector_store_ids` to the Responses API file-search tool. For Gemini, the same method sends `file_search_store_names` to the Gemini Interactions API, so use the full File Search Store resource name from `getId()`. Gemini uploads use the direct `uploadToFileSearchStore` media endpoint and wait for the returned operation to complete before the document is available.
 
-To find out more, see the [OpenAI vector store search API](https://platform.openai.com/docs/api-reference/vector_stores/search).
+To find out more, see the [OpenAI vector store search API](https://platform.openai.com/docs/api-reference/vector_stores/search) and the [Gemini File Search Store API reference](https://ai.google.dev/api/file-search/file-search-stores).
 
 ## Reference
 
