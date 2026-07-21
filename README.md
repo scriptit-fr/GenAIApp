@@ -43,7 +43,7 @@ The **GenAIApp** library is a Google Apps Script library designed for creating, 
 - **Web Search Integration:** Perform web searches to enhance chatbot responses.
 - **Image Analysis:** Retrieve image descriptions using Gemini and OpenAI vision models.
 - **Function Calling:** Enable the chat to call predefined functions and use their results in conversations.
-- **Vector Store Search:** Retrieve knowledge from OpenAI vector stores for a better contextual response.
+- **Vector Store Search:** Retrieve knowledge from OpenAI vector stores or Google Gemini File Search Stores for better contextual responses.
 - **Document Analysis:** Analyze documents from Google Drive with support for multiple formats.
 - **MCP Connectors:** Attach Google Workspace or custom Model Context Protocol connectors to securely retrieve additional context during a conversation.
 
@@ -73,7 +73,9 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 | [`document-analysis.gs`](samples/document-analysis.gs) | Summarizes PDFs or exported Google Workspace files from Drive and Blob inputs. | `addFile()`, Drive file IDs, Blob file analysis |
 | [`knowledge-links.gs`](samples/knowledge-links.gs) | Injects a known web page as direct context without broad web search. | `addKnowledgeLink()`, page-grounded answers |
 | [`web-browsing.gs`](samples/web-browsing.gs) | Allows real-time browsing with an optional trusted-domain restriction. | `enableBrowsing(true, url)`, current-information prompts |
-| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Creates a vector store, uploads source content, queries it, and returns chunks. | `newVectorStore()`, `uploadAndAttachFile()`, `addVectorStores()`, `onlyReturnChunks()` |
+| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Creates a full OpenAI vector store, uploads source content, queries it, and returns chunks. | `newVectorStore()`, `uploadAndAttachFile()`, `addVectorStores()`, `onlyReturnChunks()` |
+| [`openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) | Minimal OpenAI vector-store retrieval example. | `newVectorStore('openai')`, `uploadAndAttachFile()`, OpenAI file search |
+| [`google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) | Minimal Gemini File Search Store retrieval example. | `newGeminiFileSearchStore()`, `createFileSearchStore()`, `uploadAndImportDocument()` |
 
 ### Function Calling
 
@@ -90,6 +92,8 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 | [`configuration-options.gs`](samples/configuration-options.gs) | Configures operational controls for long-running or budget-sensitive automations. | Token warnings, API call limits, compaction thresholds, logging controls |
 | [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Compares outputs from GPT, Gemini, and reasoning models with one prompt. | Multiple model IDs, `reasoning_effort`, provider switching |
 | [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Builds retrieval-augmented generation on OpenAI vector stores. | Vector-store lifecycle, chunking, attributes, retrieval responses |
+| [`openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) | Shows the shortest OpenAI vector-store create-upload-query flow. | OpenAI vector-store IDs, file upload, chat retrieval |
+| [`google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) | Shows the shortest Gemini File Search Store create-upload-query flow. | Gemini store resource names, direct document upload/import, chat retrieval |
 
 ### Integration
 
@@ -323,18 +327,30 @@ functionObject.addParameter('rating', 'number', 'The minimum rating of movies to
 
 ### VectorStoreObject Class
 
-#### Retrieving Knowledge from an OpenAI Vector Store
+#### Retrieving Knowledge from Vector Stores
 
-Use a vector store when you want model answers grounded in uploaded source files. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs) for a full create-upload-query workflow.
+Use a vector store when you want model answers grounded in uploaded source files. GenAIApp supports OpenAI vector stores and Google Gemini File Search Stores behind the same `VectorStoreObject` workflow. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs) for a full OpenAI create-upload-query workflow, [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) for a short OpenAI example, and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) for a short Gemini File Search Store example.
 
 ```js
-const vectorStoreObject = GenAIApp.newVectorStore()
-  .initializeFromId('your-vector-store-id');
+// OpenAI: pass an OpenAI vector store ID.
+const openAiStore = GenAIApp.newVectorStore('openai')
+  .initializeFromId('vs_your_openai_vector_store_id');
 
-chat.addVectorStores(vectorStoreObject.getId());
+const openAiChat = GenAIApp.newChat();
+openAiChat.addVectorStores(openAiStore.getId());
+
+// Google Gemini: pass the File Search Store resource name returned by getId(),
+// for example: fileSearchStores/abc123.
+const geminiStore = GenAIApp.newGeminiFileSearchStore()
+  .initializeFromId('fileSearchStores/your-google-store-name');
+
+const geminiChat = GenAIApp.newChat();
+geminiChat.addVectorStores(geminiStore.getId());
 ```
 
-To find out more, see the [https://platform.openai.com/docs/api-reference/vector_stores/search](https://platform.openai.com/docs/api-reference/vector_stores/search).
+For OpenAI, `addVectorStores()` sends `vector_store_ids` to the Responses API file-search tool. For Gemini, the same method sends `file_search_store_names` to the Gemini Interactions API, so use the full File Search Store resource name from `getId()`. Gemini uploads use the direct `uploadToFileSearchStore` media endpoint and wait for the returned operation to complete before the document is available.
+
+To find out more, see the [OpenAI vector store search API](https://platform.openai.com/docs/api-reference/vector_stores/search) and the [Gemini File Search Store API reference](https://ai.google.dev/api/file-search/file-search-stores).
 
 ## Reference
 
@@ -343,7 +359,8 @@ To find out more, see the [https://platform.openai.com/docs/api-reference/vector
 - `newChat()`: Create a new `Chat` instance. Start with [`samples/simple-chat.gs`](samples/simple-chat.gs).
 - `newFunction()`: Create a new `FunctionObject`. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs).
 - `newConnector()`: Create a new `ConnectorObject` for MCP integrations. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
-- `newVectorStore()`: Create a new `VectorStoreObject`. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs).
+- `newVectorStore([providerName])`: Create a new `VectorStoreObject`; omit `providerName` or pass `'openai'` for OpenAI, or pass `'gemini'` for Google Gemini File Search Stores. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
+- `newGeminiFileSearchStore()`: Convenience factory for a Gemini File Search Store-backed `VectorStoreObject`. See [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
 - `setOpenAIAPIKey(apiKey)`: Set the OpenAI API key.
 - `setGeminiAPIKey(apiKey)`: Set the Gemini API key.
 - `setGeminiAuth(projectId, region)`: Use Vertex AI authentication. See [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs).
@@ -374,7 +391,7 @@ A `Chat` represents a conversation with the model.
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
-- `addVectorStores(vectorStoreIds)`: Attach vector store IDs for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs).
+- `addVectorStores(vectorStoreIds)`: Attach OpenAI vector store IDs or Gemini File Search Store resource names for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 
 ### Function Object
@@ -389,18 +406,24 @@ A `FunctionObject` represents a function that can be called by the chat.
 
 ### Vector Store Object
 
-A `VectorStoreObject` represents an OpenAI vector store.
+A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File Search Store. OpenAI is the default provider; use `GenAIApp.newVectorStore('gemini')` or `GenAIApp.newGeminiFileSearchStore()` for Google.
 
-- `setName(newName)`: Set the vector store name.
-- `setDescription(newDesc)`: Set the description.
-- `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure chunking before uploads.
-- `createVectorStore()`: Create the vector store.
-- `initializeFromId(vectorStoreId)`: Initialize from an existing vector store ID.
-- `getId()`: Get the vector store ID.
-- `uploadAndAttachFile(blob, attributes)`: Upload a file and attach it to the store.
-- `listFiles()`: List files attached to the store.
-- `deleteFile(fileId)`: Delete a file from the store.
-- `deleteVectorStore()`: Delete the vector store.
+- `setName(newName)`: Set the OpenAI vector store name or Gemini display name.
+- `setDescription(newDesc)`: Set the description stored on the wrapper.
+- `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure OpenAI chunking before uploads.
+- `setEmbeddingModel(embeddingModel)`: Set the Gemini File Search Store embedding model resource name before creation.
+- `createVectorStore()`: Create the provider-backed store.
+- `createFileSearchStore()`: Alias for `createVectorStore()` when using Gemini.
+- `initializeFromId(vectorStoreId)`: Initialize from an OpenAI vector store ID or a Gemini File Search Store resource name.
+- `getId()`: Get the OpenAI vector store ID or Gemini File Search Store resource name.
+- `getName()`: Get the local name/display name.
+- `uploadAndAttachFile(blob, attributes)`: Upload a file to OpenAI or upload/import a document into Gemini.
+- `uploadAndImportDocument(blob, attributes)`: Alias for `uploadAndAttachFile()` for Gemini-style naming.
+- `listFiles()`: List OpenAI files or Gemini documents.
+- `listDocuments()`: Alias for `listFiles()`.
+- `deleteFile(fileId)`: Delete an OpenAI file or Gemini document.
+- `deleteDocument(documentId)`: Alias for `deleteFile()`.
+- `deleteVectorStore()`: Delete the store when supported. OpenAI stores can be deleted; Gemini store deletion is not implemented, so delete individual documents instead.
 
 ### Connector Object
 
