@@ -1,15 +1,15 @@
 /*
  GenAIApp
  https://github.com/scriptit-fr/GenAIApp
-
+ 
  Copyright (c) 2024 Guillemine Allavena - Romain Vialard
-
+ 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
-
+ 
  http://www.apache.org/licenses/LICENSE-2.0
-
+ 
  Unless required by applicable law or agreed to in writing, software
  distributed under the License is distributed on an "AS IS" BASIS,
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -81,7 +81,7 @@ const GenAIApp = (function () {
       /**
        * Add a message to the chat.
        * @param {string} messageContent - The message to be added.
-       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user.
+       * @param {boolean} [system] - OPTIONAL - True if message from system, False for user. 
        * @returns {Chat} - The current Chat instance.
        */
       this.addMessage = function (messageContent, system) {
@@ -222,7 +222,7 @@ const GenAIApp = (function () {
 
       /**
        * Adds an item (key/value pair) to the metadata that will be passed to the OpenAI API.
-       *
+       * 
        * @param {string} key - The key of the object that should be added.
        * @param {string} value - The value of the object that should be added.
        */
@@ -288,10 +288,10 @@ const GenAIApp = (function () {
 
       /**
        * OPTIONAL
-       *
+       * 
        * Allow openAI to browse the web.
        * @param {true} scope - set to true to enable full browsing
-       * @param {string} [url] - A specific site you want to restrict the search on .
+       * @param {string} [url] - A specific site you want to restrict the search on . 
        * @returns {Chat} - The current Chat instance.
        */
       this.enableBrowsing = function (scope, url) {
@@ -355,7 +355,7 @@ const GenAIApp = (function () {
       /**
        * If you want to limit the number of calls to the OpenAI API
        * A good way to avoid infinity loops and manage your budget.
-       * @param {number} maxAPICalls -
+       * @param {number} maxAPICalls - 
        */
       this.setMaximumAPICalls = function (maxAPICalls) {
         maximumAPICalls = maxAPICalls;
@@ -431,7 +431,7 @@ const GenAIApp = (function () {
 
       /**
        * Uses the provided vector store ids (up to 5) with the file search tool for simple RAG.
-       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs
+       * @param {string} vectorStoreIds - A vector store ID or a comma separated list of vector store IDs 
        */
       this.addVectorStores = function (vectorStoreIds) {
         const ids = vectorStoreIds.split(',').map(id => id.trim());
@@ -699,13 +699,13 @@ const GenAIApp = (function () {
       }
 
       /**
-       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and
-       * tool-specific configurations for browsing, image description, and assistant functionalities.
-       * Configures tool choices based on recent interactions, message content, and options in
+       * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
+       * tool-specific configurations for browsing, image description, and assistant functionalities. 
+       * Configures tool choices based on recent interactions, message content, and options in 
        * `advancedParametersObject`.
        *
        * @private
-       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections
+       * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
        *                     for OpenAI's API.
        * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
        */
@@ -930,14 +930,14 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Builds and returns a payload for a Gemini API call, configuring content, model parameters,
-       * and tool settings based on advanced options and feature flags such as browsing.
+       * Builds and returns a payload for a Gemini API call, configuring content, model parameters, 
+       * and tool settings based on advanced options and feature flags such as browsing. 
        * Adapts the payload for specific function calls and tools.
        *
        * @private
-       * @param {Object} advancedParametersObject - An object with optional advanced parameters,
+       * @param {Object} advancedParametersObject - An object with optional advanced parameters, 
        *                                            such as function call preferences.
-       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings,
+       * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
        *                     generation configuration, and available tools.
        * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
        */
@@ -997,11 +997,22 @@ const GenAIApp = (function () {
         }
 
         if (browsing) {
+          tools.push({
+            google_search: "",
+          });
           payload.tools.push({
             type: "url_context"
           });
           payload.tools.push({
             type: "google_search"
+          });
+        }
+
+        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+          payload.tools.push({
+            file_search: {
+              file_search_store_names: Object.keys(addedVectorStores)
+            }
           });
         }
 
@@ -1087,24 +1098,118 @@ const GenAIApp = (function () {
   }
 
   /**
- * @class
- * Class representing an Open AI Vector Store.
- */
+   * @class
+   * Internal provider for OpenAI vector stores.
+   */
+  class OpenAIVectorStoreProvider {
+    constructor(state) {
+      this.type = "openai";
+      this.state = state;
+    }
+
+    create() {
+      if (!this.state.name) throw new Error("[GenAIApp] - Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
+      return {
+        id: _createOpenAiVectorStore(this.state.name),
+        name: this.state.name
+      };
+    }
+
+    retrieve(vectorStoreId) {
+      return {
+        id: vectorStoreId,
+        name: _retrieveVectorStoreInformation(vectorStoreId)
+      };
+    }
+
+    list() {
+      return _listFilesInVectorStore(this.state.id);
+    }
+
+    upload(blob, attributes) {
+      const uploadedFileId = _uploadFileToOpenAIStorage(blob);
+      return _attachFileToVectorStore(uploadedFileId, this.state.id, attributes, this.state.max_chunk_size, this.state.chunk_overlap);
+    }
+
+    deleteItem(fileId) {
+      return _deleteFileInVectorStore(this.state.id, fileId);
+    }
+
+    deleteStore() {
+      return _deleteVectorStore(this.state.id);
+    }
+  }
+
+  /**
+   * @class
+   * Internal provider for Gemini File Search Stores.
+   */
+  class GeminiFileSearchStoreProvider {
+    constructor(state) {
+      this.type = "gemini";
+      this.state = state;
+    }
+
+    create() {
+      const store = _createGeminiFileSearchStore(this.state.name, this.state.embeddingModel);
+      return {
+        id: store.name,
+        name: store.displayName || this.state.name,
+        embeddingModel: store.embeddingModel || this.state.embeddingModel
+      };
+    }
+
+    retrieve(storeName) {
+      const store = _retrieveGeminiFileSearchStoreInformation(storeName);
+      return {
+        id: store.name,
+        name: store.displayName || "",
+        embeddingModel: store.embeddingModel || ""
+      };
+    }
+
+    list() {
+      return _listGeminiFileSearchStoreDocuments(this.state.id);
+    }
+
+    upload(blob, attributes) {
+      return _uploadAndImportGeminiFileSearchStoreDocument(this.state.id, blob, attributes);
+    }
+
+    deleteItem(documentName) {
+      return _deleteGeminiFileSearchStoreDocument(documentName);
+    }
+
+    deleteStore() {
+      throw new Error("[GenAIApp] - Deleting a Gemini File Search Store is not implemented in GenAIApp yet. Use deleteDocument/deleteFile to remove documents from the store.");
+    }
+  }
+
+  /**
+   * @class
+   * Class representing a Vector Store, backed by an internal provider.
+   */
   class VectorStoreObject {
-    constructor() {
-      let name = "";
-      let description = "";
-      let id = null;
-      let max_chunk_size = 800;
-      let chunk_overlap = 400;
+    constructor(providerName = "openai") {
+      const state = {
+        name: "",
+        description: "",
+        id: null,
+        max_chunk_size: 800,
+        chunk_overlap: 400,
+        embeddingModel: ""
+      };
+      const provider = providerName === "gemini"
+        ? new GeminiFileSearchStoreProvider(state)
+        : new OpenAIVectorStoreProvider(state);
 
       /**
-       * Sets the vector store's name
+       * Sets the vector store's name or display name.
        * @param {string} newName - The name to assign to the vector store.
        * @returns {VectorStoreObject}
        */
       this.setName = function (newName) {
-        name = newName;
+        state.name = newName;
         return this;
       };
 
@@ -1114,149 +1219,208 @@ const GenAIApp = (function () {
        * @returns {VectorStoreObject}
        */
       this.setDescription = function (newDesc) {
-        description = newDesc;
+        state.description = newDesc;
         return this;
       };
 
       /**
-       * Sets the chunking strategy for the Vector Store.
+       * Sets the chunking strategy for OpenAI vector-store uploads.
        * @param {number} maxChunkSize - The maximum token size of a chunk (max is 4096, defaults to 800).
        * @param {number} chunkOverlap - The chunk overlap to apply. Cannot exceed half of the maxChunkSize (defaults to 400).
+       * @returns {VectorStoreObject}
        */
       this.setChunkingStrategy = function (maxChunkSize, chunkOverlap) {
-        max_chunk_size = maxChunkSize;
-        chunk_overlap = chunkOverlap;
-        return this
-      }
+        state.max_chunk_size = maxChunkSize;
+        state.chunk_overlap = chunkOverlap;
+        return this;
+      };
 
       /**
-       * Creates the Open AI vector store. A name must be assigned before calling this function.
+       * Sets the embedding model for Gemini File Search Stores.
+       * @param {string} embeddingModel - The embedding model resource name.
+       * @returns {VectorStoreObject}
+       */
+      this.setEmbeddingModel = function (embeddingModel) {
+        state.embeddingModel = embeddingModel;
+        return this;
+      };
+
+      /**
+       * Creates the provider-backed vector store.
        * @returns {VectorStoreObject}
        */
       this.createVectorStore = function () {
-        if (!name) throw new Error("[GenAIApp] - Please specify your Vector Store name using the GenAiApp.newVectorStore().setName() method before creating it.");
         try {
-          id = _createOpenAiVectorStore(name);
+          const store = provider.create();
+          state.id = store.id;
+          state.name = store.name || state.name;
+          state.embeddingModel = store.embeddingModel || state.embeddingModel;
         }
         catch (e) {
-          console.error(`Error creating the vector store : ${e}`);
+          console.error(`[GenAIApp] - Error creating the ${provider.type} vector store: ${e}`);
         }
         return this;
       };
 
       /**
-       * Initializes a new vector store object from an existing Open AI vector store id. This allows a user to interact with an existing vector store.
-       *
-       * @param {string} vectorStoreId - The Open AI API vector store id.
+       * Creates a Gemini File Search Store. Alias for createVectorStore().
+       * @returns {VectorStoreObject}
+       */
+      this.createFileSearchStore = function () {
+        return this.createVectorStore();
+      };
+
+      /**
+       * Initializes a vector store object from an existing provider store id/resource name.
+       * @param {string} vectorStoreId - The provider store id or resource name.
+       * @returns {VectorStoreObject}
        */
       this.initializeFromId = function (vectorStoreId) {
         try {
-          const vectorStoreName = _retrieveVectorStoreInformation(vectorStoreId);
-          name = vectorStoreName;
-          id = vectorStoreId;
+          const store = provider.retrieve(vectorStoreId);
+          state.id = store.id;
+          state.name = store.name || state.name;
+          state.embeddingModel = store.embeddingModel || state.embeddingModel;
         }
         catch (e) {
-          console.error(`[GenAIApp] - Could not initialize vector store object from id : ${e}`);
+          console.error(`[GenAIApp] - Could not initialize ${provider.type} vector store object from id: ${e}`);
         }
         return this;
-      }
+      };
 
       /**
-       * Returns the vector store id.
-       * @returns {string} - The id of the vector store.
+       * Returns the vector store id/resource name.
+       * @returns {string}
        */
       this.getId = function () {
-        return id;
+        return state.id;
       };
 
       /**
-       * Uploads a file to Open AI storage and attaches it to the vector store.
+       * Returns the vector store name/display name.
+       * @returns {string}
+       */
+      this.getName = function () {
+        return state.name;
+      };
+
+      /**
+       * Uploads a file/blob and attaches or imports it into the vector store.
        * @param {Blob} blob - File to upload.
-       * @param {Object} attributes - The JSON object containing the attributes to attach to the vector store. Per Open AI's documentation, must contain a max of 16 key-value pairs (both strings, up to 64 characters for keys, and up to 500 characters for values).
-       * @returns {object} - The raw JSON chunks returned by the vector store.
+       * @param {Object} attributes - Metadata attributes to store on the item.
+       * @returns {Object}
        */
       this.uploadAndAttachFile = function (blob, attributes = {}) {
-        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before attaching files.");
+        if (!state.id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object before attaching files.");
         try {
-          const uploadedFileId = _uploadFileToOpenAIStorage(blob);
-          const attachedFileId = _attachFileToVectorStore(uploadedFileId, id, attributes, max_chunk_size, chunk_overlap);
-          return attachedFileId;
+          return provider.upload(blob, attributes);
         }
         catch (e) {
           Logger.log({
-            message: `Unable to upload and attach the file to the vector store : ${e}`,
+            message: `Unable to upload and attach the file to the ${provider.type} vector store: ${e}`,
             fileBlob: blob
           });
+          throw e;
         }
       };
 
       /**
-       * Lists the files attached to the vector store.
-       * @returns {Array} - An array containing the files attached to the vector store.
+       * Uploads and imports a document into the vector store. Alias for uploadAndAttachFile().
+       * @param {Blob} blob - File to upload.
+       * @param {Object} attributes - Metadata attributes to store on the item.
+       * @returns {Object}
+       */
+      this.uploadAndImportDocument = function (blob, attributes = {}) {
+        return this.uploadAndAttachFile(blob, attributes);
+      };
+
+      /**
+       * Lists vector store files/documents.
+       * @returns {Array}
        */
       this.listFiles = function () {
-        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before listing files.");
+        if (!state.id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object before listing files.");
         try {
-          const listedFiles = _listFilesInVectorStore(id);
-          return listedFiles;
+          return provider.list();
         }
         catch (e) {
           Logger.log({
-            message: `An error occured when trying to list files from vector store : ${e}`,
-            vectorStoreId: id
+            message: `An error occured when trying to list items from ${provider.type} vector store: ${e}`,
+            vectorStoreId: state.id
           });
+          throw e;
         }
       };
 
       /**
-       * Deletes a file from the vector store.
-       * @param {string} fileId - The ID of the file to delete.
+       * Lists vector store documents. Alias for listFiles().
+       * @returns {Array}
        */
-      this.deleteFile = function (fileId) {
-        if (!fileId) throw new Error("[GenAIApp] - Please pass an Open AI storage file ID to the deleteFile(fileId) function. You can retrieve the file ID through the Open AI Files API or directly through the platform.");
-        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before deleting files.");
-        try {
-          const deleteId = _deleteFileInVectorStore(id, fileId);
-          return deleteId;
-        }
-        catch (e) {
-          Logger.log({
-            message: `An error occured when trying to delete the file from the vector store : ${e}`,
-            vectorStoreId: id,
-            fileId: fileId
-          });
-        }
-
+      this.listDocuments = function () {
+        return this.listFiles();
       };
 
       /**
-       * Deletes the vector store from Open AI.
-       * @returns {string} - The delete ID.
+       * Deletes a file/document from the vector store.
+       * @param {string} itemId - The provider item id/resource name to delete.
+       * @returns {Object}
+       */
+      this.deleteFile = function (itemId) {
+        if (!itemId) throw new Error("[GenAIApp] - Please pass a vector store item ID to deleteFile(itemId).");
+        if (!state.id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object before deleting files.");
+        try {
+          return provider.deleteItem(itemId);
+        }
+        catch (e) {
+          Logger.log({
+            message: `An error occured when trying to delete the item from ${provider.type} vector store: ${e}`,
+            vectorStoreId: state.id,
+            itemId: itemId
+          });
+          throw e;
+        }
+      };
+
+      /**
+       * Deletes a document from the vector store. Alias for deleteFile().
+       * @param {string} documentId - The provider document id/resource name to delete.
+       * @returns {Object}
+       */
+      this.deleteDocument = function (documentId) {
+        return this.deleteFile(documentId);
+      };
+
+      /**
+       * Deletes the vector store when supported by the provider.
+       * @returns {string|Object}
        */
       this.deleteVectorStore = function () {
-        if (!id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object with GenAiApp.newVectorStore().setName().initializeFromId() or GenAiApp.newVectorStore().setName().createVectorStore() before being deleted.");
+        if (!state.id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object before being deleted.");
         try {
-          const deleteId = _deleteVectorStore(id);
-          id = null;
+          const deleteId = provider.deleteStore();
+          state.id = null;
           return deleteId;
         }
         catch (e) {
           Logger.log({
-            message: `An error occured when trying to delete the vector store : ${e}`,
-            vectorStoreId: id
+            message: `An error occured when trying to delete the ${provider.type} vector store: ${e}`,
+            vectorStoreId: state.id
           });
+          throw e;
         }
       };
 
       /**
-       * Returns the JSON object with name, description, and ID.
+       * Returns the JSON object with provider, name, description, and ID.
        * @returns {Object}
        */
       this._toJson = function () {
         return {
-          name: name,
-          description: description,
-          id: id
+          provider: provider.type,
+          name: state.name,
+          description: state.description,
+          id: state.id,
+          embeddingModel: state.embeddingModel
         };
       };
     }
@@ -1495,8 +1659,8 @@ const GenAIApp = (function () {
       /**
        * OPTIONAL
        * If enabled, the conversation with the chat will automatically end when this function is called.
-       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly.
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
+       * Default : false, eg the function is sent to the chat that will decide what the next action shoud be accordingly. 
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
        * @returns {FunctionObject} - The current Function instance.
        */
       this.endWithResult = function (bool) {
@@ -1554,7 +1718,7 @@ const GenAIApp = (function () {
        * OPTIONAL
        * If enabled, the conversation will automatically end when this function is called and the chat will return the arguments in a stringified JSON object.
        * Default : false
-       * @param {boolean} bool - Whether or not you wish for the option to be enabled.
+       * @param {boolean} bool - Whether or not you wish for the option to be enabled. 
        * @returns {FunctionObject} - The current Function instance.
        */
       this.onlyReturnArguments = function (bool) {
@@ -1728,7 +1892,7 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling,
+   * Processes tool calls from a Gemini response message, managing the sequence of function executions, argument handling, 
    * and special actions for web search and URL fetch calls. It dynamically builds a conversation flow and manages the end
    * condition based on tool specifications.
    *
@@ -1895,12 +2059,13 @@ const GenAIApp = (function () {
     if (onlyReturnArguments !== null) {
       contents._geminiOnlyReturnArguments = onlyReturnArguments;
     }
+
     return contents;
   }
 
   /**
    * Processes OpenAI tool calls from a response message, handling function executions, argument ordering, and
-   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with
+   * managing specific actions like web searches and URL fetches. This function updates the conversation flow with 
    * each tool call result and manages special conditions based on tool specifications.
    *
    * @private
@@ -1989,12 +2154,12 @@ const GenAIApp = (function () {
           return messages;
         }
         else {
-          // Reset the previous messages,
+          // Reset the previous messages, 
           // we will rely instead on the previous_response_id parameter to pass reasoning items from previous responses
           // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
           // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
           if (!messages.every(msg => msg.type === "function_call_output" || msg.role === "system")) {
-            // Reset only if it contains other messages than function_call_output
+            // Reset only if it contains other messages than function_call_output 
             // to allow for parallel function calling
             // https://platform.openai.com/docs/guides/function-calling#parallel-function-calling
             // Preserve only system messages
@@ -2016,7 +2181,7 @@ const GenAIApp = (function () {
    * Extracts assistant text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
    * Falls back to the last available assistant message text when no explicit final answer exists.
-   *
+   * 
    * Logs a warning when compaction was used for the response.
    *
    * @private
@@ -2056,8 +2221,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Calls an internal or dynamically referenced function based on the provided function name,
-   * with arguments parsed and ordered as specified. Handles specific functions directly and
+   * Calls an internal or dynamically referenced function based on the provided function name, 
+   * with arguments parsed and ordered as specified. Handles specific functions directly and 
    * supports dynamic function calling from the global context.
    *
    * @private
@@ -2088,8 +2253,8 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Attempts to parse a JSON response string into an object. If the response contains errors,
-   * such as missing values, colons, or braces, it applies corrective measures to reconstruct
+   * Attempts to parse a JSON response string into an object. If the response contains errors, 
+   * such as missing values, colons, or braces, it applies corrective measures to reconstruct 
    * and parse the JSON structure. Logs warnings if parsing fails after corrections.
    *
    * @private
@@ -2185,7 +2350,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to OpenAI and returns the file ID.
-   *
+   * 
    * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
    * @returns {string} The OpenAI file ID.
    */
@@ -2248,7 +2413,7 @@ const GenAIApp = (function () {
    *
    * @private
    * @param {string} url - The URL of the webpage to fetch.
-   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200,
+   * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
    *                          or an error message in JSON format if access is denied or an error occurs.
    */
   function _urlFetch(url) {
@@ -2276,9 +2441,9 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes,
-   * and handling common HTML elements such as anchors, headings, lists, tables, images,
-   * inline code, and preformatted text. Also removes script and style content, and
+   * Converts an HTML string to Markdown format, removing unnecessary tags and attributes, 
+   * and handling common HTML elements such as anchors, headings, lists, tables, images, 
+   * inline code, and preformatted text. Also removes script and style content, and 
    * cleans up excess whitespace.
    *
    * @private
@@ -2374,7 +2539,7 @@ const GenAIApp = (function () {
 
   /**
    * Makes the API call to Open AI to create a new vector store.
-   *
+   * 
    * @param {string} vectorStoreName - The vectorStoreName to help build the vector store's name.
    * @returns {string} id - The id of the vector store that was just created.
    */
@@ -2416,8 +2581,8 @@ const GenAIApp = (function () {
 
   /**
    * Retrieves information avout a specific Vector Store from Open AI's API.
-   *
-   * @param {string} vectorStoreId - The Open AI API vector store Id.
+   * 
+   * @param {string} vectorStoreId - The Open AI API vector store Id.  
    */
   function _retrieveVectorStoreInformation(vectorStoreId) {
     const url = apiBaseUrl + '/v1/vector_stores/' + vectorStoreId;
@@ -2439,7 +2604,7 @@ const GenAIApp = (function () {
 
   /**
    * Uploads a file to the Open AI storage.
-   *
+   * 
    * @param {Blob} blob - The file blob.
    * @returns {string} id - The id of the uploaded file.
    */
@@ -2652,6 +2817,262 @@ const GenAIApp = (function () {
     }
   }
 
+
+  /**
+   * Builds Gemini REST headers using the same authentication branch as _callGenAIApi().
+   * @param {Object} extraHeaders - Additional headers to include.
+   * @returns {Object}
+   */
+  function _getGeminiRestHeaders(extraHeaders = {}) {
+    const headers = Object.assign({}, extraHeaders);
+    if (geminiKey) {
+      headers['x-goog-api-key'] = geminiKey;
+    }
+    else {
+      headers['Authorization'] = 'Bearer ' + ScriptApp.getOAuthToken();
+    }
+    return headers;
+  }
+
+  /**
+   * Calls Gemini REST APIs with JSON parsing and status-code error handling.
+   * @param {string} url - Endpoint URL.
+   * @param {Object} options - UrlFetch options.
+   * @returns {Object}
+   */
+  function _callGeminiFileSearchStoreApi(url, options) {
+    options.muteHttpExceptions = true;
+    let response;
+    if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+      response = ErrorHandler.urlFetchWithExpBackOff(url, options);
+    }
+    else {
+      response = UrlFetchApp.fetch(url, options);
+    }
+
+    const responseText = response.getContentText();
+    const responseCode = response.getResponseCode();
+    let result = {};
+    if (responseText) {
+      result = JSON.parse(responseText);
+    }
+
+    if (responseCode >= 200 && responseCode < 300) {
+      return result;
+    }
+
+    const errorMessage = result && result.error && result.error.message ? result.error.message : responseText;
+    throw new Error(`[GenAIApp] - Gemini File Search Store API error (${responseCode}): ${errorMessage}`);
+  }
+
+  /**
+   * Creates a Gemini File Search Store.
+   * @param {string} displayName - Human-readable display name.
+   * @param {string} embeddingModel - Optional embedding model resource name.
+   * @returns {Object}
+   */
+  function _createGeminiFileSearchStore(displayName, embeddingModel) {
+    const payload = {};
+    if (displayName) payload.displayName = displayName;
+    if (embeddingModel) payload.embeddingModel = embeddingModel;
+
+    const url = 'https://generativelanguage.googleapis.com/v1beta/fileSearchStores';
+    const store = _callGeminiFileSearchStoreApi(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: _getGeminiRestHeaders({ 'Content-Type': 'application/json' }),
+      payload: JSON.stringify(payload)
+    });
+
+    if (!store || !store.name) {
+      throw new Error('[GenAIApp] - Gemini File Search Store creation did not return a store name.');
+    }
+
+    return store;
+  }
+
+  /**
+   * Retrieves Gemini File Search Store information by resource name.
+   * @param {string} storeName - Gemini File Search Store resource name.
+   * @returns {Object}
+   */
+  function _retrieveGeminiFileSearchStoreInformation(storeName) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/${storeName}`;
+    return _callGeminiFileSearchStoreApi(url, {
+      method: 'get',
+      headers: _getGeminiRestHeaders()
+    });
+  }
+
+  /**
+   * Normalizes Gemini customMetadata into an object.
+   * @param {Array|Object} customMetadata - Gemini custom metadata.
+   * @returns {Object}
+   */
+  function _normalizeGeminiCustomMetadata(customMetadata) {
+    if (!customMetadata) return {};
+    if (!Array.isArray(customMetadata)) return customMetadata;
+    return customMetadata.reduce((metadata, entry) => {
+      if (entry && entry.key) {
+        metadata[entry.key] = entry.stringValue || entry.value || entry.numericValue || entry.boolValue;
+      }
+      return metadata;
+    }, {});
+  }
+
+  /**
+   * Converts a plain metadata object to Gemini customMetadata entries.
+   * @param {Object} attributes - Metadata attributes.
+   * @returns {Array}
+   */
+  function _buildGeminiCustomMetadata(attributes = {}) {
+    return Object.keys(attributes)
+      .filter(key => attributes[key] !== undefined && attributes[key] !== null)
+      .map(key => ({ key: key, stringValue: String(attributes[key]) }));
+  }
+
+  /**
+   * Lists documents in a Gemini File Search Store, following pagination.
+   * @param {string} storeName - Gemini File Search Store resource name.
+   * @returns {Array}
+   */
+  function _listGeminiFileSearchStoreDocuments(storeName) {
+    const documents = [];
+    let pageToken = null;
+
+    do {
+      let url = `https://generativelanguage.googleapis.com/v1beta/${storeName}/documents?pageSize=20`;
+      if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+
+      const result = _callGeminiFileSearchStoreApi(url, {
+        method: 'get',
+        headers: _getGeminiRestHeaders()
+      });
+
+      (result.documents || []).forEach(document => {
+        const customMetadata = _normalizeGeminiCustomMetadata(document.customMetadata);
+        documents.push(Object.assign({}, document, {
+          id: document.name,
+          name: document.name,
+          displayName: document.displayName,
+          customMetadata: customMetadata,
+          attributes: { url: customMetadata.url || customMetadata.publicUrl }
+        }));
+      });
+      pageToken = result.nextPageToken;
+    } while (pageToken);
+
+    return documents;
+  }
+
+  /**
+   * Uploads a blob to Gemini File API.
+   * @param {Blob} blob - File blob.
+   * @returns {Object}
+   */
+  function _uploadFileToGeminiStorage(blob) {
+    const url = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
+    const fileName = blob.getName ? blob.getName() : 'document.html';
+    return _callGeminiFileSearchStoreApi(url, {
+      method: 'post',
+      headers: _getGeminiRestHeaders(),
+      payload: {
+        metadata: Utilities.newBlob(JSON.stringify({ file: { displayName: fileName } }), 'application/json'),
+        file: blob
+      }
+    });
+  }
+
+  /**
+   * Uploads a blob directly into a File Search Store and waits for completion.
+   *
+   * Prefer the uploadToFileSearchStore media endpoint over the files.upload + importFile
+   * two-step flow because importFile can reject otherwise valid Gemini API-key requests.
+   * The direct upload endpoint still returns a File Search Store operation, so callers keep
+   * the same completion/error semantics.
+   *
+   * @param {string} storeName - Gemini File Search Store resource name.
+   * @param {Blob} blob - File blob.
+   * @param {Object} attributes - Metadata to store on the document.
+   * @returns {Object}
+   */
+  function _uploadAndImportGeminiFileSearchStoreDocument(storeName, blob, attributes = {}) {
+    const operation = _uploadToGeminiFileSearchStore(storeName, blob, attributes);
+    return _pollGeminiFileSearchStoreOperation(operation.name);
+  }
+
+  /**
+   * Uploads raw media directly to a Gemini File Search Store.
+   * @param {string} storeName - Gemini File Search Store resource name.
+   * @param {Blob} blob - File blob.
+   * @param {Object} attributes - Metadata to store on the document.
+   * @returns {Object}
+   */
+  function _uploadToGeminiFileSearchStore(storeName, blob, attributes = {}) {
+    const url = `https://generativelanguage.googleapis.com/upload/v1beta/${storeName}:uploadToFileSearchStore`;
+    const fileName = blob.getName ? blob.getName() : 'document.html';
+    const mimeType = blob.getContentType ? blob.getContentType() : 'text/html';
+
+    return _callGeminiFileSearchStoreApi(url, {
+      method: 'post',
+      headers: _getGeminiRestHeaders(),
+      payload: {
+        metadata: Utilities.newBlob(JSON.stringify({
+          displayName: fileName,
+          mimeType: mimeType,
+          customMetadata: _buildGeminiCustomMetadata(attributes)
+        }), 'application/json'),
+        file: blob
+      }
+    });
+  }
+
+  /**
+   * Polls a Gemini File Search Store operation until it is done.
+   * @param {string} operationName - Operation resource name.
+   * @returns {Object}
+   */
+  function _pollGeminiFileSearchStoreOperation(operationName) {
+    if (!operationName) throw new Error('[GenAIApp] - Gemini File Search Store upload did not return an operation name.');
+    const operationUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}`;
+    const maxPolls = 30;
+    const pollIntervalMs = 2000;
+
+    for (let poll = 0; poll < maxPolls; poll++) {
+      const operation = _callGeminiFileSearchStoreApi(operationUrl, {
+        method: 'get',
+        headers: _getGeminiRestHeaders()
+      });
+
+      if (operation.done) {
+        if (operation.error) {
+          throw new Error(`[GenAIApp] - Gemini File Search Store upload failed: ${operation.error.message || JSON.stringify(operation.error)}`);
+        }
+        return operation.response || operation;
+      }
+
+      Logger.log({
+        message: `[GenAIApp] - Waiting for Gemini File Search Store upload operation ${operationName} (${poll + 1}/${maxPolls})`
+      });
+      Utilities.sleep(pollIntervalMs);
+    }
+
+    throw new Error(`[GenAIApp] - Gemini File Search Store upload operation timed out: ${operationName}`);
+  }
+
+  /**
+   * Deletes a Gemini File Search Store document using force=true.
+   * @param {string} documentName - Document resource name.
+   * @returns {Object}
+   */
+  function _deleteGeminiFileSearchStoreDocument(documentName) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/${documentName}?force=true`;
+    return _callGeminiFileSearchStoreApi(url, {
+      method: 'delete',
+      headers: _getGeminiRestHeaders()
+    });
+  }
+
   return {
     /**
      * Create a new chat.
@@ -2678,11 +3099,20 @@ const GenAIApp = (function () {
     },
 
     /**
-     * Create a new Vector Store.
+     * Create a new provider-backed Vector Store.
+     * @param {"openai"|"gemini"} [providerName] - The vector store provider, defaults to OpenAI.
      * @returns {VectorStoreObject} - A new Vector Store instance.
      */
-    newVectorStore: function () {
-      return new VectorStoreObject();
+    newVectorStore: function (providerName) {
+      return new VectorStoreObject(providerName || "openai");
+    },
+
+    /**
+     * Create a new Gemini File Search Store wrapper.
+     * @returns {VectorStoreObject} - A new Gemini File Search Store instance.
+     */
+    newGeminiFileSearchStore: function () {
+      return new VectorStoreObject("gemini");
     },
 
     /**
