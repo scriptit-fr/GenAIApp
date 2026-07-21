@@ -996,18 +996,6 @@ const GenAIApp = (function () {
           });
         }
 
-        if (browsing) {
-          tools.push({
-            google_search: "",
-          });
-          payload.tools.push({
-            type: "url_context"
-          });
-          payload.tools.push({
-            type: "google_search"
-          });
-        }
-
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
           payload.tools.push({
             "type": "file_search",
@@ -2913,7 +2901,13 @@ const GenAIApp = (function () {
     if (!Array.isArray(customMetadata)) return customMetadata;
     return customMetadata.reduce((metadata, entry) => {
       if (entry && entry.key) {
-        metadata[entry.key] = entry.stringValue || entry.value || entry.numericValue || entry.boolValue;
+        metadata[entry.key] = entry.stringValue != null
+          ? entry.stringValue
+          : entry.value != null
+            ? entry.value
+            : entry.numericValue != null
+              ? entry.numericValue
+              : entry.boolValue;
       }
       return metadata;
     }, {});
@@ -2962,24 +2956,6 @@ const GenAIApp = (function () {
     } while (pageToken);
 
     return documents;
-  }
-
-  /**
-   * Uploads a blob to Gemini File API.
-   * @param {Blob} blob - File blob.
-   * @returns {Object}
-   */
-  function _uploadFileToGeminiStorage(blob) {
-    const url = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
-    const fileName = blob.getName ? blob.getName() : 'document.html';
-    return _callGeminiFileSearchStoreApi(url, {
-      method: 'post',
-      headers: _getGeminiRestHeaders(),
-      payload: {
-        metadata: Utilities.newBlob(JSON.stringify({ file: { displayName: fileName } }), 'application/json'),
-        file: blob
-      }
-    });
   }
 
   /**
