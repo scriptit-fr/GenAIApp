@@ -23,7 +23,7 @@ function conversationContinuationSample() {
 
   const firstGeminiChat = GenAIApp.newChat()
     .addMessage('Remember this preference: my report accent color is amber.');
-  Logger.log(firstGeminiChat.run({ model: 'GeminiModel' }));
+  Logger.log(firstGeminiChat.run({ model: 'gemini-model' }));
 
   const previousInteractionId = firstGeminiChat.retrieveLastInteractionId();
   Logger.log('Previous Gemini interaction ID: ' + previousInteractionId);
@@ -31,5 +31,5 @@ function conversationContinuationSample() {
   const secondGeminiChat = GenAIApp.newChat()
     .setPreviousInteractionId(previousInteractionId)
     .addMessage('What report accent color did I choose?');
-  Logger.log(secondGeminiChat.run({ model: 'GeminiModel' }));
+  Logger.log(secondGeminiChat.run({ model: 'gemini-model' }));
 }

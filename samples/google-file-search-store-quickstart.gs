@@ -20,7 +20,7 @@ function googleFileSearchStoreQuickstartSample() {
   const answer = GenAIApp.newChat()
     .addVectorStores(store.getId())
     .addMessage('When are team demos?')
-    .run();
+    .run({ model: 'gemini-model' });
 
   Logger.log(answer);
 }

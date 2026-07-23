@@ -14,6 +14,6 @@ function vertexAiSetupSample() {
   const chat = GenAIApp.newChat()
     .addMessage('Explain Vertex AI authentication for Apps Script in one sentence.');
 
-  const response = chat.run();
+  const response = chat.run({ model: 'gemini-model' });
   Logger.log(response);
 }
