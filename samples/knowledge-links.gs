@@ -11,6 +11,6 @@ function knowledgeLinksSample() {
     .addKnowledgeLink('https://developers.google.com/apps-script/guides/libraries')
     .addMessage('Based only on the provided knowledge link, what is one reason to use an Apps Script library?');
 
-  const response = chat.run({ model: 'gpt-5.6-terra' });
+  const response = chat.run();
   Logger.log(response);
 }

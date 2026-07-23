@@ -62,7 +62,7 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 | [`simple-chat.gs`](samples/simple-chat.gs) | Smallest possible GenAIApp chat request for a hello-world smoke test. | `setOpenAIAPIKey()`, `newChat()`, `addMessage()`, `run()` |
 | [`system-prompts.gs`](samples/system-prompts.gs) | Sets assistant role, tone, and response format with a system message. | System messages with `addMessage(message, true)`, prompt shaping |
 | [`configuration-options.gs`](samples/configuration-options.gs) | Shows common configuration and guardrail settings for production scripts. | `disableLogs()`, `warnIfResponseTokenUsageAbove()`, `enableCompaction()`, `setMaximumAPICalls()` |
-| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Reuses the same prompt across OpenAI and Gemini models for comparison. | `setOpenAIAPIKey()`, `setGeminiAPIKey()`, model selection in `run()` |
+| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Reuses the same prompt across OpenAI and Gemini model names for comparison. | `setOpenAIAPIKey()`, `setGeminiAPIKey()`, model selection in `run()` |
 | [`vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) | Authenticates Gemini through a linked Google Cloud project instead of an API key. | `setGeminiAuth()`, Vertex AI configuration, Gemini model execution |
 
 ### Content Analysis
@@ -88,9 +88,9 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 
 | Sample | Description | Demonstrates |
 | --- | --- | --- |
-| [`conversation-continuation.gs`](samples/conversation-continuation.gs) | Continues an OpenAI Responses API conversation without resending the full transcript. | `retrieveLastResponseId()`, `setPreviousResponseId()` |
+| [`conversation-continuation.gs`](samples/conversation-continuation.gs) | Continues OpenAI Responses API and Gemini Interactions API conversations without resending the full transcript. | `retrieveLastResponseId()`, `setPreviousResponseId()`, `retrieveLastInteractionId()`, `setPreviousInteractionId()` |
 | [`configuration-options.gs`](samples/configuration-options.gs) | Configures operational controls for long-running or budget-sensitive automations. | Token warnings, API call limits, compaction thresholds, logging controls |
-| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Compares outputs from GPT, Gemini, and reasoning models with one prompt. | Multiple model IDs, `reasoning_effort`, provider switching |
+| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Compares outputs from OpenAI and Gemini model names with one prompt. | Model IDs, provider switching |
 | [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Builds retrieval-augmented generation on OpenAI vector stores. | Vector-store lifecycle, chunking, attributes, retrieval responses |
 | [`openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) | Shows the shortest OpenAI vector-store create-upload-query flow. | OpenAI vector-store IDs, file upload, chat retrieval |
 | [`google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) | Shows the shortest Gemini File Search Store create-upload-query flow. | Gemini store resource names, direct document upload/import, chat retrieval |
@@ -279,7 +279,7 @@ chat.addMCP(customConnector);
 - **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, `.setServerUrl('https://...')`, and optionally `.setAuthorization()` if the server expects a bearer token.
 - **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
 
-> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models (for example, `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-5.6-luna`).
+> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models. Check your provider's current model documentation before choosing a model override.
 
 ### Running the Chat
 
@@ -287,16 +287,14 @@ Once you have set up the chat and added the necessary components, start the conv
 
 ```js
 const response = chat.run({
-  model: 'gemini-2.5-flash', // Optional: set the model to use
+  model: 'your-model-name', // Optional: set the model to use
   temperature: 0.5, // Optional: set response creativity
   function_call: 'getWeather' // Optional: force the first API response to call a function
 });
 
 console.log(response);
 ```
-The library supports the following models (this list is not exhaustive):
-1. Gemini: "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-3.5-flash"
-2. OpenAI: "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
+GenAIApp supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
 
 ⚠️ **Warning:** The `reasoning_effort` parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
 
@@ -390,6 +388,8 @@ A `Chat` represents a conversation with the model.
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `retrieveLastInteractionId()`: Get the last Gemini Interactions API interaction ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `setPreviousInteractionId(id)`: Reuse a previous Gemini interaction ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
 - `addVectorStores(vectorStoreIds)`: Attach OpenAI vector store IDs or Gemini File Search Store resource names for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
 - `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
