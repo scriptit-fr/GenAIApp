@@ -17,7 +17,7 @@ function sheetsAiAssistantSample() {
   const prompt = 'Analyze this sheet data and return three bullets with key observations:\n' + previewRows;
   const response = GenAIApp.newChat()
     .addMessage(prompt)
-    .run({ model: 'gpt-5.6-terra', max_tokens: 800 });
+    .run();
 
   const outputSheet = spreadsheet.getSheetByName('AI Summary') || spreadsheet.insertSheet('AI Summary');
   outputSheet.clear();

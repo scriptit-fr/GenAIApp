@@ -19,6 +19,6 @@ function googleMcpConnectorSample() {
 
   chat.addMCP(gmailConnector);
 
-  const summary = chat.run({ model: 'gpt-5.6-terra', max_tokens: 10000 });
+  const summary = chat.run();
   Logger.log(summary);
 }

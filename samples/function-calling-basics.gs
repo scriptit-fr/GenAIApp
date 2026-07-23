@@ -17,7 +17,7 @@ function functionCallingBasicsSample() {
     .addMessage('What is the weather in Paris? Use the weather function.')
     .addFunction(weatherFunction);
 
-  const response = chat.run({ model: 'gpt-5.6-terra', function_call: 'sampleGetWeather' });
+  const response = chat.run({ function_call: 'sampleGetWeather' });
   Logger.log(response);
 }
 

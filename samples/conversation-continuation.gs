@@ -1,23 +1,35 @@
 /*
- * Purpose: Demonstrates multi-turn OpenAI conversations with previous response IDs.
- * Use case: Continue a Responses API conversation without resending the whole transcript.
- * Required config: Store an OpenAI API key in Script Properties as OPENAI_API_KEY.
- * Expected output: Logs the first response ID and a second answer that remembers the chosen color.
+ * Purpose: Demonstrates multi-turn OpenAI Responses API and Gemini Interactions API conversations.
+ * Use case: Continue a conversation without resending the whole transcript.
+ * Required config: Store OPENAI_API_KEY and GEMINI_API_KEY in Script Properties.
+ * Expected output: Logs continuation IDs and follow-up answers that remember the chosen colors.
  */
 function conversationContinuationSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  const scriptProperties = PropertiesService.getScriptProperties();
+  GenAIApp.setOpenAIAPIKey(scriptProperties.getProperty('OPENAI_API_KEY'));
+  GenAIApp.setGeminiAPIKey(scriptProperties.getProperty('GEMINI_API_KEY'));
 
-  const firstChat = GenAIApp.newChat()
+  const firstOpenAiChat = GenAIApp.newChat()
     .addMessage('Remember this preference: my dashboard accent color is teal.');
-  Logger.log(firstChat.run({ model: 'gpt-5.6-terra' }));
+  Logger.log(firstOpenAiChat.run());
 
-  const previousResponseId = firstChat.retrieveLastResponseId();
-  Logger.log('Previous response ID: ' + previousResponseId);
+  const previousResponseId = firstOpenAiChat.retrieveLastResponseId();
+  Logger.log('Previous OpenAI response ID: ' + previousResponseId);
 
-  const secondChat = GenAIApp.newChat()
+  const secondOpenAiChat = GenAIApp.newChat()
     .setPreviousResponseId(previousResponseId)
     .addMessage('What accent color did I choose?');
+  Logger.log(secondOpenAiChat.run());
 
-  const response = secondChat.run({ model: 'gpt-5.6-terra' });
-  Logger.log(response);
+  const firstGeminiChat = GenAIApp.newChat()
+    .addMessage('Remember this preference: my report accent color is amber.');
+  Logger.log(firstGeminiChat.run({ model: 'gemini-model' }));
+
+  const previousInteractionId = firstGeminiChat.retrieveLastInteractionId();
+  Logger.log('Previous Gemini interaction ID: ' + previousInteractionId);
+
+  const secondGeminiChat = GenAIApp.newChat()
+    .setPreviousInteractionId(previousInteractionId)
+    .addMessage('What report accent color did I choose?');
+  Logger.log(secondGeminiChat.run({ model: 'gemini-model' }));
 }

@@ -11,6 +11,6 @@ function webBrowsingSample() {
     .enableBrowsing(true, 'https://developers.google.com')
     .addMessage('Find one current Apps Script documentation page about triggers and summarize it in two sentences.');
 
-  const response = chat.run({ model: 'gpt-5.6-terra', max_tokens: 20000 });
+  const response = chat.run();
   Logger.log(response);
 }

@@ -26,6 +26,6 @@ function documentAnalysisSample() {
     .addMessage('Summarize the attached file in three bullets.')
     .addFile(textBlob);
 
-  const response = chat.run({ model: 'gpt-5.6-terra' });
+  const response = chat.run();
   Logger.log(response);
 }

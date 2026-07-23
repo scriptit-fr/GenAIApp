@@ -20,7 +20,7 @@ function openAiVectorStoreQuickstartSample() {
   const answer = GenAIApp.newChat()
     .addVectorStores(store.getId())
     .addMessage('What support is included with paid plans?')
-    .run({ model: 'gpt-5.6-terra' });
+    .run();
 
   Logger.log(answer);
 }

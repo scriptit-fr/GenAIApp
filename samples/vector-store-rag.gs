@@ -24,7 +24,7 @@ function vectorStoreRagSample() {
   const answer = GenAIApp.newChat()
     .addVectorStores(vectorStore.getId())
     .addMessage('What is the refund window?')
-    .run({ model: 'gpt-5.6-terra' });
+    .run();
   Logger.log(answer);
 
   const chunks = GenAIApp.newChat()
@@ -32,6 +32,6 @@ function vectorStoreRagSample() {
     .onlyReturnChunks(true)
     .setMaxChunks(3)
     .addMessage('refund window')
-    .run({ model: 'gpt-5.6-terra' });
+    .run();
   Logger.log(chunks);
 }
