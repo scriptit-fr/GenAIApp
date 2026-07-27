@@ -46,8 +46,6 @@ const GenAIApp = (function () {
       const tools = [];
       const mcpConnectors = [];
       let model = "gpt-5.6-terra"; // default
-      //  OpenAI & Gemini models support a temperature value between 0.0 and 2.0. Models have a default temperature of 1.0.
-      let temperature = 1;
       let max_tokens = 1000;
       let browsing = false;
       let reasoning_effort = "medium";
@@ -458,7 +456,6 @@ const GenAIApp = (function () {
           messages: messages,
           tools: tools,
           model: model,
-          temperature: temperature,
           max_tokens: max_tokens,
           browsing: browsing,
           compaction_enabled: compaction_enabled,
@@ -474,9 +471,8 @@ const GenAIApp = (function () {
        * Sends all your messages and eventual function to chat GPT.
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
-       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, temperature, function_call}
+       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, max_tokens, function_call}
        * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
-       * @param {number} [advancedParametersObject.temperature]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
@@ -490,7 +486,6 @@ const GenAIApp = (function () {
         this._lastGeneratedDriveFileUrl = null;
 
         model = advancedParametersObject?.model ?? model;
-        temperature = advancedParametersObject?.temperature ?? temperature;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
         reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
 
@@ -946,8 +941,7 @@ const GenAIApp = (function () {
           model: model,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
-            max_output_tokens: max_tokens,
-            temperature: temperature
+            max_output_tokens: max_tokens
           },
           tools: []
         };

@@ -288,7 +288,6 @@ Once you have set up the chat and added the necessary components, start the conv
 ```js
 const response = chat.run({
   model: 'your-model-name', // Optional: set the model to use
-  temperature: 0.5, // Optional: set response creativity
   function_call: 'getWeather' // Optional: force the first API response to call a function
 });
 
@@ -393,7 +392,7 @@ A `Chat` represents a conversation with the model.
 - `setPreviousInteractionId(id)`: Reuse a previous Gemini interaction ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
 - `addVectorStores(vectorStoreIds)`: Attach OpenAI vector store IDs or Gemini File Search Store resource names for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
-- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `temperature`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
+- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
 
 ### Function Object
 
