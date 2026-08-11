@@ -993,7 +993,8 @@ const GenAIApp = (function () {
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
           payload.tools.push({
             "type": "file_search",
-            file_search_store_names: Object.keys(addedVectorStores)
+            file_search_store_names: Object.keys(addedVectorStores),
+            top_k: maxNumOfChunks,
           });
         }
 
