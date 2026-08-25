@@ -2533,7 +2533,8 @@ const GenAIApp = (function () {
       method: 'post',
       headers: {
         'Authorization': 'Bearer ' + openAIKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2'
       },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
@@ -2568,7 +2569,8 @@ const GenAIApp = (function () {
       method: 'get',
       headers: {
         'Authorization': 'Bearer ' + openAIKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2'
       }
     };
     const response = UrlFetchApp.fetch(url, options);
@@ -2654,7 +2656,8 @@ const GenAIApp = (function () {
       method: 'post',
       'contentType': 'application/json',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey
+        'Authorization': 'Bearer ' + openAIKey,
+        'OpenAI-Beta': 'assistants=v2'
       },
       'payload': JSON.stringify(payload)
     };
@@ -2691,7 +2694,8 @@ const GenAIApp = (function () {
         const options = {
           'method': 'get',
           'headers': {
-            'Authorization': 'Bearer ' + openAIKey
+            'Authorization': 'Bearer ' + openAIKey,
+            'OpenAI-Beta': 'assistants=v2'
           },
         };
 
@@ -2741,7 +2745,8 @@ const GenAIApp = (function () {
     const options = {
       'method': 'delete',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey
+        'Authorization': 'Bearer ' + openAIKey,
+        'OpenAI-Beta': 'assistants=v2'
       },
     };
 
@@ -2769,7 +2774,8 @@ const GenAIApp = (function () {
     const options = {
       method: 'delete',
       headers: {
-        'Authorization': 'Bearer ' + openAIKey
+        'Authorization': 'Bearer ' + openAIKey,
+        'OpenAI-Beta': 'assistants=v2'
       },
       muteHttpExceptions: true
     };
