@@ -990,6 +990,14 @@ const GenAIApp = (function () {
           });
         }
 
+        if (mcpConnectors.length > 0) {
+          // MCP tools use a different declaration in the Gemini Interactions API
+          // than they do in the OpenAI Responses API.
+          mcpConnectors.forEach(connector => {
+            payload.tools.push(connector._toGeminiJson());
+          });
+        }
+
         if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
           payload.tools.push({
             "type": "file_search",
@@ -1419,7 +1427,8 @@ const GenAIApp = (function () {
       let serverUrl = null;
       let connectorId = null;
       let allowedTools = null;
-      let authorization = ScriptApp.getOAuthToken();
+      let authorization = null;
+      let authorizationWasSet = false;
       let requireApproval = "never";
 
       /**
@@ -1508,6 +1517,7 @@ const GenAIApp = (function () {
        * @returns {ConnectorObject}
        */
       this.setAuthorization = function (token) {
+        authorizationWasSet = true;
         if (token === null || token === undefined) {
           authorization = null;
           return this;
@@ -1594,8 +1604,63 @@ const GenAIApp = (function () {
           connector.allowed_tools = allowedTools;
         }
 
-        if (authorization) {
-          connector.authorization = authorization;
+        // Predefined Google connectors retain their convenient Apps Script OAuth
+        // fallback. Custom servers only receive credentials explicitly supplied
+        // by the caller, so the script token is never leaked to an arbitrary URL.
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
+          connector.authorization = connectorAuthorization;
+        }
+
+        return connector;
+      };
+
+      /**
+       * Returns the MCP server declaration expected by the Gemini Interactions API.
+       * Gemini does not accept OpenAI's connector_id, server_label, server_url,
+       * authorization, or require_approval fields.
+       *
+       * @returns {Object}
+       */
+      this._toGeminiJson = function () {
+        if (!serverUrl && !connectorId) {
+          throw Error("[GenAIApp] - Please configure the connector using setServerUrl() or setConnectorId().");
+        }
+
+        const googleConnectorUrls = {
+          connector_gmail: "https://gmailmcp.googleapis.com/mcp/v1",
+          connector_googlecalendar: "https://calendarmcp.googleapis.com/mcp/v1",
+          connector_googledrive: "https://drivemcp.googleapis.com/mcp/v1"
+        };
+        const resolvedUrl = serverUrl || googleConnectorUrls[connectorId];
+        if (!resolvedUrl) {
+          throw Error(`[GenAIApp] - The connector ${connectorId} is not supported by the Gemini Interactions API.`);
+        }
+
+        const connector = {
+          type: "mcp_server",
+          name: serverLabel || "custom_mcp",
+          url: resolvedUrl
+        };
+
+        if (allowedTools) {
+          connector.allowed_tools = {
+            mode: "any",
+            tools: allowedTools
+          };
+        }
+
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
+          connector.headers = {
+            Authorization: /^Bearer\s/i.test(connectorAuthorization)
+              ? connectorAuthorization
+              : `Bearer ${connectorAuthorization}`
+          };
         }
 
         return connector;

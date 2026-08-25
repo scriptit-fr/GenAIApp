@@ -244,7 +244,7 @@ chat.addFile('your-google-drive-file-id');
 
 ### Add an MCP Connector (Optional)
 
-Use Model Context Protocol (MCP) connectors to let OpenAI Responses API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs) and [`samples/google-mcp-connector.gs`](samples/google-mcp-connector.gs).
+Use Model Context Protocol (MCP) connectors to let OpenAI Responses API and Gemini Interactions API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers. GenAIApp automatically translates connector configuration to each provider's MCP tool format. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs) and [`samples/google-mcp-connector.gs`](samples/google-mcp-connector.gs).
 
 > ⚠️ **Google Workspace Native MCP Requirements:**
 > To connect to Google's official MCP endpoints, such as `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`, your Google Apps Script must be linked to a **Standard Google Cloud Project**. In your GCP console, enable both the standard API, such as `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar, and the specific MCP API, such as `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`.
@@ -277,9 +277,9 @@ chat.addMCP(customConnector);
 
 - **Google Native endpoints:** Configure a connector using `.setServerUrl()` pointing to the desired service and pass the script's OAuth token via `.setAuthorization(ScriptApp.getOAuthToken())`.
 - **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, `.setServerUrl('https://...')`, and optionally `.setAuthorization()` if the server expects a bearer token.
-- **Approval workflows:** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector.
+- **Approval workflows (OpenAI):** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector. Gemini's `mcp_server` declaration does not accept this OpenAI-specific setting.
 
-> ⚠️ **Model Availability:** MCP connectors are currently available only when you run the chat with OpenAI Responses API models. Check your provider's current model documentation before choosing a model override.
+> ⚠️ **Model Availability:** MCP support depends on the selected OpenAI or Gemini model. Check your provider's current model documentation before choosing a model override.
 
 ### Running the Chat
 
@@ -427,14 +427,14 @@ A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File 
 
 ### Connector Object
 
-A `ConnectorObject` represents a Google Workspace or custom MCP connector that can be attached to an OpenAI chat request.
+A `ConnectorObject` represents a Google Workspace or custom MCP connector that can be attached to an OpenAI or Gemini chat request. The same object produces an OpenAI `mcp` tool or a Gemini Interactions API `mcp_server` tool as appropriate; predefined Google connector IDs are resolved to their native MCP server URLs for Gemini.
 
 - `setLabel(label)`: Set the identifier used in the chat payload. This is required for custom servers.
-- `setDescription(description)`: Provide an optional description visible to the model.
+- `setDescription(description)`: Provide an optional description visible to OpenAI models.
 - `setServerUrl(url)`: Use a custom MCP server hosted at the provided HTTPS URL.
 - `setConnectorId('gmail' | 'calendar' | 'drive')`: Reference a Google Workspace MCP connector by its predefined ID.
-- `setAuthorization(token)`: Override the default OAuth token, for example supply `Bearer ...`.
-- `setRequireApproval('never' | 'domain' | 'always')`: Control whether the connector requires user approval before execution.
+- `setAuthorization(token)`: Set the connector authorization token, for example `Bearer ...`. Predefined Google connector IDs default to the Apps Script OAuth token; custom server URLs are unauthenticated unless this method is called explicitly.
+- `setRequireApproval('never' | 'domain' | 'always')`: Control whether an OpenAI connector requires user approval before execution.
 
 ## Contributing
 
