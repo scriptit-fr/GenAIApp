@@ -433,7 +433,7 @@ A `ConnectorObject` represents a Google Workspace or custom MCP connector that c
 - `setDescription(description)`: Provide an optional description visible to OpenAI models.
 - `setServerUrl(url)`: Use a custom MCP server hosted at the provided HTTPS URL.
 - `setConnectorId('gmail' | 'calendar' | 'drive')`: Reference a Google Workspace MCP connector by its predefined ID.
-- `setAuthorization(token)`: Override the default OAuth token, for example supply `Bearer ...`.
+- `setAuthorization(token)`: Set the connector authorization token, for example `Bearer ...`. Predefined Google connector IDs default to the Apps Script OAuth token; custom server URLs are unauthenticated unless this method is called explicitly.
 - `setRequireApproval('never' | 'domain' | 'always')`: Control whether an OpenAI connector requires user approval before execution.
 
 ## Contributing

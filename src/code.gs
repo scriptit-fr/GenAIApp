@@ -1427,7 +1427,8 @@ const GenAIApp = (function () {
       let serverUrl = null;
       let connectorId = null;
       let allowedTools = null;
-      let authorization = ScriptApp.getOAuthToken();
+      let authorization = null;
+      let authorizationWasSet = false;
       let requireApproval = "never";
 
       /**
@@ -1516,6 +1517,7 @@ const GenAIApp = (function () {
        * @returns {ConnectorObject}
        */
       this.setAuthorization = function (token) {
+        authorizationWasSet = true;
         if (token === null || token === undefined) {
           authorization = null;
           return this;
@@ -1602,8 +1604,14 @@ const GenAIApp = (function () {
           connector.allowed_tools = allowedTools;
         }
 
-        if (authorization) {
-          connector.authorization = authorization;
+        // Predefined Google connectors retain their convenient Apps Script OAuth
+        // fallback. Custom servers only receive credentials explicitly supplied
+        // by the caller, so the script token is never leaked to an arbitrary URL.
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
+          connector.authorization = connectorAuthorization;
         }
 
         return connector;
@@ -1638,14 +1646,20 @@ const GenAIApp = (function () {
         };
 
         if (allowedTools) {
-          connector.allowed_tools = allowedTools;
+          connector.allowed_tools = {
+            mode: "any",
+            tools: allowedTools
+          };
         }
 
-        if (authorization) {
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
           connector.headers = {
-            Authorization: /^Bearer\s/i.test(authorization)
-              ? authorization
-              : `Bearer ${authorization}`
+            Authorization: /^Bearer\s/i.test(connectorAuthorization)
+              ? connectorAuthorization
+              : `Bearer ${connectorAuthorization}`
           };
         }
 
