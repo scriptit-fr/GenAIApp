@@ -695,14 +695,14 @@ const GenAIApp = (function () {
 
       /**
        * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
-       * tool-specific configurations for browsing, image description, and assistant functionalities. 
+       * tool-specific configurations for browsing, image description, and built-in tools.
        * Configures tool choices based on recent interactions, message content, and options in 
        * `advancedParametersObject`.
        *
        * @private
        * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
        *                     for OpenAI's API.
-       * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
+       * @throws {Error} If an incompatible model is selected with certain tools.
        */
       this._buildOpenAIPayload = function () {
         let payload = {
@@ -934,7 +934,7 @@ const GenAIApp = (function () {
        *                                            such as function call preferences.
        * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
        *                     generation configuration, and available tools.
-       * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
+       * @throws {Error} If an incompatible feature is selected for the Gemini model.
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
@@ -2160,15 +2160,15 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Extracts assistant text from OpenAI Responses API output.
+   * Extracts model text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
-   * Falls back to the last available assistant message text when no explicit final answer exists.
+   * Falls back to the last available model message text when no explicit final answer exists.
    * 
    * Logs a warning when compaction was used for the response.
    *
    * @private
    * @param {Array} response - The `response` array returned by OpenAI.
-   * @returns {string|null} - The selected assistant text, or `null` if no text is found.
+   * @returns {string|null} - The selected model text, or `null` if no text is found.
    */
   function _extractOpenAIResponseText(response) {
     const output = response?.output;
@@ -2331,9 +2331,9 @@ const GenAIApp = (function () {
   };
 
   /**
-   * Uploads a file to OpenAI and returns the file ID.
-   * 
-   * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
+   * Uploads a Google Drive file to OpenAI and returns the file ID.
+   *
+   * @param {string} optionalAttachment - The Google Drive file ID to upload.
    * @returns {string} The OpenAI file ID.
    */
   function _uploadFileToOpenAI(optionalAttachment) {
@@ -2363,14 +2363,11 @@ const GenAIApp = (function () {
     });
 
     const fileBlob = response.getBlob();
-
     const openAIFileEndpoint = 'https://api.openai.com/v1/files';
-
     const formData = {
       'file': fileBlob,
-      'purpose': 'assistants'
+      'purpose': 'user_data'
     };
-
     const uploadOptions = {
       'method': 'post',
       'headers': {
@@ -2536,8 +2533,7 @@ const GenAIApp = (function () {
       method: 'post',
       headers: {
         'Authorization': 'Bearer ' + openAIKey,
-        'Content-Type': 'application/json',
-        'OpenAI-Beta': 'assistants=v2'
+        'Content-Type': 'application/json'
       },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
@@ -2572,8 +2568,7 @@ const GenAIApp = (function () {
       method: 'get',
       headers: {
         'Authorization': 'Bearer ' + openAIKey,
-        'Content-Type': 'application/json',
-        'OpenAI-Beta': 'assistants=v2'
+        'Content-Type': 'application/json'
       }
     };
     const response = UrlFetchApp.fetch(url, options);
@@ -2659,8 +2654,7 @@ const GenAIApp = (function () {
       method: 'post',
       'contentType': 'application/json',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
+        'Authorization': 'Bearer ' + openAIKey
       },
       'payload': JSON.stringify(payload)
     };
@@ -2697,8 +2691,7 @@ const GenAIApp = (function () {
         const options = {
           'method': 'get',
           'headers': {
-            'Authorization': 'Bearer ' + openAIKey,
-            'OpenAI-Beta': 'assistants=v2'
+            'Authorization': 'Bearer ' + openAIKey
           },
         };
 
@@ -2748,8 +2741,7 @@ const GenAIApp = (function () {
     const options = {
       'method': 'delete',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
+        'Authorization': 'Bearer ' + openAIKey
       },
     };
 
@@ -2777,8 +2769,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'delete',
       headers: {
-        'Authorization': 'Bearer ' + openAIKey,
-        'OpenAI-Beta': 'assistants=v2'
+        'Authorization': 'Bearer ' + openAIKey
       },
       muteHttpExceptions: true
     };
