@@ -34,6 +34,12 @@ const GenAIApp = (function () {
   const addedVectorStores = {};
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
+  const GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"];
+  const GEMINI_THINKING_LEVELS_BY_MODEL = {
+    "gemini-3.1-pro-preview": ["low", "medium", "high"],
+    "gemini-3.1-flash-lite": GEMINI_THINKING_LEVELS,
+    "gemini-3.5-flash": GEMINI_THINKING_LEVELS
+  };
 
   /**
    * @class
@@ -48,8 +54,8 @@ const GenAIApp = (function () {
       let model = "gpt-5.6-terra"; // default
       let max_tokens = 1000;
       let browsing = false;
-      let reasoning_effort = "medium"; // OpenAI reasoning models
-      let thinking_level = "medium"; // Gemini thinking models
+      let reasoning_effort = "medium"; // OpenAI reasoning models: low, medium, or high
+      let thinking_level = "medium"; // Gemini models: supported levels depend on the model
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
       this._codeInterpreterContainerId = null;
@@ -363,10 +369,14 @@ const GenAIApp = (function () {
 
       /**
        * Sets the thinking level used by Gemini models.
-       * @param {"minimal" | "low" | "medium" | "high"} thinkingLevel - Gemini thinking level.
+       * The selected Gemini model determines which levels it supports.
+       * @param {"minimal" | "low" | "medium" | "high"} thinkingLevel - Gemini thinking level, defaults to medium.
        * @returns {Chat} - The current Chat instance.
        */
       this.setThinkingLevel = function (thinkingLevel) {
+        if (!GEMINI_THINKING_LEVELS.includes(thinkingLevel)) {
+          throw new RangeError(`[GenAIApp] - Invalid Gemini thinking level "${thinkingLevel}". Expected one of: ${GEMINI_THINKING_LEVELS.join(", ")}.`);
+        }
         thinking_level = thinkingLevel;
         return this;
       };
@@ -486,7 +496,7 @@ const GenAIApp = (function () {
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
        * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
-       * @param {"minimal" | "low" | "medium" | "high"} [advancedParametersObject.thinking_level] For Gemini thinking models, defaults to medium
+       * @param {"minimal" | "low" | "medium" | "high"} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat
@@ -504,6 +514,11 @@ const GenAIApp = (function () {
         thinking_level = advancedParametersObject?.thinking_level ?? thinking_level;
 
         if (model.includes("gemini")) {
+          const supportedThinkingLevels = GEMINI_THINKING_LEVELS_BY_MODEL[model] || GEMINI_THINKING_LEVELS;
+          if (!supportedThinkingLevels.includes(thinking_level)) {
+            throw new RangeError(`[GenAIApp] - Gemini model "${model}" does not support thinking_level "${thinking_level}". Expected one of: ${supportedThinkingLevels.join(", ")}.`);
+          }
+
           if (!geminiKey && !gcpProjectId) {
             throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
           }
