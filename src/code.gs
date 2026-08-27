@@ -34,12 +34,6 @@ const GenAIApp = (function () {
   const addedVectorStores = {};
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
-  const GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"];
-  const GEMINI_THINKING_LEVELS_BY_MODEL = {
-    "gemini-3.1-pro-preview": ["low", "medium", "high"],
-    "gemini-3.1-flash-lite": GEMINI_THINKING_LEVELS,
-    "gemini-3.5-flash": GEMINI_THINKING_LEVELS
-  };
 
   /**
    * @class
@@ -55,7 +49,7 @@ const GenAIApp = (function () {
       let max_tokens = 1000;
       let browsing = false;
       let reasoning_effort = "medium"; // OpenAI reasoning models: low, medium, or high
-      let thinking_level = "medium"; // Gemini models: supported levels depend on the model
+      let thinking_level = null; // Gemini models; null lets Google select the default
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
       this._codeInterpreterContainerId = null;
@@ -369,14 +363,10 @@ const GenAIApp = (function () {
 
       /**
        * Sets the thinking level used by Gemini models.
-       * The selected Gemini model determines which levels it supports.
-       * @param {"minimal" | "low" | "medium" | "high"} thinkingLevel - Gemini thinking level, defaults to medium.
+       * @param {string} thinkingLevel - Gemini thinking level. Supported values depend on the selected model.
        * @returns {Chat} - The current Chat instance.
        */
       this.setThinkingLevel = function (thinkingLevel) {
-        if (!GEMINI_THINKING_LEVELS.includes(thinkingLevel)) {
-          throw new RangeError(`[GenAIApp] - Invalid Gemini thinking level "${thinkingLevel}". Expected one of: ${GEMINI_THINKING_LEVELS.join(", ")}.`);
-        }
         thinking_level = thinkingLevel;
         return this;
       };
@@ -496,7 +486,7 @@ const GenAIApp = (function () {
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
        * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
-       * @param {"minimal" | "low" | "medium" | "high"} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model, defaults to medium
+       * @param {string} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model. Omit to use Google's default.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat
@@ -514,11 +504,6 @@ const GenAIApp = (function () {
         thinking_level = advancedParametersObject?.thinking_level ?? thinking_level;
 
         if (model.includes("gemini")) {
-          const supportedThinkingLevels = GEMINI_THINKING_LEVELS_BY_MODEL[model] || GEMINI_THINKING_LEVELS;
-          if (!supportedThinkingLevels.includes(thinking_level)) {
-            throw new RangeError(`[GenAIApp] - Gemini model "${model}" does not support thinking_level "${thinking_level}". Expected one of: ${supportedThinkingLevels.join(", ")}.`);
-          }
-
           if (!geminiKey && !gcpProjectId) {
             throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
           }
@@ -970,11 +955,14 @@ const GenAIApp = (function () {
           model: model,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
-            max_output_tokens: max_tokens,
-            thinking_level: thinking_level
+            max_output_tokens: max_tokens
           },
           tools: []
         };
+
+        if (thinking_level !== null) {
+          payload.generation_config.thinking_level = thinking_level;
+        }
 
         // Continue Gemini conversations using the Interactions API state handle instead of resending
         // the full previous contents array.
