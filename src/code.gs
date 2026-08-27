@@ -48,7 +48,8 @@ const GenAIApp = (function () {
       let model = "gpt-5.6-terra"; // default
       let max_tokens = 1000;
       let browsing = false;
-      let reasoning_effort = "medium";
+      let reasoning_effort = "medium"; // OpenAI reasoning models
+      let thinking_level = "medium"; // Gemini thinking models
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
       this._codeInterpreterContainerId = null;
@@ -361,6 +362,16 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Sets the thinking level used by Gemini models.
+       * @param {"minimal" | "low" | "medium" | "high"} thinkingLevel - Gemini thinking level.
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.setThinkingLevel = function (thinkingLevel) {
+        thinking_level = thinkingLevel;
+        return this;
+      };
+
+      /**
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
@@ -457,6 +468,7 @@ const GenAIApp = (function () {
           tools: tools,
           model: model,
           max_tokens: max_tokens,
+          thinking_level: thinking_level,
           browsing: browsing,
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
@@ -471,9 +483,10 @@ const GenAIApp = (function () {
        * Sends all your messages and eventual function to chat GPT.
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
-       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, max_tokens, function_call}
+       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
        * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
-       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
+       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
+       * @param {"minimal" | "low" | "medium" | "high"} [advancedParametersObject.thinking_level] For Gemini thinking models, defaults to medium
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat
@@ -488,6 +501,7 @@ const GenAIApp = (function () {
         model = advancedParametersObject?.model ?? model;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
         reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
+        thinking_level = advancedParametersObject?.thinking_level ?? thinking_level;
 
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
@@ -941,7 +955,8 @@ const GenAIApp = (function () {
           model: model,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
-            max_output_tokens: max_tokens
+            max_output_tokens: max_tokens,
+            thinking_level: thinking_level
           },
           tools: []
         };

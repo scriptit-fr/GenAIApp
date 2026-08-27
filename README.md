@@ -296,7 +296,7 @@ console.log(response);
 
 GenAIApp supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
 
-⚠️ **Warning:** The `reasoning_effort` parameter is supported only by reasoning-capable OpenAI models and ignored by all others.
+⚠️ **Warning:** The `reasoning_effort` parameter is for reasoning-capable OpenAI models, while `thinking_level` is its Gemini equivalent.
 
 ### FunctionObject Class
 
@@ -386,13 +386,14 @@ A `Chat` represents a conversation with the model.
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation. See [`samples/knowledge-links.gs`](samples/knowledge-links.gs).
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
+- `setThinkingLevel(thinkingLevel)`: Set the Gemini thinking level (`minimal`, `low`, `medium`, or `high`); the default is `medium`.
 - `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `retrieveLastInteractionId()`: Get the last Gemini Interactions API interaction ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `setPreviousInteractionId(id)`: Reuse a previous Gemini interaction ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
 - `addVectorStores(vectorStoreIds)`: Attach OpenAI vector store IDs or Gemini File Search Store resource names for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
-- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `reasoning_effort`, `max_tokens`, and `function_call` parameters.
+- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `reasoning_effort` (OpenAI), `thinking_level` (Gemini), `max_tokens`, and `function_call` parameters.
 
 ### Function Object
 
