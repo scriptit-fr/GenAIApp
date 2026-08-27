@@ -939,6 +939,9 @@ const GenAIApp = (function () {
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
           model: model,
+          // Gemini reasoning state (including thought signatures) is retained by the
+          // Interactions API and referenced by previous_interaction_id on later turns.
+          store: true,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
             max_output_tokens: max_tokens
@@ -946,8 +949,8 @@ const GenAIApp = (function () {
           tools: []
         };
 
-        // Continue Gemini conversations using the Interactions API state handle instead of resending
-        // the full previous contents array.
+        // Continue stateful Gemini conversations using the Interactions API state handle instead of
+        // resending prior model output, which can omit required thought signatures.
         if (previous_interaction_id) {
           payload.previous_interaction_id = previous_interaction_id;
         }
