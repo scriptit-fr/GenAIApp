@@ -76,6 +76,9 @@ const GenAIApp = (function () {
 
       this._lastUsage = null;
       this._inputTokenWarningThreshold = null;
+      // Replaceable in regression tests so request payloads can be inspected without
+      // making external calls. Production chats use the real HTTP caller.
+      this._apiCaller = _callGenAIApi;
 
       /**
        * Add a message to the chat.
@@ -572,7 +575,7 @@ const GenAIApp = (function () {
               }
             }
           }
-          responseMessage = _callGenAIApi(endpointUrl, payload);
+          responseMessage = this._apiCaller(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
             const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
@@ -598,9 +601,17 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
-            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
-            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
-            last_gemini_content_count = contents.length;
+            const interactionStatus = String(responseMessage?.status || "").toLowerCase();
+            const interactionCanContinue = interactionStatus !== "failed"
+              && interactionStatus !== "cancelled"
+              && interactionStatus !== "canceled";
+            // Failed/cancelled interaction IDs are not valid continuation handles. Keep the
+            // last successful handle and its content boundary so the unsent delta is retried.
+            if (interactionCanContinue && responseMessage?.id) {
+              last_gemini_interaction_id = responseMessage.id;
+              previous_interaction_id = responseMessage.id;
+              last_gemini_content_count = contents.length;
+            }
           }
           numberOfAPICalls++;
         }
@@ -953,6 +964,9 @@ const GenAIApp = (function () {
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
           model: model,
+          // Gemini reasoning state (including thought signatures) is retained by the
+          // Interactions API and referenced by previous_interaction_id on later turns.
+          store: true,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
             max_output_tokens: max_tokens
@@ -1861,32 +1875,40 @@ const GenAIApp = (function () {
       }
 
       let response;
-      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
-      if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
-        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
-      }
-      else {
-        try {
+      try {
+        // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
+        if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+          response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+        }
+        else {
           response = UrlFetchApp.fetch(endpoint, options);
         }
-        catch (err) {
-          if (verbose) {
-            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
-          }
-          const delay = Math.pow(2, retries) * 1000;
-          Utilities.sleep(delay);
+      }
+      catch (err) {
+        const errorText = err?.message || String(err);
+        if (endpoint.includes("google") && _isGeminiInvalidJsonError(errorText)) {
+          _appendGeminiJsonRetryInstruction(payload, errorText);
           retries++;
+          console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
           continue;
         }
+        if (verbose) {
+          console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${errorText}. Retrying (${retries + 1}/${maxRetries})`);
+        }
+        const delay = Math.pow(2, retries) * 1000;
+        Utilities.sleep(delay);
+        retries++;
+        continue;
       }
       const responseCode = response.getResponseCode();
+      if (responseCode === 200 && returnRawResponse) {
+        return response;
+      }
+      const responseText = response.getContentText();
 
       if (responseCode === 200) {
-        if (returnRawResponse) {
-          return response;
-        }
         // The request was successful, exit the loop.
-        const parsedResponse = JSON.parse(response.getContentText());
+        const parsedResponse = JSON.parse(responseText);
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse;
           finish_reason = parsedResponse.status
@@ -1902,6 +1924,12 @@ const GenAIApp = (function () {
           console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
+      }
+      else if (endpoint.includes("google") && _isGeminiInvalidJsonError(responseText)) {
+        _appendGeminiJsonRetryInstruction(payload, responseText);
+        retries++;
+        console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
+        continue;
       }
       else if (responseCode === 400 && hasMcpConnectors) {
         // Retry on context_length_exceeded ONLY when MCP connectors are present.
@@ -1954,6 +1982,85 @@ const GenAIApp = (function () {
       });
     }
     return responseMessage;
+  }
+
+  /**
+   * Returns the most useful message from an API error response.
+   * @param {string} responseText - Raw API response body.
+   * @returns {string} Parsed error message, or the raw response when it is not JSON.
+   */
+  function _extractApiErrorMessage(responseText) {
+    try {
+      const errorResponse = JSON.parse(responseText);
+      return errorResponse?.error?.message || errorResponse?.message || responseText;
+    }
+    catch (e) {
+      return responseText;
+    }
+  }
+
+  /**
+   * Adds Gemini's JSON parsing failure and repair guidance to the next request.
+   * @param {Object} payload - Gemini request payload to update.
+   * @param {string} responseText - Raw API response or thrown error text.
+   */
+  function _appendGeminiJsonRetryInstruction(payload, responseText) {
+    const errorMessage = _extractApiErrorMessage(responseText);
+    const retryInstruction = `Your previous response failed JSON parsing with error: ${errorMessage}. Please ensure all tool calls and JSON outputs are strictly valid JSON with properly escaped characters.`;
+    payload.input = Array.isArray(payload.input) ? payload.input : [];
+    payload.input.push({
+      type: "user_input",
+      content: [{ type: "text", text: retryInstruction }]
+    });
+  }
+
+  /**
+   * Extracts Gemini's machine-readable error code from common error response shapes.
+   * @param {string} responseText - Raw Gemini API response body.
+   * @returns {string|null} Normalized Gemini error code, when available.
+   */
+  function _extractGeminiErrorCode(responseText) {
+    const recognizedCodes = ["malformed_function_call", "malformed_tool_call"];
+    try {
+      const errorResponse = JSON.parse(responseText);
+      let fallbackCode = null;
+
+      function findCode(value, key) {
+        if (typeof value === "string") {
+          const normalizedValue = value.toLowerCase();
+          if (recognizedCodes.includes(normalizedValue)) return normalizedValue;
+          if (!fallbackCode && ["code", "reason", "error_code", "errorcode"].includes(String(key).toLowerCase())) {
+            fallbackCode = normalizedValue;
+          }
+          return null;
+        }
+        if (!value || typeof value !== "object") return null;
+        for (const childKey of Object.keys(value)) {
+          const code = findCode(value[childKey], childKey);
+          if (code) return code;
+        }
+        return null;
+      }
+
+      return findCode(errorResponse, null) || fallbackCode;
+    }
+    catch (e) {
+      const codeMatch = String(responseText).match(/malformed_(?:function|tool)_call/i);
+      return codeMatch ? codeMatch[0].toLowerCase() : null;
+    }
+  }
+
+  /**
+   * Identifies Gemini's model-output JSON parsing failure.
+   * @param {string} responseText - Raw API response body.
+   * @returns {boolean} Whether the response reports invalid generated JSON.
+   */
+  function _isGeminiInvalidJsonError(responseText) {
+    const errorCode = _extractGeminiErrorCode(responseText);
+    if (errorCode === "malformed_function_call" || errorCode === "malformed_tool_call") {
+      return true;
+    }
+    return /Model generated invalid JSON syntax and the output could not be parsed/i.test(_extractApiErrorMessage(responseText));
   }
 
   /**
