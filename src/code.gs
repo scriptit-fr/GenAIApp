@@ -1862,12 +1862,12 @@ const GenAIApp = (function () {
         }
       }
       const responseCode = response.getResponseCode();
+      if (responseCode === 200 && returnRawResponse) {
+        return response;
+      }
       const responseText = response.getContentText();
 
       if (responseCode === 200) {
-        if (returnRawResponse) {
-          return response;
-        }
         // The request was successful, exit the loop.
         const parsedResponse = JSON.parse(responseText);
         if (endpoint.includes("google")) {
@@ -1967,11 +1967,39 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Extracts Gemini's machine-readable error code from common error response shapes.
+   * @param {string} responseText - Raw Gemini API response body.
+   * @returns {string|null} Normalized Gemini error code, when available.
+   */
+  function _extractGeminiErrorCode(responseText) {
+    try {
+      const errorResponse = JSON.parse(responseText);
+      const error = errorResponse?.error || errorResponse;
+      const details = Array.isArray(error?.details) ? error.details : [];
+      const code = [
+        error?.code,
+        error?.reason,
+        error?.error_code,
+        error?.errorCode,
+        ...details.flatMap(detail => [detail?.reason, detail?.error_code, detail?.errorCode, detail?.code])
+      ].find(value => typeof value === "string" && value.length > 0);
+      return code ? code.toLowerCase() : null;
+    }
+    catch (e) {
+      return null;
+    }
+  }
+
+  /**
    * Identifies Gemini's model-output JSON parsing failure.
    * @param {string} responseText - Raw API response body.
    * @returns {boolean} Whether the response reports invalid generated JSON.
    */
   function _isGeminiInvalidJsonError(responseText) {
+    const errorCode = _extractGeminiErrorCode(responseText);
+    if (errorCode === "malformed_function_call" || errorCode === "malformed_tool_call") {
+      return true;
+    }
     return /Model generated invalid JSON syntax and the output could not be parsed/i.test(_extractApiErrorMessage(responseText));
   }
 
