@@ -1862,13 +1862,14 @@ const GenAIApp = (function () {
         }
       }
       const responseCode = response.getResponseCode();
+      const responseText = response.getContentText();
 
       if (responseCode === 200) {
         if (returnRawResponse) {
           return response;
         }
         // The request was successful, exit the loop.
-        const parsedResponse = JSON.parse(response.getContentText());
+        const parsedResponse = JSON.parse(responseText);
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse;
           finish_reason = parsedResponse.status
@@ -1884,6 +1885,18 @@ const GenAIApp = (function () {
           console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
+      }
+      else if (endpoint.includes("google") && _isGeminiInvalidJsonError(responseText)) {
+        const errorMessage = _extractApiErrorMessage(responseText);
+        const retryInstruction = `Your previous response failed JSON parsing with error: ${errorMessage}. Please ensure all tool calls and JSON outputs are strictly valid JSON with properly escaped characters.`;
+        payload.input = Array.isArray(payload.input) ? payload.input : [];
+        payload.input.push({
+          type: "user_input",
+          content: [{ type: "text", text: retryInstruction }]
+        });
+        retries++;
+        console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
+        continue;
       }
       else if (responseCode === 400 && hasMcpConnectors) {
         // Retry on context_length_exceeded ONLY when MCP connectors are present.
@@ -1936,6 +1949,30 @@ const GenAIApp = (function () {
       });
     }
     return responseMessage;
+  }
+
+  /**
+   * Returns the most useful message from an API error response.
+   * @param {string} responseText - Raw API response body.
+   * @returns {string} Parsed error message, or the raw response when it is not JSON.
+   */
+  function _extractApiErrorMessage(responseText) {
+    try {
+      const errorResponse = JSON.parse(responseText);
+      return errorResponse?.error?.message || errorResponse?.message || responseText;
+    }
+    catch (e) {
+      return responseText;
+    }
+  }
+
+  /**
+   * Identifies Gemini's model-output JSON parsing failure.
+   * @param {string} responseText - Raw API response body.
+   * @returns {boolean} Whether the response reports invalid generated JSON.
+   */
+  function _isGeminiInvalidJsonError(responseText) {
+    return /Model generated invalid JSON syntax and the output could not be parsed/i.test(_extractApiErrorMessage(responseText));
   }
 
   /**
