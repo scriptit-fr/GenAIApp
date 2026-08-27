@@ -1843,23 +1843,30 @@ const GenAIApp = (function () {
       }
 
       let response;
-      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
-      if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
-        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
-      }
-      else {
-        try {
+      try {
+        // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
+        if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+          response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+        }
+        else {
           response = UrlFetchApp.fetch(endpoint, options);
         }
-        catch (err) {
-          if (verbose) {
-            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
-          }
-          const delay = Math.pow(2, retries) * 1000;
-          Utilities.sleep(delay);
+      }
+      catch (err) {
+        const errorText = err?.message || String(err);
+        if (endpoint.includes("google") && _isGeminiInvalidJsonError(errorText)) {
+          _appendGeminiJsonRetryInstruction(payload, errorText);
           retries++;
+          console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
           continue;
         }
+        if (verbose) {
+          console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${errorText}. Retrying (${retries + 1}/${maxRetries})`);
+        }
+        const delay = Math.pow(2, retries) * 1000;
+        Utilities.sleep(delay);
+        retries++;
+        continue;
       }
       const responseCode = response.getResponseCode();
       if (responseCode === 200 && returnRawResponse) {
@@ -1887,13 +1894,7 @@ const GenAIApp = (function () {
         success = true;
       }
       else if (endpoint.includes("google") && _isGeminiInvalidJsonError(responseText)) {
-        const errorMessage = _extractApiErrorMessage(responseText);
-        const retryInstruction = `Your previous response failed JSON parsing with error: ${errorMessage}. Please ensure all tool calls and JSON outputs are strictly valid JSON with properly escaped characters.`;
-        payload.input = Array.isArray(payload.input) ? payload.input : [];
-        payload.input.push({
-          type: "user_input",
-          content: [{ type: "text", text: retryInstruction }]
-        });
+        _appendGeminiJsonRetryInstruction(payload, responseText);
         retries++;
         console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
         continue;
@@ -1967,26 +1968,53 @@ const GenAIApp = (function () {
   }
 
   /**
+   * Adds Gemini's JSON parsing failure and repair guidance to the next request.
+   * @param {Object} payload - Gemini request payload to update.
+   * @param {string} responseText - Raw API response or thrown error text.
+   */
+  function _appendGeminiJsonRetryInstruction(payload, responseText) {
+    const errorMessage = _extractApiErrorMessage(responseText);
+    const retryInstruction = `Your previous response failed JSON parsing with error: ${errorMessage}. Please ensure all tool calls and JSON outputs are strictly valid JSON with properly escaped characters.`;
+    payload.input = Array.isArray(payload.input) ? payload.input : [];
+    payload.input.push({
+      type: "user_input",
+      content: [{ type: "text", text: retryInstruction }]
+    });
+  }
+
+  /**
    * Extracts Gemini's machine-readable error code from common error response shapes.
    * @param {string} responseText - Raw Gemini API response body.
    * @returns {string|null} Normalized Gemini error code, when available.
    */
   function _extractGeminiErrorCode(responseText) {
+    const recognizedCodes = ["malformed_function_call", "malformed_tool_call"];
     try {
       const errorResponse = JSON.parse(responseText);
-      const error = errorResponse?.error || errorResponse;
-      const details = Array.isArray(error?.details) ? error.details : [];
-      const code = [
-        error?.code,
-        error?.reason,
-        error?.error_code,
-        error?.errorCode,
-        ...details.flatMap(detail => [detail?.reason, detail?.error_code, detail?.errorCode, detail?.code])
-      ].find(value => typeof value === "string" && value.length > 0);
-      return code ? code.toLowerCase() : null;
+      let fallbackCode = null;
+
+      function findCode(value, key) {
+        if (typeof value === "string") {
+          const normalizedValue = value.toLowerCase();
+          if (recognizedCodes.includes(normalizedValue)) return normalizedValue;
+          if (!fallbackCode && ["code", "reason", "error_code", "errorcode"].includes(String(key).toLowerCase())) {
+            fallbackCode = normalizedValue;
+          }
+          return null;
+        }
+        if (!value || typeof value !== "object") return null;
+        for (const childKey of Object.keys(value)) {
+          const code = findCode(value[childKey], childKey);
+          if (code) return code;
+        }
+        return null;
+      }
+
+      return findCode(errorResponse, null) || fallbackCode;
     }
     catch (e) {
-      return null;
+      const codeMatch = String(responseText).match(/malformed_(?:function|tool)_call/i);
+      return codeMatch ? codeMatch[0].toLowerCase() : null;
     }
   }
 
