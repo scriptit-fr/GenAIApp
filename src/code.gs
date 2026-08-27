@@ -75,6 +75,9 @@ const GenAIApp = (function () {
 
       this._lastUsage = null;
       this._inputTokenWarningThreshold = null;
+      // Replaceable in regression tests so request payloads can be inspected without
+      // making external calls. Production chats use the real HTTP caller.
+      this._apiCaller = _callGenAIApi;
 
       /**
        * Add a message to the chat.
@@ -558,7 +561,7 @@ const GenAIApp = (function () {
               }
             }
           }
-          responseMessage = _callGenAIApi(endpointUrl, payload);
+          responseMessage = this._apiCaller(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
             const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
@@ -584,9 +587,17 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
-            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
-            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
-            last_gemini_content_count = contents.length;
+            const interactionStatus = String(responseMessage?.status || "").toLowerCase();
+            const interactionCanContinue = interactionStatus !== "failed"
+              && interactionStatus !== "cancelled"
+              && interactionStatus !== "canceled";
+            // Failed/cancelled interaction IDs are not valid continuation handles. Keep the
+            // last successful handle and its content boundary so the unsent delta is retried.
+            if (interactionCanContinue && responseMessage?.id) {
+              last_gemini_interaction_id = responseMessage.id;
+              previous_interaction_id = responseMessage.id;
+              last_gemini_content_count = contents.length;
+            }
           }
           numberOfAPICalls++;
         }

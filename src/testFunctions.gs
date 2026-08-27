@@ -71,6 +71,8 @@ function testAll() {
   testMaximumAPICalls();
   testInputTokenWarning();
   if (_shouldRunModelLabel("gemini")) {
+    testGeminiInteractionRequestPayloads();
+    testGeminiFailedInteractionState();
     testGeminiInteractionThreading();
     testGeminiRetrieveLastInteractionId();
     testGeminiFunctionCallingInteractionContinuation();
@@ -82,6 +84,127 @@ function testAll() {
   if (_shouldRunModelLabel("gpt") && TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID) {
     testCodeInterpreterPDF(TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID);
   }
+}
+
+function _mockGeminiApiCaller(responses, requests) {
+  let responseIndex = 0;
+  return (endpoint, payload) => {
+    requests.push({ endpoint, payload: JSON.parse(JSON.stringify(payload)) });
+    if (responseIndex >= responses.length) {
+      throw new Error("Unexpected mocked Gemini request");
+    }
+    return responses[responseIndex++];
+  };
+}
+
+function _geminiTextResponse(id, text, status = "completed") {
+  return {
+    id,
+    status,
+    steps: text ? [{ type: "model_output", content: [{ type: "text", text }] }] : []
+  };
+}
+
+function testGeminiInteractionRequestPayloads() {
+  GenAIApp.setGeminiAPIKey("mock-gemini-key");
+  _runSingleTest("Gemini stateful interaction payloads", "gemini", () => {
+    const requests = [];
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat._apiCaller = _mockGeminiApiCaller([
+      _geminiTextResponse("interaction-1", "Remembered papaya."),
+      _geminiTextResponse("interaction-2", "The keyword was papaya.")
+    ], requests);
+
+    chat.addMessage("Remember this keyword: papaya.");
+    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    const firstInteractionId = chat.retrieveLastInteractionId();
+    if (!_isNonEmptyResponse(firstResponse) || firstInteractionId !== "interaction-1") {
+      throw new Error("Expected first response and interaction ID");
+    }
+
+    chat.addMessage("What keyword did I ask you to remember?");
+    const secondResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (!_isNonEmptyResponse(secondResponse) || chat.retrieveLastInteractionId() !== "interaction-2") {
+      throw new Error("Expected threaded response and interaction ID");
+    }
+    if (requests[0].payload.store !== true || requests[1].payload.store !== true) {
+      throw new Error("Gemini interaction requests must set store to true");
+    }
+    if (requests[0].payload.previous_interaction_id !== undefined
+      || requests[1].payload.previous_interaction_id !== "interaction-1") {
+      throw new Error("Expected previous_interaction_id only on the continuation request");
+    }
+    if (requests[1].payload.input.length !== 1
+      || requests[1].payload.input[0]?.content?.[0]?.text !== "What keyword did I ask you to remember?") {
+      throw new Error("Continuation input must contain only content added after the prior interaction");
+    }
+
+    const functionRequests = [];
+    const functionChat = GenAIApp.newChat().disableLogs(true);
+    const weatherFunction = GenAIApp.newFunction()
+      .setName("getWeather")
+      .setDescription("Get weather")
+      .addParameter("cityName", "string", "City name");
+    functionChat._apiCaller = _mockGeminiApiCaller([
+      {
+        id: "function-interaction-1",
+        status: "completed",
+        steps: [{ type: "function_call", id: "weather-call-1", name: "getWeather", args: { cityName: "Paris" } }]
+      },
+      _geminiTextResponse("function-interaction-2", "It is 19°C in Paris.")
+    ], functionRequests);
+    functionChat.addMessage("What's the weather in Paris?").addFunction(weatherFunction);
+    const functionResponse = functionChat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (!_isNonEmptyResponse(functionResponse) || functionChat.retrieveLastInteractionId() !== "function-interaction-2") {
+      throw new Error("Expected function continuation response and interaction ID");
+    }
+    const functionContinuation = functionRequests[1].payload;
+    if (functionContinuation.previous_interaction_id !== "function-interaction-1"
+      || functionContinuation.input.length !== 1
+      || functionContinuation.input[0].type !== "function_result"
+      || functionContinuation.input[0].call_id !== "weather-call-1"
+      || functionContinuation.input[0].result?.[0]?.text !== "The weather in Paris is 19°C today.") {
+      throw new Error("Function-result continuation did not preserve the expected delta input");
+    }
+    return "OK";
+  });
+}
+
+function testGeminiFailedInteractionState() {
+  GenAIApp.setGeminiAPIKey("mock-gemini-key");
+  _runSingleTest("Gemini failed interaction state", "gemini", () => {
+    const requests = [];
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat._apiCaller = _mockGeminiApiCaller([
+      _geminiTextResponse("valid-interaction", "First response."),
+      _geminiTextResponse("failed-interaction", "", "failed"),
+      _geminiTextResponse("recovered-interaction", "Recovered response.")
+    ], requests);
+
+    chat.addMessage("First turn.");
+    const firstResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (!_isNonEmptyResponse(firstResponse) || chat.retrieveLastInteractionId() !== "valid-interaction") {
+      throw new Error("Expected first response and interaction ID");
+    }
+    chat.addMessage("This turn receives a mocked HTTP 200 failed interaction.");
+    chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (chat.retrieveLastInteractionId() !== "valid-interaction") {
+      throw new Error("Failed interaction replaced the last valid interaction ID");
+    }
+    chat.addMessage("Retry after failure.");
+    const recoveredResponse = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (!_isNonEmptyResponse(recoveredResponse) || chat.retrieveLastInteractionId() !== "recovered-interaction") {
+      throw new Error("Expected recovered response and interaction ID");
+    }
+    if (requests[2].payload.previous_interaction_id !== "valid-interaction"
+      || requests[2].payload.previous_interaction_id === "failed-interaction") {
+      throw new Error("A failed interaction ID was used as a continuation handle");
+    }
+    if (requests[2].payload.input.length !== 2) {
+      throw new Error("Failed interaction advanced the Gemini content boundary");
+    }
+    return "OK";
+  });
 }
 
 
