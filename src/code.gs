@@ -75,6 +75,9 @@ const GenAIApp = (function () {
 
       this._lastUsage = null;
       this._inputTokenWarningThreshold = null;
+      // Replaceable in regression tests so request payloads can be inspected without
+      // making external calls. Production chats use the real HTTP caller.
+      this._apiCaller = _callGenAIApi;
 
       /**
        * Add a message to the chat.
@@ -558,7 +561,7 @@ const GenAIApp = (function () {
               }
             }
           }
-          responseMessage = _callGenAIApi(endpointUrl, payload);
+          responseMessage = this._apiCaller(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
             const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
@@ -584,9 +587,17 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
-            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
-            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
-            last_gemini_content_count = contents.length;
+            const interactionStatus = String(responseMessage?.status || "").toLowerCase();
+            const interactionCanContinue = interactionStatus !== "failed"
+              && interactionStatus !== "cancelled"
+              && interactionStatus !== "canceled";
+            // Failed/cancelled interaction IDs are not valid continuation handles. Keep the
+            // last successful handle and its content boundary so the unsent delta is retried.
+            if (interactionCanContinue && responseMessage?.id) {
+              last_gemini_interaction_id = responseMessage.id;
+              previous_interaction_id = responseMessage.id;
+              last_gemini_content_count = contents.length;
+            }
           }
           numberOfAPICalls++;
         }
@@ -939,6 +950,9 @@ const GenAIApp = (function () {
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
           model: model,
+          // Gemini reasoning state (including thought signatures) is retained by the
+          // Interactions API and referenced by previous_interaction_id on later turns.
+          store: true,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
             max_output_tokens: max_tokens
@@ -946,8 +960,8 @@ const GenAIApp = (function () {
           tools: []
         };
 
-        // Continue Gemini conversations using the Interactions API state handle instead of resending
-        // the full previous contents array.
+        // Continue stateful Gemini conversations using the Interactions API state handle instead of
+        // resending prior model output, which can omit required thought signatures.
         if (previous_interaction_id) {
           payload.previous_interaction_id = previous_interaction_id;
         }
