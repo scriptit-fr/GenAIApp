@@ -2110,10 +2110,7 @@ const GenAIApp = (function () {
             type: "function_result",
             call_id: part.functionResponse.call_id,
             name: part.functionResponse.name,
-            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }],
-            ...(part.functionResponse.thought_signature
-              ? { thought_signature: part.functionResponse.thought_signature }
-              : {})
+            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }]
           });
         }
       });
@@ -2153,8 +2150,7 @@ const GenAIApp = (function () {
       calls.push({
         id: step.id || step.call_id || step.function_call_id,
         name: step.name || step.function?.name || step.functionCall?.name,
-        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {},
-        thought_signature: step.thought_signature || step.thoughtSignature
+        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {}
       });
     });
     if (calls.length > 0) return calls;
@@ -2166,8 +2162,7 @@ const GenAIApp = (function () {
         calls.push({
           id: part.functionCall.id,
           name: part.functionCall.name,
-          args: part.functionCall.args || {},
-          thought_signature: part.thoughtSignature || part.thought_signature
+          args: part.functionCall.args || {}
         });
       }
     });
@@ -2175,22 +2170,13 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Finds an opaque thought signature in current and legacy Gemini responses.
+   * Finds the opaque signature on a Gemini Interactions API thought step.
    * @param {Object} responseMessage - Gemini response payload.
    * @returns {string|null} The last signature in the response.
    */
   function _extractGeminiThoughtSignature(responseMessage) {
-    let signature = responseMessage?.thought_signature || responseMessage?.thoughtSignature || null;
-    const visit = value => {
-      if (!value || typeof value !== "object") return;
-      if (value.thought_signature) signature = value.thought_signature;
-      else if (value.thoughtSignature) signature = value.thoughtSignature;
-      Object.keys(value).forEach(key => visit(value[key]));
-    };
-    visit(responseMessage?.steps);
-    visit(responseMessage?.parts);
-    visit(responseMessage?.candidates);
-    return signature;
+    const thoughtSteps = (responseMessage?.steps || []).filter(step => step?.type === "thought");
+    return thoughtSteps.length > 0 ? thoughtSteps[thoughtSteps.length - 1].signature || null : null;
   }
 
   /**
@@ -2248,8 +2234,7 @@ const GenAIApp = (function () {
       functionResults.push({
         call_id: functionCall.id,
         name: functionName,
-        response: { functionResponse },
-        ...(functionCall.thought_signature ? { thought_signature: functionCall.thought_signature } : {})
+        response: { functionResponse }
       });
     });
 
