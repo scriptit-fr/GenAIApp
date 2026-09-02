@@ -149,7 +149,15 @@ function testGeminiInteractionRequestPayloads() {
       {
         id: "function-interaction-1",
         status: "completed",
-        steps: [{ type: "function_call", id: "weather-call-1", name: "getWeather", args: { cityName: "Paris" } }]
+        steps: [
+          { type: "thought", signature: "opaque-weather-signature" },
+          {
+            type: "function_call",
+            id: "weather-call-1",
+            name: "getWeather",
+            args: { cityName: "Paris" }
+          }
+        ]
       },
       _geminiTextResponse("function-interaction-2", "It is 19°C in Paris.")
     ], functionRequests);
@@ -165,6 +173,12 @@ function testGeminiInteractionRequestPayloads() {
       || functionContinuation.input[0].call_id !== "weather-call-1"
       || functionContinuation.input[0].result?.[0]?.text !== "The weather in Paris is 19°C today.") {
       throw new Error("Function-result continuation did not preserve the expected delta input");
+    }
+    if (functionContinuation.input[0].thought_signature !== undefined) {
+      throw new Error("Stored interaction continuations must not copy the thought signature onto function results");
+    }
+    if (functionChat.retrieveLastThoughtSignature() !== "opaque-weather-signature") {
+      throw new Error("Expected the Gemini thought signature to remain retrievable");
     }
     return "OK";
   });

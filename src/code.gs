@@ -64,6 +64,7 @@ const GenAIApp = (function () {
       let last_response_id = null;
       let previous_interaction_id;
       let last_gemini_interaction_id = null;
+      let last_gemini_thought_signature = null;
       let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
@@ -388,6 +389,11 @@ const GenAIApp = (function () {
         return last_gemini_interaction_id;
       };
 
+      /** Returns the most recent opaque thought signature supplied by Gemini. */
+      this.retrieveLastThoughtSignature = function () {
+        return last_gemini_thought_signature;
+      };
+
       /**
        * Defines the input token threshold that should trigger a warning log.
        * @param {number} input_token_threshold - Input token threshold for warning.
@@ -477,7 +483,8 @@ const GenAIApp = (function () {
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls,
-          last_gemini_interaction_id: last_gemini_interaction_id
+          last_gemini_interaction_id: last_gemini_interaction_id,
+          last_gemini_thought_signature: last_gemini_thought_signature
         };
       };
 
@@ -601,6 +608,10 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
+            const thoughtSignature = _extractGeminiThoughtSignature(responseMessage);
+            if (thoughtSignature) {
+              last_gemini_thought_signature = thoughtSignature;
+            }
             const interactionStatus = String(responseMessage?.status || "").toLowerCase();
             const interactionCanContinue = interactionStatus !== "failed"
               && interactionStatus !== "cancelled"
@@ -2156,6 +2167,16 @@ const GenAIApp = (function () {
       }
     });
     return calls;
+  }
+
+  /**
+   * Finds the opaque signature on a Gemini Interactions API thought step.
+   * @param {Object} responseMessage - Gemini response payload.
+   * @returns {string|null} The last signature in the response.
+   */
+  function _extractGeminiThoughtSignature(responseMessage) {
+    const thoughtSteps = (responseMessage?.steps || []).filter(step => step?.type === "thought");
+    return thoughtSteps.length > 0 ? thoughtSteps[thoughtSteps.length - 1].signature || null : null;
   }
 
   /**
