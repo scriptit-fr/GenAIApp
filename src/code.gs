@@ -64,6 +64,7 @@ const GenAIApp = (function () {
       let last_response_id = null;
       let previous_interaction_id;
       let last_gemini_interaction_id = null;
+      let last_gemini_thought_signature = null;
       let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
@@ -388,6 +389,11 @@ const GenAIApp = (function () {
         return last_gemini_interaction_id;
       };
 
+      /** Returns the most recent opaque thought signature supplied by Gemini. */
+      this.retrieveLastThoughtSignature = function () {
+        return last_gemini_thought_signature;
+      };
+
       /**
        * Defines the input token threshold that should trigger a warning log.
        * @param {number} input_token_threshold - Input token threshold for warning.
@@ -477,7 +483,8 @@ const GenAIApp = (function () {
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls,
-          last_gemini_interaction_id: last_gemini_interaction_id
+          last_gemini_interaction_id: last_gemini_interaction_id,
+          last_gemini_thought_signature: last_gemini_thought_signature
         };
       };
 
@@ -601,6 +608,10 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
+            const thoughtSignature = _extractGeminiThoughtSignature(responseMessage);
+            if (thoughtSignature) {
+              last_gemini_thought_signature = thoughtSignature;
+            }
             const interactionStatus = String(responseMessage?.status || "").toLowerCase();
             const interactionCanContinue = interactionStatus !== "failed"
               && interactionStatus !== "cancelled"
@@ -2099,7 +2110,10 @@ const GenAIApp = (function () {
             type: "function_result",
             call_id: part.functionResponse.call_id,
             name: part.functionResponse.name,
-            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }]
+            result: [{ type: "text", text: part.functionResponse.response?.functionResponse ?? "" }],
+            ...(part.functionResponse.thought_signature
+              ? { thought_signature: part.functionResponse.thought_signature }
+              : {})
           });
         }
       });
@@ -2139,7 +2153,8 @@ const GenAIApp = (function () {
       calls.push({
         id: step.id || step.call_id || step.function_call_id,
         name: step.name || step.function?.name || step.functionCall?.name,
-        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {}
+        args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {},
+        thought_signature: step.thought_signature || step.thoughtSignature
       });
     });
     if (calls.length > 0) return calls;
@@ -2151,11 +2166,31 @@ const GenAIApp = (function () {
         calls.push({
           id: part.functionCall.id,
           name: part.functionCall.name,
-          args: part.functionCall.args || {}
+          args: part.functionCall.args || {},
+          thought_signature: part.thoughtSignature || part.thought_signature
         });
       }
     });
     return calls;
+  }
+
+  /**
+   * Finds an opaque thought signature in current and legacy Gemini responses.
+   * @param {Object} responseMessage - Gemini response payload.
+   * @returns {string|null} The last signature in the response.
+   */
+  function _extractGeminiThoughtSignature(responseMessage) {
+    let signature = responseMessage?.thought_signature || responseMessage?.thoughtSignature || null;
+    const visit = value => {
+      if (!value || typeof value !== "object") return;
+      if (value.thought_signature) signature = value.thought_signature;
+      else if (value.thoughtSignature) signature = value.thoughtSignature;
+      Object.keys(value).forEach(key => visit(value[key]));
+    };
+    visit(responseMessage?.steps);
+    visit(responseMessage?.parts);
+    visit(responseMessage?.candidates);
+    return signature;
   }
 
   /**
@@ -2213,7 +2248,8 @@ const GenAIApp = (function () {
       functionResults.push({
         call_id: functionCall.id,
         name: functionName,
-        response: { functionResponse }
+        response: { functionResponse },
+        ...(functionCall.thought_signature ? { thought_signature: functionCall.thought_signature } : {})
       });
     });
 
