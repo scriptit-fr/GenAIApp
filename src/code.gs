@@ -760,7 +760,7 @@ const GenAIApp = (function () {
           payload.previous_response_id = previous_response_id;
         }
 
-        if (tool_combination_enabled) {
+        if (tool_combination_enabled && privateInstanceBaseUrl) {
           payload.include_server_side_tool_invocations = true;
         }
 
@@ -997,12 +997,6 @@ const GenAIApp = (function () {
         // the full previous contents array.
         if (previous_interaction_id) {
           payload.previous_interaction_id = previous_interaction_id;
-        }
-
-        if (tool_combination_enabled) {
-          payload.tool_config = {
-            include_server_side_tool_invocations: true
-          };
         }
 
         if (advancedParametersObject?.function_call) {
