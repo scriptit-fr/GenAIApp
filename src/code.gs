@@ -331,7 +331,7 @@ const GenAIApp = (function () {
 
        /** OPTIONAL
        *
-       * Enable or disable server-side tool invocations for Gemini (Tool Combination).
+       * Enable or disable server-side tool invocations (Tool Combination).
        * @param {boolean} enabled - True to enable tool combination.
        * @returns {Chat} - The current Chat instance.
        */
@@ -760,6 +760,10 @@ const GenAIApp = (function () {
           payload.previous_response_id = previous_response_id;
         }
 
+        if (tool_combination_enabled) {
+          payload.include_server_side_tool_invocations = true;
+        }
+
         let systemInstructions = "";
         const userMessages = [];
         for (const message of messages) {
@@ -996,7 +1000,9 @@ const GenAIApp = (function () {
         }
 
         if (tool_combination_enabled) {
-          payload.include_server_side_tool_invocations = true;
+          payload.tool_config = {
+            includeServerSideToolInvocations: true
+          };
         }
 
         if (advancedParametersObject?.function_call) {
