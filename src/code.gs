@@ -1001,7 +1001,7 @@ const GenAIApp = (function () {
 
         if (tool_combination_enabled) {
           payload.tool_config = {
-            includeServerSideToolInvocations: true
+            include_server_side_tool_invocations: true
           };
         }
 
