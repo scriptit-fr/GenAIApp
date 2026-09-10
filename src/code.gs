@@ -1041,7 +1041,10 @@ const GenAIApp = (function () {
           });
         }
 
-        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+        // Interactions API settings are scoped to each request. Keep file search
+        // declared on continuations as well, so a stateful tool turn has the same
+        // available tool configuration as the interaction it continues.
+        if (Object.keys(addedVectorStores).length > 0) {
           payload.tools.push({
             "type": "file_search",
             file_search_store_names: Object.keys(addedVectorStores),

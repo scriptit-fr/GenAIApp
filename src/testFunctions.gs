@@ -253,7 +253,10 @@ function testGeminiInteractionRequestPayloads() {
       },
       _geminiTextResponse("function-interaction-2", "It is 19°C in Paris.")
     ], functionRequests);
-    functionChat.addMessage("What's the weather in Paris?").addFunction(weatherFunction);
+    functionChat
+      .addMessage("What's the weather in Paris?")
+      .addFunction(weatherFunction)
+      .addVectorStores("fileSearchStores/test-continuation");
     const functionResponse = functionChat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
     if (!_isNonEmptyResponse(functionResponse) || functionChat.retrieveLastInteractionId() !== "function-interaction-2") {
       throw new Error("Expected function continuation response and interaction ID");
@@ -268,6 +271,12 @@ function testGeminiInteractionRequestPayloads() {
     }
     if (functionContinuation.input[0].thought_signature !== undefined) {
       throw new Error("Stored interaction continuations must not copy the thought signature onto function results");
+    }
+    const fileSearchOnFirstRequest = functionRequests[0].payload.tools.find(tool => tool.type === "file_search");
+    const fileSearchOnContinuation = functionContinuation.tools.find(tool => tool.type === "file_search");
+    if (fileSearchOnFirstRequest?.file_search_store_names?.[0] !== "fileSearchStores/test-continuation"
+      || fileSearchOnContinuation?.file_search_store_names?.[0] !== "fileSearchStores/test-continuation") {
+      throw new Error("Gemini file search must remain configured on stateful tool continuations");
     }
     if (functionChat.retrieveLastThoughtSignature() !== "opaque-weather-signature") {
       throw new Error("Expected the Gemini thought signature to remain retrievable");
