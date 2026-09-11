@@ -1942,6 +1942,12 @@ const GenAIApp = (function () {
         console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
         continue;
       }
+      else if (endpoint.includes("google") && _isGeminiToolCallLimitError(response.getContentText())) {
+        _appendGeminiToolCallLimitRetryInstruction(payload, response.getContentText());
+        retries++;
+        console.warn(`[GenAIApp] - Gemini generated too many tool calls, retrying with the API error in the prompt (${retries}/${maxRetries}).`);
+        continue;
+      }
       else if (responseCode === 400 && hasMcpConnectors) {
         // Retry on context_length_exceeded ONLY when MCP connectors are present.
         let errJson = null;
@@ -2072,6 +2078,45 @@ const GenAIApp = (function () {
       return true;
     }
     return /Model generated invalid JSON syntax and the output could not be parsed/i.test(_extractApiErrorMessage(responseText));
+  }
+
+  /**
+   * Returns the most useful message from an API error response.
+   * @param {string} responseText - Raw API response body.
+   * @returns {string} Parsed error message, or the raw response when it is not JSON.
+   */
+  function _extractApiErrorMessage(responseText) {
+    try {
+      const errorResponse = JSON.parse(responseText);
+      return errorResponse?.error?.message || errorResponse?.message || responseText;
+    }
+    catch (e) {
+      return responseText;
+    }
+  }
+
+  /**
+   * Adds Gemini's tool-call limit guidance to the next request.
+   * @param {Object} payload - Gemini request payload to update.
+   * @param {string} responseText - Raw API response body.
+   */
+  function _appendGeminiToolCallLimitRetryInstruction(payload, responseText) {
+    const errorMessage = _extractApiErrorMessage(responseText);
+    const retryInstruction = `The previous request failed with this Gemini error: ${errorMessage} Retry the task using only the minimum necessary tool calls and a valid number of tool calls.`;
+    payload.input = Array.isArray(payload.input) ? payload.input : [];
+    payload.input.push({
+      type: "user_input",
+      content: [{ type: "text", text: retryInstruction }]
+    });
+  }
+
+  /**
+   * Identifies Gemini's recoverable model tool-call limit error.
+   * @param {string} responseText - Raw Gemini API response body.
+   * @returns {boolean} Whether the response reports too many generated tool calls.
+   */
+  function _isGeminiToolCallLimitError(responseText) {
+    return /Model generated too many tool calls/i.test(_extractApiErrorMessage(responseText));
   }
 
   /**
