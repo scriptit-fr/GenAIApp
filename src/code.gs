@@ -568,17 +568,17 @@ const GenAIApp = (function () {
             if (geminiKey) {
               // Public endpoint / Generative Language API
               // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
-              endpointUrl = `https://generativelanguage.googleapis.com/v1/interactions`;
+              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/interactions`;
             }
             else {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
               if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
-                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/interactions`;
+                endpointUrl = `https://aiplatform.googleapis.com/v1beta/projects/${gcpProjectId}/locations/global/interactions`;
               }
               else {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/interactions`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/interactions`;
               }
             }
           }
