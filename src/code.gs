@@ -48,7 +48,8 @@ const GenAIApp = (function () {
       let model = "gpt-5.6-terra"; // default
       let max_tokens = 1000;
       let browsing = false;
-      let reasoning_effort = "medium";
+      let reasoning_effort = "medium"; // OpenAI reasoning models: low, medium, or high
+      let thinking_level = null; // Gemini models; null lets Google select the default
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
       this._codeInterpreterContainerId = null;
@@ -63,6 +64,7 @@ const GenAIApp = (function () {
       let last_response_id = null;
       let previous_interaction_id;
       let last_gemini_interaction_id = null;
+      let last_gemini_thought_signature = null;
       let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
@@ -75,6 +77,9 @@ const GenAIApp = (function () {
 
       this._lastUsage = null;
       this._inputTokenWarningThreshold = null;
+      // Replaceable in regression tests so request payloads can be inspected without
+      // making external calls. Production chats use the real HTTP caller.
+      this._apiCaller = _callGenAIApi;
 
       /**
        * Add a message to the chat.
@@ -361,6 +366,16 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Sets the thinking level used by Gemini models.
+       * @param {string} thinkingLevel - Gemini thinking level. Supported values depend on the selected model.
+       * @returns {Chat} - The current Chat instance.
+       */
+      this.setThinkingLevel = function (thinkingLevel) {
+        thinking_level = thinkingLevel;
+        return this;
+      };
+
+      /**
        * Returns the response Id currently set for the class.
        */
       this.retrieveLastResponseId = function () {
@@ -372,6 +387,11 @@ const GenAIApp = (function () {
        */
       this.retrieveLastInteractionId = function () {
         return last_gemini_interaction_id;
+      };
+
+      /** Returns the most recent opaque thought signature supplied by Gemini. */
+      this.retrieveLastThoughtSignature = function () {
+        return last_gemini_thought_signature;
       };
 
       /**
@@ -457,12 +477,14 @@ const GenAIApp = (function () {
           tools: tools,
           model: model,
           max_tokens: max_tokens,
+          thinking_level: thinking_level,
           browsing: browsing,
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls,
-          last_gemini_interaction_id: last_gemini_interaction_id
+          last_gemini_interaction_id: last_gemini_interaction_id,
+          last_gemini_thought_signature: last_gemini_thought_signature
         };
       };
 
@@ -471,9 +493,10 @@ const GenAIApp = (function () {
        * Sends all your messages and eventual function to chat GPT.
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
-       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, max_tokens, function_call}
+       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
        * @param {"gemini-3.1-pro-preview" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
-       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] Only needed for OpenAI reasoning models, defaults to medium
+       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
+       * @param {string} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model. Omit to use Google's default.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat
@@ -488,6 +511,7 @@ const GenAIApp = (function () {
         model = advancedParametersObject?.model ?? model;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
         reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
+        thinking_level = advancedParametersObject?.thinking_level ?? thinking_level;
 
         if (model.includes("gemini")) {
           if (!geminiKey && !gcpProjectId) {
@@ -544,21 +568,21 @@ const GenAIApp = (function () {
             if (geminiKey) {
               // Public endpoint / Generative Language API
               // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
-              endpointUrl = `https://generativelanguage.googleapis.com/v1beta/interactions`;
+              endpointUrl = `https://generativelanguage.googleapis.com/v1/interactions`;
             }
             else {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
               if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
-                endpointUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/global/interactions`;
+                endpointUrl = `https://aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/global/interactions`;
               }
               else {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/interactions`;
+                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${gcpProjectId}/locations/${region}/interactions`;
               }
             }
           }
-          responseMessage = _callGenAIApi(endpointUrl, payload);
+          responseMessage = this._apiCaller(endpointUrl, payload);
           if (responseMessage?.usage) {
             this._lastUsage = responseMessage.usage;
             const inputTokens = this._lastUsage?.input_tokens ?? this._lastUsage?.total_input_tokens;
@@ -584,9 +608,21 @@ const GenAIApp = (function () {
             last_response_id = responseMessage?.id ?? null;
           }
           else {
-            last_gemini_interaction_id = responseMessage?.id ?? last_gemini_interaction_id;
-            previous_interaction_id = last_gemini_interaction_id || previous_interaction_id;
-            last_gemini_content_count = contents.length;
+            const thoughtSignature = _extractGeminiThoughtSignature(responseMessage);
+            if (thoughtSignature) {
+              last_gemini_thought_signature = thoughtSignature;
+            }
+            const interactionStatus = String(responseMessage?.status || "").toLowerCase();
+            const interactionCanContinue = interactionStatus !== "failed"
+              && interactionStatus !== "cancelled"
+              && interactionStatus !== "canceled";
+            // Failed/cancelled interaction IDs are not valid continuation handles. Keep the
+            // last successful handle and its content boundary so the unsent delta is retried.
+            if (interactionCanContinue && responseMessage?.id) {
+              last_gemini_interaction_id = responseMessage.id;
+              previous_interaction_id = responseMessage.id;
+              last_gemini_content_count = contents.length;
+            }
           }
           numberOfAPICalls++;
         }
@@ -619,7 +655,7 @@ const GenAIApp = (function () {
         if (tools.length > 0) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
-            const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+            const functionCalls = _extractGeminiFunctionCalls(responseMessage, tools);
             if (functionCalls.length > 0) {
               contents = _handleGeminiToolCalls(responseMessage, tools, contents);
               // check if endWithResults or onlyReturnArguments
@@ -695,14 +731,14 @@ const GenAIApp = (function () {
 
       /**
        * Builds and returns a payload for an OpenAI API call, incorporating advanced parameters and 
-       * tool-specific configurations for browsing, image description, and assistant functionalities. 
+       * tool-specific configurations for browsing, image description, and built-in tools.
        * Configures tool choices based on recent interactions, message content, and options in 
        * `advancedParametersObject`.
        *
        * @private
        * @returns {Object} - The payload object, configured with messages, model settings, and tool selections 
        *                     for OpenAI's API.
-       * @throws {Error} If an incompatible model is selected with certain functionalities (e.g., Gemini model with assistant).
+       * @throws {Error} If an incompatible model is selected with certain tools.
        */
       this._buildOpenAIPayload = function () {
         let payload = {
@@ -934,17 +970,24 @@ const GenAIApp = (function () {
        *                                            such as function call preferences.
        * @returns {Object} - The configured payload object for the Gemini API, including content, model settings, 
        *                     generation configuration, and available tools.
-       * @throws {Error} If an incompatible feature is selected (e.g., assistant usage with the Gemini model).
+       * @throws {Error} If an incompatible feature is selected for the Gemini model.
        */
       this._buildGeminiPayload = function (advancedParametersObject) {
         const payload = {
           model: model,
+          // Gemini reasoning state (including thought signatures) is retained by the
+          // Interactions API and referenced by previous_interaction_id on later turns.
+          store: true,
           input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
           generation_config: {
             max_output_tokens: max_tokens
           },
           tools: []
         };
+
+        if (thinking_level !== null) {
+          payload.generation_config.thinking_level = thinking_level;
+        }
 
         // Continue Gemini conversations using the Interactions API state handle instead of resending
         // the full previous contents array.
@@ -987,6 +1030,14 @@ const GenAIApp = (function () {
               description: toolFunction.description,
               parameters: toolFunction.parameters
             };
+          });
+        }
+
+        if (mcpConnectors.length > 0) {
+          // MCP tools use a different declaration in the Gemini Interactions API
+          // than they do in the OpenAI Responses API.
+          mcpConnectors.forEach(connector => {
+            payload.tools.push(connector._toGeminiJson());
           });
         }
 
@@ -1419,7 +1470,8 @@ const GenAIApp = (function () {
       let serverUrl = null;
       let connectorId = null;
       let allowedTools = null;
-      let authorization = ScriptApp.getOAuthToken();
+      let authorization = null;
+      let authorizationWasSet = false;
       let requireApproval = "never";
 
       /**
@@ -1508,6 +1560,7 @@ const GenAIApp = (function () {
        * @returns {ConnectorObject}
        */
       this.setAuthorization = function (token) {
+        authorizationWasSet = true;
         if (token === null || token === undefined) {
           authorization = null;
           return this;
@@ -1594,8 +1647,63 @@ const GenAIApp = (function () {
           connector.allowed_tools = allowedTools;
         }
 
-        if (authorization) {
-          connector.authorization = authorization;
+        // Predefined Google connectors retain their convenient Apps Script OAuth
+        // fallback. Custom servers only receive credentials explicitly supplied
+        // by the caller, so the script token is never leaked to an arbitrary URL.
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
+          connector.authorization = connectorAuthorization;
+        }
+
+        return connector;
+      };
+
+      /**
+       * Returns the MCP server declaration expected by the Gemini Interactions API.
+       * Gemini does not accept OpenAI's connector_id, server_label, server_url,
+       * authorization, or require_approval fields.
+       *
+       * @returns {Object}
+       */
+      this._toGeminiJson = function () {
+        if (!serverUrl && !connectorId) {
+          throw Error("[GenAIApp] - Please configure the connector using setServerUrl() or setConnectorId().");
+        }
+
+        const googleConnectorUrls = {
+          connector_gmail: "https://gmailmcp.googleapis.com/mcp/v1",
+          connector_googlecalendar: "https://calendarmcp.googleapis.com/mcp/v1",
+          connector_googledrive: "https://drivemcp.googleapis.com/mcp/v1"
+        };
+        const resolvedUrl = serverUrl || googleConnectorUrls[connectorId];
+        if (!resolvedUrl) {
+          throw Error(`[GenAIApp] - The connector ${connectorId} is not supported by the Gemini Interactions API.`);
+        }
+
+        const connector = {
+          type: "mcp_server",
+          name: serverLabel || "custom_mcp",
+          url: resolvedUrl
+        };
+
+        if (allowedTools) {
+          connector.allowed_tools = {
+            mode: "any",
+            tools: allowedTools
+          };
+        }
+
+        const connectorAuthorization = authorizationWasSet
+          ? authorization
+          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+        if (connectorAuthorization) {
+          connector.headers = {
+            Authorization: /^Bearer\s/i.test(connectorAuthorization)
+              ? connectorAuthorization
+              : `Bearer ${connectorAuthorization}`
+          };
         }
 
         return connector;
@@ -1778,32 +1886,40 @@ const GenAIApp = (function () {
       }
 
       let response;
-      // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
-      if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
-        response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
-      }
-      else {
-        try {
+      try {
+        // if the ErrorHandler library is loaded and supports backoff, use it (https://github.com/RomainVialard/ErrorHandler)
+        if (typeof ErrorHandler !== 'undefined' && typeof ErrorHandler.urlFetchWithExpBackOff === 'function') {
+          response = ErrorHandler.urlFetchWithExpBackOff(endpoint, options);
+        }
+        else {
           response = UrlFetchApp.fetch(endpoint, options);
         }
-        catch (err) {
-          if (verbose) {
-            console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${err.message}. Retrying (${retries + 1}/${maxRetries})`);
-          }
-          const delay = Math.pow(2, retries) * 1000;
-          Utilities.sleep(delay);
+      }
+      catch (err) {
+        const errorText = err?.message || String(err);
+        if (endpoint.includes("google") && _isGeminiInvalidJsonError(errorText)) {
+          _appendGeminiJsonRetryInstruction(payload, errorText);
           retries++;
+          console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
           continue;
         }
+        if (verbose) {
+          console.warn(`[GenAIApp] - Network error calling ${payload.model}: ${errorText}. Retrying (${retries + 1}/${maxRetries})`);
+        }
+        const delay = Math.pow(2, retries) * 1000;
+        Utilities.sleep(delay);
+        retries++;
+        continue;
       }
       const responseCode = response.getResponseCode();
+      if (responseCode === 200 && returnRawResponse) {
+        return response;
+      }
+      const responseText = response.getContentText();
 
       if (responseCode === 200) {
-        if (returnRawResponse) {
-          return response;
-        }
         // The request was successful, exit the loop.
-        const parsedResponse = JSON.parse(response.getContentText());
+        const parsedResponse = JSON.parse(responseText);
         if (endpoint.includes("google")) {
           responseMessage = parsedResponse;
           finish_reason = parsedResponse.status
@@ -1819,6 +1935,12 @@ const GenAIApp = (function () {
           console.warn(`[GenAIApp] - ${payload.model} response could not be completed because of an insufficient amount of tokens. To resolve this issue, you can increase the amount of tokens like this : chat.run({max_tokens: XXXX}).`);
         }
         success = true;
+      }
+      else if (endpoint.includes("google") && _isGeminiInvalidJsonError(responseText)) {
+        _appendGeminiJsonRetryInstruction(payload, responseText);
+        retries++;
+        console.warn(`[GenAIApp] - Gemini returned invalid JSON, retrying with the parsing error in the prompt (${retries}/${maxRetries}).`);
+        continue;
       }
       else if (endpoint.includes("google") && _isGeminiToolCallLimitError(response.getContentText())) {
         _appendGeminiToolCallLimitRetryInstruction(payload, response.getContentText());
@@ -1877,6 +1999,85 @@ const GenAIApp = (function () {
       });
     }
     return responseMessage;
+  }
+
+  /**
+   * Returns the most useful message from an API error response.
+   * @param {string} responseText - Raw API response body.
+   * @returns {string} Parsed error message, or the raw response when it is not JSON.
+   */
+  function _extractApiErrorMessage(responseText) {
+    try {
+      const errorResponse = JSON.parse(responseText);
+      return errorResponse?.error?.message || errorResponse?.message || responseText;
+    }
+    catch (e) {
+      return responseText;
+    }
+  }
+
+  /**
+   * Adds Gemini's JSON parsing failure and repair guidance to the next request.
+   * @param {Object} payload - Gemini request payload to update.
+   * @param {string} responseText - Raw API response or thrown error text.
+   */
+  function _appendGeminiJsonRetryInstruction(payload, responseText) {
+    const errorMessage = _extractApiErrorMessage(responseText);
+    const retryInstruction = `Your previous response failed JSON parsing with error: ${errorMessage}. Please ensure all tool calls and JSON outputs are strictly valid JSON with properly escaped characters.`;
+    payload.input = Array.isArray(payload.input) ? payload.input : [];
+    payload.input.push({
+      type: "user_input",
+      content: [{ type: "text", text: retryInstruction }]
+    });
+  }
+
+  /**
+   * Extracts Gemini's machine-readable error code from common error response shapes.
+   * @param {string} responseText - Raw Gemini API response body.
+   * @returns {string|null} Normalized Gemini error code, when available.
+   */
+  function _extractGeminiErrorCode(responseText) {
+    const recognizedCodes = ["malformed_function_call", "malformed_tool_call"];
+    try {
+      const errorResponse = JSON.parse(responseText);
+      let fallbackCode = null;
+
+      function findCode(value, key) {
+        if (typeof value === "string") {
+          const normalizedValue = value.toLowerCase();
+          if (recognizedCodes.includes(normalizedValue)) return normalizedValue;
+          if (!fallbackCode && ["code", "reason", "error_code", "errorcode"].includes(String(key).toLowerCase())) {
+            fallbackCode = normalizedValue;
+          }
+          return null;
+        }
+        if (!value || typeof value !== "object") return null;
+        for (const childKey of Object.keys(value)) {
+          const code = findCode(value[childKey], childKey);
+          if (code) return code;
+        }
+        return null;
+      }
+
+      return findCode(errorResponse, null) || fallbackCode;
+    }
+    catch (e) {
+      const codeMatch = String(responseText).match(/malformed_(?:function|tool)_call/i);
+      return codeMatch ? codeMatch[0].toLowerCase() : null;
+    }
+  }
+
+  /**
+   * Identifies Gemini's model-output JSON parsing failure.
+   * @param {string} responseText - Raw API response body.
+   * @returns {boolean} Whether the response reports invalid generated JSON.
+   */
+  function _isGeminiInvalidJsonError(responseText) {
+    const errorCode = _extractGeminiErrorCode(responseText);
+    if (errorCode === "malformed_function_call" || errorCode === "malformed_tool_call") {
+      return true;
+    }
+    return /Model generated invalid JSON syntax and the output could not be parsed/i.test(_extractApiErrorMessage(responseText));
   }
 
   /**
@@ -1986,7 +2187,7 @@ const GenAIApp = (function () {
     return part?.text || responseMessage?.output_text || null;
   }
 
-  function _extractGeminiFunctionCalls(responseMessage) {
+  function _extractGeminiFunctionCalls(responseMessage, tools) {
     const calls = [];
     const steps = responseMessage?.steps || [];
     steps.forEach(step => {
@@ -1997,7 +2198,9 @@ const GenAIApp = (function () {
         args: step.args || step.arguments || step.function?.arguments || step.functionCall?.args || {}
       });
     });
-    if (calls.length > 0) return calls;
+    if (calls.length > 0) {
+      return _filterGeminiBuiltInFunctionCalls(calls, tools);
+    }
 
     // Backward-compatible fallback for legacy content-shaped responses.
     const parts = responseMessage?.parts || [];
@@ -2010,7 +2213,34 @@ const GenAIApp = (function () {
         });
       }
     });
-    return calls;
+    return _filterGeminiBuiltInFunctionCalls(calls, tools);
+  }
+
+  /**
+   * Removes Gemini server-executed built-in tool steps from local function calls.
+   * Built-in functions use Google's reserved `google:` namespace and must not be
+   * dispatched through the Apps Script global scope. When registered tools are
+   * provided, calls must also match the registered function allowlist.
+   *
+   * @param {Array} calls - Function calls extracted from a Gemini response.
+   * @param {Array|undefined} tools - Locally registered function tools.
+   * @returns {Array} Calls eligible for local execution.
+   */
+  function _filterGeminiBuiltInFunctionCalls(calls, tools) {
+    const nonGoogleCalls = calls.filter(call => !String(call.name || "").startsWith("google:"));
+    if (!Array.isArray(tools)) return nonGoogleCalls;
+    const registeredNames = new Set(tools.map(tool => tool.function._toJson().name));
+    return nonGoogleCalls.filter(call => registeredNames.has(call.name));
+  }
+
+  /**
+   * Finds the opaque signature on a Gemini Interactions API thought step.
+   * @param {Object} responseMessage - Gemini response payload.
+   * @returns {string|null} The last signature in the response.
+   */
+  function _extractGeminiThoughtSignature(responseMessage) {
+    const thoughtSteps = (responseMessage?.steps || []).filter(step => step?.type === "thought");
+    return thoughtSteps.length > 0 ? thoughtSteps[thoughtSteps.length - 1].signature || null : null;
   }
 
   /**
@@ -2023,7 +2253,7 @@ const GenAIApp = (function () {
    * @returns {Object} - Tool continuation input and state flags for the Chat run loop.
    */
   function _handleGeminiToolCalls(responseMessage, tools, contents) {
-    const functionCalls = _extractGeminiFunctionCalls(responseMessage);
+    const functionCalls = _extractGeminiFunctionCalls(responseMessage, tools);
     const functionResults = [];
     let shouldEndWithResult = false;
     let onlyReturnArguments = null;
@@ -2205,15 +2435,15 @@ const GenAIApp = (function () {
   }
 
   /**
-   * Extracts assistant text from OpenAI Responses API output.
+   * Extracts model text from OpenAI Responses API output.
    * Prioritizes messages marked as `final_answer` over intermediate `commentary`.
-   * Falls back to the last available assistant message text when no explicit final answer exists.
+   * Falls back to the last available model message text when no explicit final answer exists.
    * 
    * Logs a warning when compaction was used for the response.
    *
    * @private
    * @param {Array} response - The `response` array returned by OpenAI.
-   * @returns {string|null} - The selected assistant text, or `null` if no text is found.
+   * @returns {string|null} - The selected model text, or `null` if no text is found.
    */
   function _extractOpenAIResponseText(response) {
     const output = response?.output;
@@ -2376,9 +2606,9 @@ const GenAIApp = (function () {
   };
 
   /**
-   * Uploads a file to OpenAI and returns the file ID.
-   * 
-   * @param {string} optionalAttachment - The optional attachment ID from Google Drive.
+   * Uploads a Google Drive file to OpenAI and returns the file ID.
+   *
+   * @param {string} optionalAttachment - The Google Drive file ID to upload.
    * @returns {string} The OpenAI file ID.
    */
   function _uploadFileToOpenAI(optionalAttachment) {
@@ -2408,14 +2638,11 @@ const GenAIApp = (function () {
     });
 
     const fileBlob = response.getBlob();
-
     const openAIFileEndpoint = 'https://api.openai.com/v1/files';
-
     const formData = {
       'file': fileBlob,
-      'purpose': 'assistants'
+      'purpose': 'user_data'
     };
-
     const uploadOptions = {
       'method': 'post',
       'headers': {
