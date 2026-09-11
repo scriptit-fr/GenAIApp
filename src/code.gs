@@ -531,6 +531,9 @@ const GenAIApp = (function () {
         if (knowledgeLink.length > 0) {
           let knowledge = "";
           knowledgeLink.forEach(url => {
+            if (!_isSafeKnowledgeUrl(url)) {
+              throw Error(`[GenAIApp] - The URL "${url}" provided to addKnowledgeLink() is not allowed (only public http/https URLs are supported).`);
+            }
             const urlContent = _urlFetch(url);
             knowledge += `${url}: \n\n ${urlContent}\n\n`;
           })
@@ -2670,6 +2673,35 @@ const GenAIApp = (function () {
    * @returns {string|null} - The page content in Markdown format if successful, `null` if the response code is not 200, 
    *                          or an error message in JSON format if access is denied or an error occurs.
    */
+  function _isSafeKnowledgeUrl(url) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      return false;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    const blockedHostnames = ["localhost", "metadata.google.internal"];
+    if (blockedHostnames.includes(hostname)) {
+      return false;
+    }
+    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+      const octets = ipv4Match.slice(1).map(Number);
+      if (octets[0] === 127 || octets[0] === 0 || octets[0] === 10) return false;
+      if (octets[0] === 169 && octets[1] === 254) return false;
+      if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return false;
+      if (octets[0] === 192 && octets[1] === 168) return false;
+    }
+    if (hostname === "::1" || hostname.startsWith("fe80:") || hostname.startsWith("fc00:") || hostname.startsWith("fd00:")) {
+      return false;
+    }
+    return true;
+  }
+
   function _urlFetch(url) {
     if (verbose) {
       console.log(`[GenAIApp] - Clicked on link : ${url}`);
