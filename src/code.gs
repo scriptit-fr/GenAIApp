@@ -652,7 +652,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if (tools.length > 0) {
+        if (tools.length > 0 || model.includes("gemini")) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
             const functionCalls = _extractGeminiFunctionCalls(responseMessage, tools);
@@ -2199,7 +2199,7 @@ const GenAIApp = (function () {
       });
     });
     if (calls.length > 0) {
-      return _filterGeminiActionableFunctionCalls(calls, tools);
+      return _filterGeminiActionableFunctionCalls(responseMessage, calls, tools);
     }
 
     // Backward-compatible fallback for legacy content-shaped responses.
@@ -2213,21 +2213,28 @@ const GenAIApp = (function () {
         });
       }
     });
-    return _filterGeminiActionableFunctionCalls(calls, tools);
+    return _filterGeminiActionableFunctionCalls(responseMessage, calls, tools);
   }
 
   /**
-   * Keeps Gemini server-side tool requests and registered local function calls.
+   * Keeps deferred Gemini server-side tool requests and registered local function calls.
    * Other unregistered function calls are discarded.
    *
+   * @param {Object} responseMessage - Gemini response payload.
    * @param {Array} calls - Function calls extracted from a Gemini response.
    * @param {Array|undefined} tools - Locally registered function tools.
    * @returns {Array} Calls eligible for server guidance or local execution.
    */
-  function _filterGeminiActionableFunctionCalls(calls, tools) {
-    if (!Array.isArray(tools)) return calls;
+  function _filterGeminiActionableFunctionCalls(responseMessage, calls, tools) {
+    const requiresAction = String(responseMessage?.status || "").toLowerCase() === "requires_action";
+    const actionableCalls = calls.filter(call =>
+      !String(call.name || "").startsWith("google:") || requiresAction
+    );
+    if (!Array.isArray(tools)) return actionableCalls;
     const registeredNames = new Set(tools.map(tool => tool.function._toJson().name));
-    return calls.filter(call => String(call.name || "").startsWith("google:") || registeredNames.has(call.name));
+    return actionableCalls.filter(call =>
+      String(call.name || "").startsWith("google:") || registeredNames.has(call.name)
+    );
   }
 
   /**
