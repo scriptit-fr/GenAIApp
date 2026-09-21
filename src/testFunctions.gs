@@ -62,6 +62,7 @@ function _runSingleTest(testName, modelLabel, testFunction) {
 
 // Run all tests
 function testAll() {
+  testMCPConnectorPayloads();
   testSimpleChatInstance();
   testFunctionCalling();
   testFunctionCallingEndWithResult();
@@ -86,6 +87,46 @@ function testAll() {
   if (_shouldRunModelLabel("gpt") && TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID) {
     testCodeInterpreterPDF(TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID);
   }
+}
+
+function testMCPConnectorPayloads() {
+  _runSingleTest("MCP connector payloads", "local", () => {
+    const remote = GenAIApp.newConnector()
+      .setLabel("remote")
+      .setServerUrl("https://mcp.example.com")
+      ._toJson();
+    if (remote.server_url !== "https://mcp.example.com" || remote.connector_id || remote.tunnel_id) {
+      throw new Error("Expected remote MCP payload to use server_url only");
+    }
+
+    const tunnel = GenAIApp.newConnector()
+      .setLabel("local")
+      .setTunnelId("tunnel_test")
+      ._toJson();
+    if (tunnel.tunnel_id !== "tunnel_test" || tunnel.server_url || tunnel.connector_id) {
+      throw new Error("Expected local MCP payload to use tunnel_id only");
+    }
+
+    const legacy = GenAIApp.newConnector()
+      .setLegacyConnectorId("gmail")
+      .setAuthorization("oauth-access-token")
+      ._toJson();
+    if (legacy.connector_id !== "connector_gmail" || legacy.server_url || legacy.tunnel_id) {
+      throw new Error("Expected legacy MCP payload to retain connector_id");
+    }
+
+    let tunnelRejectedByGemini = false;
+    try {
+      GenAIApp.newConnector().setTunnelId("tunnel_test")._toGeminiJson();
+    }
+    catch (err) {
+      tunnelRejectedByGemini = /only supported for OpenAI/.test(err.message);
+    }
+    if (!tunnelRejectedByGemini) {
+      throw new Error("Expected Gemini payload builder to reject tunnel_id");
+    }
+    return "OK";
+  });
 }
 
 function _mockGeminiApiCaller(responses, requests) {

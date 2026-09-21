@@ -7,9 +7,21 @@
 function mcpConnectorsSample() {
   GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
 
-  const gmail = GenAIApp.newConnector().setConnectorId('gmail').setAuthorization(ScriptApp.getOAuthToken()).setRequireApproval('never');
-  const calendar = GenAIApp.newConnector().setConnectorId('calendar').setAuthorization(ScriptApp.getOAuthToken()).setRequireApproval('never');
-  const drive = GenAIApp.newConnector().setConnectorId('drive').setAuthorization(ScriptApp.getOAuthToken()).setRequireApproval('never');
+  const gmail = GenAIApp.newConnector()
+    .setLabel('gmail')
+    .setServerUrl('https://gmailmcp.googleapis.com/mcp/v1')
+    .setAuthorization(ScriptApp.getOAuthToken())
+    .setRequireApproval('never');
+  const calendar = GenAIApp.newConnector()
+    .setLabel('google_calendar')
+    .setServerUrl('https://calendarmcp.googleapis.com/mcp/v1')
+    .setAuthorization(ScriptApp.getOAuthToken())
+    .setRequireApproval('never');
+  const drive = GenAIApp.newConnector()
+    .setLabel('google_drive')
+    .setServerUrl('https://drivemcp.googleapis.com/mcp/v1')
+    .setAuthorization(ScriptApp.getOAuthToken())
+    .setRequireApproval('never');
 
   const chat = GenAIApp.newChat()
     .addMessage('Summarize my latest unread Gmail message, next calendar event, and one recently modified Drive file.')
