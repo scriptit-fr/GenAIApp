@@ -439,7 +439,7 @@ A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File 
 
 ### Connector Object
 
-A `ConnectorObject` represents a remote or tunneled MCP server connection. Remote server URLs work with OpenAI and Gemini. Secure MCP Tunnel IDs work with OpenAI.
+A `ConnectorObject` represents a remote or tunneled MCP server connection. Remote server URLs work with OpenAI and Gemini. Gemini Remote MCP supports Streamable HTTP only; SSE endpoints are not supported. Secure MCP Tunnel IDs work with OpenAI.
 
 - `setLabel(label)`: Set the identifier used in the chat payload. This is required for custom servers.
 - `setDescription(description)`: Provide an optional description visible to OpenAI models.

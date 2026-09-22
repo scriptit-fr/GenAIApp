@@ -96,15 +96,25 @@ function testMCPConnectorPayloads() {
       .setLabel("remote")
       .setServerUrl("https://mcp.example.com")
       ._toJson();
-    if (remote.server_url !== "https://mcp.example.com" || "tunnel_id" in remote) {
+    if (remote.server_url !== "https://mcp.example.com" || "tunnel_id" in remote || "connector_id" in remote) {
       throw new Error("Expected remote MCP payload to use server_url only");
+    }
+
+    const geminiRemote = GenAIApp.newConnector()
+      .setLabel("remote")
+      .setServerUrl("https://mcp.example.com")
+      ._toGeminiJson();
+    if (geminiRemote.type !== "mcp_server" ||
+        geminiRemote.url !== "https://mcp.example.com" ||
+        "server_url" in geminiRemote) {
+      throw new Error("Expected Gemini MCP payload to use mcp_server.url");
     }
 
     const tunnel = GenAIApp.newConnector()
       .setLabel("local")
       .setTunnelId("tunnel_test")
       ._toJson();
-    if (tunnel.tunnel_id !== "tunnel_test" || "server_url" in tunnel) {
+    if (tunnel.tunnel_id !== "tunnel_test" || "server_url" in tunnel || "connector_id" in tunnel) {
       throw new Error("Expected local MCP payload to use tunnel_id only");
     }
 
