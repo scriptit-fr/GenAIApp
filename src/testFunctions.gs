@@ -95,7 +95,7 @@ function testMCPConnectorPayloads() {
       .setLabel("remote")
       .setServerUrl("https://mcp.example.com")
       ._toJson();
-    if (remote.server_url !== "https://mcp.example.com" || remote.tunnel_id) {
+    if (remote.server_url !== "https://mcp.example.com" || "tunnel_id" in remote) {
       throw new Error("Expected remote MCP payload to use server_url only");
     }
 
@@ -103,7 +103,7 @@ function testMCPConnectorPayloads() {
       .setLabel("local")
       .setTunnelId("tunnel_test")
       ._toJson();
-    if (tunnel.tunnel_id !== "tunnel_test" || tunnel.server_url) {
+    if (tunnel.tunnel_id !== "tunnel_test" || "server_url" in tunnel) {
       throw new Error("Expected local MCP payload to use tunnel_id only");
     }
 
