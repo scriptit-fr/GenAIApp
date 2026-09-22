@@ -108,22 +108,6 @@ function testMCPConnectorPayloads() {
       throw new Error("Expected local MCP payload to use tunnel_id only");
     }
 
-    const legacy = GenAIApp.newConnector()
-      .setLegacyConnectorId("gmail")
-      .setAuthorization("oauth-access-token")
-      ._toJson();
-    if (legacy.connector_id !== "connector_gmail" || "server_url" in legacy || "tunnel_id" in legacy) {
-      throw new Error("Expected legacy MCP payload to use connector_id only");
-    }
-
-    const compatibilityAlias = GenAIApp.newConnector()
-      .setConnectorId("calendar")
-      .setAuthorization("oauth-access-token")
-      ._toJson();
-    if (compatibilityAlias.connector_id !== "connector_googlecalendar") {
-      throw new Error("Expected setConnectorId compatibility alias to emit connector_id");
-    }
-
     let tunnelRejectedByGemini = false;
     try {
       GenAIApp.newConnector().setTunnelId("tunnel_test")._toGeminiJson();

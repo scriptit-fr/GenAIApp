@@ -1469,10 +1469,8 @@ const GenAIApp = (function () {
       let serverDescription = null;
       let serverUrl = null;
       let tunnelId = null;
-      let legacyConnectorId = null;
       let allowedTools = null;
       let authorization = null;
-      let authorizationWasSet = false;
       let requireApproval = "never";
 
       /**
@@ -1516,7 +1514,6 @@ const GenAIApp = (function () {
         }
         serverUrl = trimmedUrl;
         tunnelId = null;
-        legacyConnectorId = null;
         return this;
       };
 
@@ -1531,48 +1528,8 @@ const GenAIApp = (function () {
         }
         tunnelId = id.trim();
         serverUrl = null;
-        legacyConnectorId = null;
         return this;
       };
-
-      /**
-       * Configures a legacy predefined Google connector for pre-cutoff OpenAI models.
-       * @param {"gmail"|"calendar"|"drive"} connectorType - The Google connector identifier.
-       * @returns {ConnectorObject}
-       */
-      this.setLegacyConnectorId = function (connectorType) {
-        if (typeof connectorType !== "string" || connectorType.trim() === "") {
-          throw Error("[GenAIApp] - Please specify the Google MCP connector you want to use: 'gmail', 'calendar' or 'drive'");
-        }
-
-        const normalizedConnector = connectorType.toLowerCase().trim();
-        const connectorIds = {
-          gmail: "connector_gmail",
-          calendar: "connector_googlecalendar",
-          drive: "connector_googledrive"
-        };
-        const serverLabels = {
-          gmail: "gmail",
-          calendar: "google_calendar",
-          drive: "google_drive"
-        };
-
-        if (!connectorIds[normalizedConnector]) {
-          throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}. Accepted types are 'gmail', 'calendar' and 'drive'`);
-        }
-
-        legacyConnectorId = connectorIds[normalizedConnector];
-        serverLabel = serverLabels[normalizedConnector];
-        serverUrl = null;
-        tunnelId = null;
-        return this;
-      };
-
-      /**
-       * Compatibility alias for setLegacyConnectorId().
-       * @deprecated Use setServerUrl() or setTunnelId() for models released after September 1, 2026.
-       */
-      this.setConnectorId = this.setLegacyConnectorId;
 
       /**
        * Sets the authorization token for the connector.
@@ -1580,7 +1537,6 @@ const GenAIApp = (function () {
        * @returns {ConnectorObject}
        */
       this.setAuthorization = function (token) {
-        authorizationWasSet = true;
         if (token === null || token === undefined) {
           authorization = null;
           return this;
@@ -1641,8 +1597,8 @@ const GenAIApp = (function () {
        * @returns {Object}
        */
       this._toJson = function () {
-        if (!serverUrl && !tunnelId && !legacyConnectorId) {
-          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl(), setTunnelId(), or setLegacyConnectorId().");
+        if (!serverUrl && !tunnelId) {
+          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl() or setTunnelId().");
         }
 
         const connector = {
@@ -1662,20 +1618,13 @@ const GenAIApp = (function () {
           connector.tunnel_id = tunnelId;
           connector.server_label = serverLabel || "local_mcp";
         }
-        else {
-          connector.connector_id = legacyConnectorId;
-          connector.server_label = serverLabel || legacyConnectorId;
-        }
 
         if (allowedTools) {
           connector.allowed_tools = allowedTools;
         }
 
-        const connectorAuthorization = authorizationWasSet
-          ? authorization
-          : (legacyConnectorId ? ScriptApp.getOAuthToken() : null);
-        if (connectorAuthorization) {
-          connector.authorization = connectorAuthorization;
+        if (authorization) {
+          connector.authorization = authorization;
         }
 
         return connector;
@@ -1683,33 +1632,23 @@ const GenAIApp = (function () {
 
       /**
        * Returns the MCP server declaration expected by the Gemini Interactions API.
-       * Gemini does not accept OpenAI's connector_id, tunnel_id, server_label,
-       * server_url, authorization, or require_approval fields.
+       * Gemini does not accept OpenAI's tunnel_id, server_label, server_url,
+       * authorization, or require_approval fields.
        *
        * @returns {Object}
        */
       this._toGeminiJson = function () {
-        if (!serverUrl && !tunnelId && !legacyConnectorId) {
-          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl() or setLegacyConnectorId().");
+        if (!serverUrl && !tunnelId) {
+          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl().");
         }
         if (tunnelId) {
           throw Error("[GenAIApp] - Secure MCP Tunnel is only supported for OpenAI requests. Use setServerUrl() for Gemini.");
         }
 
-        const googleConnectorUrls = {
-          connector_gmail: "https://gmailmcp.googleapis.com/mcp/v1",
-          connector_googlecalendar: "https://calendarmcp.googleapis.com/mcp/v1",
-          connector_googledrive: "https://drivemcp.googleapis.com/mcp/v1"
-        };
-        const resolvedUrl = serverUrl || googleConnectorUrls[legacyConnectorId];
-        if (!resolvedUrl) {
-          throw Error(`[GenAIApp] - The connector ${legacyConnectorId} is not supported by the Gemini Interactions API.`);
-        }
-
         const connector = {
           type: "mcp_server",
           name: serverLabel || "custom_mcp",
-          url: resolvedUrl
+          url: serverUrl
         };
 
         if (allowedTools) {
@@ -1719,14 +1658,11 @@ const GenAIApp = (function () {
           };
         }
 
-        const connectorAuthorization = authorizationWasSet
-          ? authorization
-          : (legacyConnectorId ? ScriptApp.getOAuthToken() : null);
-        if (connectorAuthorization) {
+        if (authorization) {
           connector.headers = {
-            Authorization: /^Bearer\s/i.test(connectorAuthorization)
-              ? connectorAuthorization
-              : `Bearer ${connectorAuthorization}`
+            Authorization: /^Bearer\s/i.test(authorization)
+              ? authorization
+              : `Bearer ${authorization}`
           };
         }
 
