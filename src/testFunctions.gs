@@ -73,6 +73,7 @@ function testAll() {
   if (_shouldRunModelLabel("gemini")) {
     testGeminiInteractionRequestPayloads();
     testGeminiBuiltInToolCallsAreNotDispatchedLocally();
+    testGeminiDeferredBuiltInToolCallsWithoutLocalFunctions();
     testGeminiGlobalFunctionCallsRemainEligible();
     testGeminiFailedInteractionState();
     testGeminiInteractionThreading();
@@ -155,6 +156,43 @@ function testGeminiBuiltInToolCallsAreNotDispatchedLocally() {
     }
     if (geminiUnregisteredFunctionCallCount !== 0) {
       throw new Error("An unregistered global function was dispatched locally");
+    }
+    return "OK";
+  });
+}
+
+function testGeminiDeferredBuiltInToolCallsWithoutLocalFunctions() {
+  GenAIApp.setGeminiAPIKey("mock-gemini-key");
+  _runSingleTest("Gemini deferred built-in tool without local functions", "gemini", () => {
+    const requests = [];
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat._apiCaller = _mockGeminiApiCaller([
+      {
+        id: "deferred-file-search-interaction",
+        status: "requires_action",
+        steps: [{
+          type: "function_call",
+          id: "deferred-file-search-call",
+          name: "google:file_search",
+          args: { queries: ["team demos"] }
+        }]
+      },
+      _geminiTextResponse("completed-file-search-interaction", "Team demos happen every Friday at 10 AM.")
+    ], requests);
+
+    chat
+      .addVectorStores("fileSearchStores/test-store")
+      .addMessage("When are team demos?");
+    const response = chat.run({ model: GEMINI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (response !== "Team demos happen every Friday at 10 AM.") {
+      throw new Error("Deferred built-in File Search did not continue to the final response");
+    }
+    if (requests.length !== 2
+      || requests[1].payload.previous_interaction_id !== "deferred-file-search-interaction"
+      || requests[1].payload.input?.[0]?.type !== "function_result"
+      || requests[1].payload.input?.[0]?.call_id !== "deferred-file-search-call"
+      || requests[1].payload.tools?.[0]?.type !== "file_search") {
+      throw new Error("Deferred built-in File Search continuation payload was invalid");
     }
     return "OK";
   });

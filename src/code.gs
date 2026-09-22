@@ -652,7 +652,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if (tools.length > 0) {
+        if (tools.length > 0 || model.includes("gemini")) {
           // Check if AI model wanted to call a function
           if (model.includes("gemini")) {
             const functionCalls = _extractGeminiFunctionCalls(responseMessage, tools);
@@ -1041,7 +1041,7 @@ const GenAIApp = (function () {
           });
         }
 
-        if (Object.keys(addedVectorStores).length > 0 && numberOfAPICalls < 1) {
+        if (Object.keys(addedVectorStores).length > 0) {
           payload.tools.push({
             "type": "file_search",
             file_search_store_names: Object.keys(addedVectorStores),
@@ -2199,7 +2199,7 @@ const GenAIApp = (function () {
       });
     });
     if (calls.length > 0) {
-      return _filterGeminiBuiltInFunctionCalls(calls, tools);
+      return _filterGeminiActionableFunctionCalls(responseMessage, calls, tools);
     }
 
     // Backward-compatible fallback for legacy content-shaped responses.
@@ -2213,24 +2213,28 @@ const GenAIApp = (function () {
         });
       }
     });
-    return _filterGeminiBuiltInFunctionCalls(calls, tools);
+    return _filterGeminiActionableFunctionCalls(responseMessage, calls, tools);
   }
 
   /**
-   * Removes Gemini server-executed built-in tool steps from local function calls.
-   * Built-in functions use Google's reserved `google:` namespace and must not be
-   * dispatched through the Apps Script global scope. When registered tools are
-   * provided, calls must also match the registered function allowlist.
+   * Keeps deferred Gemini server-side tool requests and registered local function calls.
+   * Other unregistered function calls are discarded.
    *
+   * @param {Object} responseMessage - Gemini response payload.
    * @param {Array} calls - Function calls extracted from a Gemini response.
    * @param {Array|undefined} tools - Locally registered function tools.
-   * @returns {Array} Calls eligible for local execution.
+   * @returns {Array} Calls eligible for server guidance or local execution.
    */
-  function _filterGeminiBuiltInFunctionCalls(calls, tools) {
-    const nonGoogleCalls = calls.filter(call => !String(call.name || "").startsWith("google:"));
-    if (!Array.isArray(tools)) return nonGoogleCalls;
+  function _filterGeminiActionableFunctionCalls(responseMessage, calls, tools) {
+    const requiresAction = String(responseMessage?.status || "").toLowerCase() === "requires_action";
+    const actionableCalls = calls.filter(call =>
+      !String(call.name || "").startsWith("google:") || requiresAction
+    );
+    if (!Array.isArray(tools)) return actionableCalls;
     const registeredNames = new Set(tools.map(tool => tool.function._toJson().name));
-    return nonGoogleCalls.filter(call => registeredNames.has(call.name));
+    return actionableCalls.filter(call =>
+      String(call.name || "").startsWith("google:") || registeredNames.has(call.name)
+    );
   }
 
   /**
@@ -2262,6 +2266,14 @@ const GenAIApp = (function () {
       const functionName = functionCall.name;
       const functionArgs = functionCall.args || {};
       if (!functionName) return;
+      if (functionName.startsWith("google:")) {
+        functionResults.push({
+          call_id: functionCall.id,
+          name: functionName,
+          response: { functionResponse: `${functionName} is a server-side Google tool and cannot be executed client-side. Use the configured server-side File Search tool instead.` }
+        });
+        return;
+      }
 
       let argsOrder = [];
       let endWithResult = false;
