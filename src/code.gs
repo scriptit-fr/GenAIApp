@@ -1468,7 +1468,8 @@ const GenAIApp = (function () {
       let serverLabel = "";
       let serverDescription = null;
       let serverUrl = null;
-      let connectorId = null;
+      let tunnelId = null;
+      let legacyConnectorId = null;
       let allowedTools = null;
       let authorization = null;
       let authorizationWasSet = false;
@@ -1514,30 +1515,41 @@ const GenAIApp = (function () {
           throw Error("[GenAIApp] - Invalid server URL");
         }
         serverUrl = trimmedUrl;
+        tunnelId = null;
+        legacyConnectorId = null;
         return this;
       };
 
       /**
-       * Configures the connector to use one of the predefined Google connectors (Gmail, Calendar, Drive).
+       * Configures the connector to use a local MCP server through Secure MCP Tunnel.
+       * @param {string} id - The Secure MCP Tunnel identifier.
+       * @returns {ConnectorObject}
+       */
+      this.setTunnelId = function (id) {
+        if (typeof id !== "string" || id.trim() === "") {
+          throw Error("[GenAIApp] - Please provide a non-empty tunnel ID.");
+        }
+        tunnelId = id.trim();
+        serverUrl = null;
+        legacyConnectorId = null;
+        return this;
+      };
+
+      /**
+       * Configures a legacy predefined Google connector for pre-cutoff OpenAI models.
        * @param {"gmail"|"calendar"|"drive"} connectorType - The Google connector identifier.
        * @returns {ConnectorObject}
        */
-      this.setConnectorId = function (connectorType) {
+      this.setLegacyConnectorId = function (connectorType) {
         if (typeof connectorType !== "string" || connectorType.trim() === "") {
           throw Error("[GenAIApp] - Please specify the Google MCP connector you want to use: 'gmail', 'calendar' or 'drive'");
-        }
-
-        const normalizedType = connectorType.toLowerCase();
-        const validTypes = ["gmail", "calendar", "drive"];
-        if (!validTypes.includes(normalizedType)) {
-          throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}. Accepted types are 'gmail', 'calendar' and 'drive'`);
         }
 
         const normalizedConnector = connectorType.toLowerCase().trim();
         const connectorIds = {
           gmail: "connector_gmail",
           calendar: "connector_googlecalendar",
-          drive: "connector_googledrive",
+          drive: "connector_googledrive"
         };
         const serverLabels = {
           gmail: "gmail",
@@ -1546,13 +1558,21 @@ const GenAIApp = (function () {
         };
 
         if (!connectorIds[normalizedConnector]) {
-          throw Error("[GenAIApp] - Unsupported Google MCP connector provided.");
+          throw Error(`[GenAIApp] - Invalid Google connector type: ${connectorType}. Accepted types are 'gmail', 'calendar' and 'drive'`);
         }
 
-        connectorId = connectorIds[normalizedConnector];
+        legacyConnectorId = connectorIds[normalizedConnector];
         serverLabel = serverLabels[normalizedConnector];
+        serverUrl = null;
+        tunnelId = null;
         return this;
       };
+
+      /**
+       * Compatibility alias for setLegacyConnectorId().
+       * @deprecated Use setServerUrl() or setTunnelId() for models released after September 1, 2026.
+       */
+      this.setConnectorId = this.setLegacyConnectorId;
 
       /**
        * Sets the authorization token for the connector.
@@ -1621,8 +1641,8 @@ const GenAIApp = (function () {
        * @returns {Object}
        */
       this._toJson = function () {
-        if (!serverUrl && !connectorId) {
-          throw Error("[GenAIApp] - Please configure the connector using useServerUrl() or setConnectorId().");
+        if (!serverUrl && !tunnelId && !legacyConnectorId) {
+          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl(), setTunnelId(), or setLegacyConnectorId().");
         }
 
         const connector = {
@@ -1638,21 +1658,22 @@ const GenAIApp = (function () {
           connector.server_url = serverUrl;
           connector.server_label = serverLabel || "custom_mcp";
         }
+        else if (tunnelId) {
+          connector.tunnel_id = tunnelId;
+          connector.server_label = serverLabel || "local_mcp";
+        }
         else {
-          connector.connector_id = connectorId;
-          connector.server_label = serverLabel || connectorId;
+          connector.connector_id = legacyConnectorId;
+          connector.server_label = serverLabel || legacyConnectorId;
         }
 
         if (allowedTools) {
           connector.allowed_tools = allowedTools;
         }
 
-        // Predefined Google connectors retain their convenient Apps Script OAuth
-        // fallback. Custom servers only receive credentials explicitly supplied
-        // by the caller, so the script token is never leaked to an arbitrary URL.
         const connectorAuthorization = authorizationWasSet
           ? authorization
-          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+          : (legacyConnectorId ? ScriptApp.getOAuthToken() : null);
         if (connectorAuthorization) {
           connector.authorization = connectorAuthorization;
         }
@@ -1662,14 +1683,17 @@ const GenAIApp = (function () {
 
       /**
        * Returns the MCP server declaration expected by the Gemini Interactions API.
-       * Gemini does not accept OpenAI's connector_id, server_label, server_url,
-       * authorization, or require_approval fields.
+       * Gemini does not accept OpenAI's connector_id, tunnel_id, server_label,
+       * server_url, authorization, or require_approval fields.
        *
        * @returns {Object}
        */
       this._toGeminiJson = function () {
-        if (!serverUrl && !connectorId) {
-          throw Error("[GenAIApp] - Please configure the connector using setServerUrl() or setConnectorId().");
+        if (!serverUrl && !tunnelId && !legacyConnectorId) {
+          throw Error("[GenAIApp] - Please configure the MCP server using setServerUrl() or setLegacyConnectorId().");
+        }
+        if (tunnelId) {
+          throw Error("[GenAIApp] - Secure MCP Tunnel is only supported for OpenAI requests. Use setServerUrl() for Gemini.");
         }
 
         const googleConnectorUrls = {
@@ -1677,9 +1701,9 @@ const GenAIApp = (function () {
           connector_googlecalendar: "https://calendarmcp.googleapis.com/mcp/v1",
           connector_googledrive: "https://drivemcp.googleapis.com/mcp/v1"
         };
-        const resolvedUrl = serverUrl || googleConnectorUrls[connectorId];
+        const resolvedUrl = serverUrl || googleConnectorUrls[legacyConnectorId];
         if (!resolvedUrl) {
-          throw Error(`[GenAIApp] - The connector ${connectorId} is not supported by the Gemini Interactions API.`);
+          throw Error(`[GenAIApp] - The connector ${legacyConnectorId} is not supported by the Gemini Interactions API.`);
         }
 
         const connector = {
@@ -1697,7 +1721,7 @@ const GenAIApp = (function () {
 
         const connectorAuthorization = authorizationWasSet
           ? authorization
-          : (!serverUrl && connectorId ? ScriptApp.getOAuthToken() : null);
+          : (legacyConnectorId ? ScriptApp.getOAuthToken() : null);
         if (connectorAuthorization) {
           connector.headers = {
             Authorization: /^Bearer\s/i.test(connectorAuthorization)
