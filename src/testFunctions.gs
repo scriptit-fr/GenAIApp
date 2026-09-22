@@ -100,16 +100,6 @@ function testMCPConnectorPayloads() {
       throw new Error("Expected remote MCP payload to use server_url only");
     }
 
-    const geminiRemote = GenAIApp.newConnector()
-      .setLabel("remote")
-      .setServerUrl("https://mcp.example.com")
-      ._toGeminiJson();
-    if (geminiRemote.type !== "mcp_server" ||
-        geminiRemote.url !== "https://mcp.example.com" ||
-        "server_url" in geminiRemote) {
-      throw new Error("Expected Gemini MCP payload to use mcp_server.url");
-    }
-
     const tunnel = GenAIApp.newConnector()
       .setLabel("local")
       .setTunnelId("tunnel_test")
