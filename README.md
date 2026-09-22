@@ -246,7 +246,7 @@ chat.addFile('your-google-drive-file-id');
 
 Use Model Context Protocol (MCP) connectors to let OpenAI Responses API and Gemini Interactions API models reach structured data sources such as native Google Workspace endpoints or your own custom MCP servers. GenAIApp automatically translates connector configuration to each provider's MCP tool format. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs) and [`samples/google-mcp-connector.gs`](samples/google-mcp-connector.gs).
 
-> **OpenAI connector deprecation:** `connector_id` is deprecated for models released after September 1, 2026. Use `.setServerUrl()` for a remote MCP server or `.setTunnelId()` for a local server connected through Secure MCP Tunnel. Existing models retain legacy connector support through `.setLegacyConnectorId()`, including `gpt-5.2`. This replaces the former `.setConnectorId()` method.
+> **OpenAI MCP connections:** Use `.setServerUrl()` for a remote MCP server reachable over HTTPS. Use `.setTunnelId()` for a local or private MCP server connected through Secure MCP Tunnel.
 
 > ⚠️ **Google Workspace Native MCP Requirements:**
 > To connect to Google's official MCP endpoints, such as `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`, your Google Apps Script must be linked to a **Standard Google Cloud Project**. In your GCP console, enable both the standard API, such as `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar, and the specific MCP API, such as `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`.
@@ -287,7 +287,6 @@ chat.addMCP(localConnector);
 - **Google Native endpoints:** Configure a connector using `.setServerUrl()` pointing to the desired service and pass the script's OAuth token via `.setAuthorization(ScriptApp.getOAuthToken())`.
 - **Custom MCP servers:** Configure a connector with `.setLabel()`, `.setDescription()`, `.setServerUrl('https://...')`, and optionally `.setAuthorization()` if the server expects a bearer token.
 - **Local or private MCP servers (OpenAI):** Connect the server through Secure MCP Tunnel, then configure it with `.setLabel()` and `.setTunnelId()`.
-- **Legacy OpenAI connectors:** Use `.setLegacyConnectorId()` only with models released on or before September 1, 2026, such as `gpt-5.2`.
 - **Approval workflows (OpenAI):** `.setRequireApproval('never' | 'domain' | 'always')` lets you enforce end-user approval before the model calls the connector. Gemini's `mcp_server` declaration does not accept this OpenAI-specific setting.
 
 > ⚠️ **Model Availability:** MCP support depends on the selected OpenAI or Gemini model. Check your provider's current model documentation before choosing a model override.
@@ -440,14 +439,13 @@ A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File 
 
 ### Connector Object
 
-A `ConnectorObject` represents a remote, tunneled, or legacy MCP connection. Remote server URLs work with OpenAI and Gemini. Secure MCP Tunnel IDs work with OpenAI. Legacy Google connector IDs are resolved to native MCP server URLs for Gemini.
+A `ConnectorObject` represents a remote or tunneled MCP server connection. Remote server URLs work with OpenAI and Gemini. Secure MCP Tunnel IDs work with OpenAI.
 
 - `setLabel(label)`: Set the identifier used in the chat payload. This is required for custom servers.
 - `setDescription(description)`: Provide an optional description visible to OpenAI models.
 - `setServerUrl(url)`: Use a custom MCP server hosted at the provided HTTPS URL.
 - `setTunnelId(tunnelId)`: Use a local or private MCP server connected through OpenAI Secure MCP Tunnel.
-- `setLegacyConnectorId('gmail' | 'calendar' | 'drive')`: Reference a legacy Google Workspace connector by predefined ID. Replaces `setConnectorId()`; use only with OpenAI models released on or before September 1, 2026, such as `gpt-5.2`.
-- `setAuthorization(token)`: Set the connector authorization token, for example `Bearer ...`. Predefined Google connector IDs default to the Apps Script OAuth token; custom server URLs are unauthenticated unless this method is called explicitly.
+- `setAuthorization(token)`: Set the MCP server authorization token, for example `Bearer ...`. Connections are unauthenticated unless this method is called explicitly.
 - `setRequireApproval('never' | 'domain' | 'always')`: Control whether an OpenAI connector requires user approval before execution.
 
 ## Contributing

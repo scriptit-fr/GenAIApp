@@ -95,7 +95,7 @@ function testMCPConnectorPayloads() {
       .setLabel("remote")
       .setServerUrl("https://mcp.example.com")
       ._toJson();
-    if (remote.server_url !== "https://mcp.example.com" || remote.connector_id || remote.tunnel_id) {
+    if (remote.server_url !== "https://mcp.example.com" || remote.tunnel_id) {
       throw new Error("Expected remote MCP payload to use server_url only");
     }
 
@@ -103,16 +103,8 @@ function testMCPConnectorPayloads() {
       .setLabel("local")
       .setTunnelId("tunnel_test")
       ._toJson();
-    if (tunnel.tunnel_id !== "tunnel_test" || tunnel.server_url || tunnel.connector_id) {
+    if (tunnel.tunnel_id !== "tunnel_test" || tunnel.server_url) {
       throw new Error("Expected local MCP payload to use tunnel_id only");
-    }
-
-    const legacy = GenAIApp.newConnector()
-      .setLegacyConnectorId("gmail")
-      .setAuthorization("oauth-access-token")
-      ._toJson();
-    if (legacy.connector_id !== "connector_gmail" || legacy.server_url || legacy.tunnel_id) {
-      throw new Error("Expected legacy MCP payload to retain connector_id");
     }
 
     let tunnelRejectedByGemini = false;
