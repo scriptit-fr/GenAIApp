@@ -249,7 +249,7 @@ Use Model Context Protocol (MCP) connectors to let OpenAI Responses API and Gemi
 > **OpenAI MCP connections:** Use `.setServerUrl()` for a remote MCP server reachable over HTTPS. Use `.setTunnelId()` for a local or private MCP server connected through Secure MCP Tunnel. For models released on or before September 1, 2026, `.setLegacyConnectorId()` and its compatibility alias `.setConnectorId()` retain built-in connector support. The examples in OpenAI's [legacy connector documentation](https://developers.openai.com/api/docs/guides/tools-connectors-mcp#legacy-connectors) use `gpt-5.2`.
 
 > ⚠️ **Google Workspace Native MCP Requirements:**
-> To connect to Google's official MCP endpoints, such as `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`, your Google Apps Script must be linked to a **Standard Google Cloud Project**. In your GCP console, enable both the standard API, such as `drive.googleapis.com` for Drive or `calendar.googleapis.com` for Calendar, and the specific MCP API, such as `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`.
+> To connect to Google's official MCP endpoints, such as `https://drivemcp.googleapis.com/mcp/v1` or `https://calendarmcp.googleapis.com/mcp/v1`, your Google Apps Script must be linked to a **Standard Google Cloud Project**. In your GCP console, enable both the standard API, such as `drive.googleapis.com` for Drive or `calendar-json.googleapis.com` for Calendar, and the specific MCP API, such as `drivemcp.googleapis.com` or `calendarmcp.googleapis.com`.
 
 ```js
 const chat = GenAIApp.newChat();
