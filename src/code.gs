@@ -45,10 +45,10 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
-      let model = "gpt-5.6-terra"; // default
+      let model = "gpt-6-sol"; // default
       let max_tokens = 1000;
       let browsing = false;
-      let reasoning_effort = "medium"; // OpenAI reasoning models: low, medium, or high
+      let reasoning_effort = "medium"; // OpenAI reasoning models: none, low, medium, high, xhigh, or max
       let thinking_level = null; // Gemini models; null lets Google select the default
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
@@ -495,7 +495,7 @@ const GenAIApp = (function () {
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
        * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
-       * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
+       * @param {"none" | "low" | "medium" | "high" | "xhigh" | "max"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
        * @param {string} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model. Omit to use Google's default.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
@@ -524,7 +524,7 @@ const GenAIApp = (function () {
           }
         }
 
-        if ((model.includes("gemini") || model.startsWith("gpt-5")) && browsing && max_tokens < 10000) {
+        if ((model.includes("gemini") || model.startsWith("gpt-5") || model.startsWith("gpt-6")) && browsing && max_tokens < 10000) {
           console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
@@ -747,7 +747,7 @@ const GenAIApp = (function () {
           parallel_tool_calls: true,
           tools: []
         };
-        if (model.startsWith("gpt-5")) {
+        if (model.startsWith("gpt-5") || model.startsWith("gpt-6")) {
           payload.reasoning = {
             "effort": reasoning_effort
           }
