@@ -304,7 +304,7 @@ const response = chat.run({
 console.log(response);
 ```
 
-GenAIApp supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
+GenAIApp supports compatible Gemini and OpenAI chat models, including [`gpt-6-sol`](https://developers.openai.com/api/docs/models/gpt-6-sol). Model availability changes over time, so check your provider's current documentation before setting a model override.
 
 ⚠️ **Warning:** The `reasoning_effort` parameter is for reasoning-capable OpenAI models, while `thinking_level` is its Gemini equivalent.
 

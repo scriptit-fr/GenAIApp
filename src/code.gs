@@ -494,7 +494,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
-       * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
+       * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {"low" | "medium" | "high"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
        * @param {string} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model. Omit to use Google's default.
        * @param {number} [advancedParametersObject.max_tokens]
