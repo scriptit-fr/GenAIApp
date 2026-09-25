@@ -46,7 +46,7 @@ const GenAIApp = (function () {
       const tools = [];
       const mcpConnectors = [];
       let model = "gpt-6-sol"; // default
-      let max_tokens = 1000;
+      let max_tokens = 10000;
       let browsing = false;
       let reasoning_effort = "medium"; // OpenAI reasoning models: none, low, medium, high, xhigh, or max
       let thinking_level = null; // Gemini models; null lets Google select the default
@@ -522,10 +522,6 @@ const GenAIApp = (function () {
           if (!openAIKey) {
             throw Error("[GenAIApp] - Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
           }
-        }
-
-        if ((model.includes("gemini") || model.startsWith("gpt-5") || model.startsWith("gpt-6")) && browsing && max_tokens < 10000) {
-          console.warn(`[GenAIApp] - Browsing enabled on ${model} with max_tokens=${max_tokens} (< 10000). This will likely truncate the response. Consider chat.run({ max_tokens: 20000 }).`);
         }
 
         if (knowledgeLink.length > 0) {
