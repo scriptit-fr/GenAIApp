@@ -72,7 +72,7 @@ const GenAIApp = (function () {
       let retrievedAttributes = [];
 
       const messageMetadata = {};
-      let maximumAPICalls = 30;
+      let maximumAPICalls = 50;
       let numberOfAPICalls = 0;
 
       this._lastUsage = null;
