@@ -598,6 +598,10 @@ const GenAIApp = (function () {
           // OpenAI Responses API and Gemini Interactions API return a top-level "id".
           if (providerName !== "gemini") {
             last_conversation_id = responseMessage?.id ?? null;
+            if (previous_conversation_provider === "openai" && responseMessage?.id) {
+              previous_conversation_id = responseMessage.id;
+              messages = messages.filter(message => message.type !== "function_call_output");
+            }
           }
           else {
             const interactionStatus = String(responseMessage?.status || "").toLowerCase();

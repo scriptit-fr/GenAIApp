@@ -59,6 +59,7 @@ function testAll() {
   testMCPConnectorPayloads();
   testReasoningLevelPayloads();
   testVectorStoreStateIsolation();
+  testOpenAIToolContinuationState();
   testSimpleChatInstance();
   testFunctionCalling();
   testFunctionCallingEndWithResult();
@@ -149,6 +150,64 @@ function testVectorStoreStateIsolation() {
     const cleanChatPayload = GenAIApp.newChat()._buildGeminiPayload({});
     if (cleanChatPayload.tools.some(tool => tool.type === "file_search")) {
       throw new Error("Vector store leaked into another chat");
+    }
+    return "OK";
+  });
+}
+
+function testOpenAIToolContinuationState() {
+  _runSingleTest("OpenAI tool continuation state", "local", () => {
+    GenAIApp.configureProvider("openai", { apiKey: "mock-openai-key" });
+    const requests = [];
+    const responses = [
+      {
+        id: "response-tool-call",
+        output: [{
+          type: "function_call",
+          name: "getWeather",
+          arguments: JSON.stringify({ cityName: "Paris" }),
+          call_id: "weather-call"
+        }]
+      },
+      {
+        id: "response-final",
+        output: [{
+          type: "message",
+          status: "final_answer",
+          content: [{ type: "output_text", text: "It is 19°C in Paris." }]
+        }]
+      },
+      {
+        id: "response-follow-up",
+        output: [{
+          type: "message",
+          status: "final_answer",
+          content: [{ type: "output_text", text: "Paris." }]
+        }]
+      }
+    ];
+    const chat = GenAIApp.newChat().disableLogs(true);
+    chat._apiCaller = (endpoint, payload) => {
+      requests.push({ endpoint, payload: JSON.parse(JSON.stringify(payload)) });
+      return responses.shift();
+    };
+    chat
+      .addMessage("What's the weather in Paris?")
+      .addFunction(GenAIApp.newFunction()
+        .setName("getWeather")
+        .setDescription("Get weather")
+        .addParameter("cityName", "string", "City name"));
+
+    chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    chat.addMessage("Which city did we discuss?");
+    chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
+
+    const followUpPayload = requests[2].payload;
+    if (followUpPayload.previous_response_id !== "response-final") {
+      throw new Error("Expected follow-up to continue from the final response");
+    }
+    if (followUpPayload.input.some(item => item.type === "function_call_output")) {
+      throw new Error("Consumed function output leaked into follow-up input");
     }
     return "OK";
   });
