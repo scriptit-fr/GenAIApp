@@ -184,6 +184,14 @@ function testOpenAIToolContinuationState() {
           status: "final_answer",
           content: [{ type: "output_text", text: "Paris." }]
         }]
+      },
+      {
+        id: "response-second-follow-up",
+        output: [{
+          type: "message",
+          status: "final_answer",
+          content: [{ type: "output_text", text: "19°C." }]
+        }]
       }
     ];
     const chat = GenAIApp.newChat().disableLogs(true);
@@ -201,6 +209,8 @@ function testOpenAIToolContinuationState() {
     chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
     chat.addMessage("Which city did we discuss?");
     chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    chat.addMessage("What was the temperature?");
+    chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
 
     const followUpPayload = requests[2].payload;
     if (followUpPayload.previous_response_id !== "response-final") {
@@ -208,6 +218,15 @@ function testOpenAIToolContinuationState() {
     }
     if (followUpPayload.input.some(item => item.type === "function_call_output")) {
       throw new Error("Consumed function output leaked into follow-up input");
+    }
+
+    const secondFollowUpPayload = requests[3].payload;
+    if (secondFollowUpPayload.previous_response_id !== "response-follow-up") {
+      throw new Error("Expected second follow-up to continue from the previous response");
+    }
+    if (secondFollowUpPayload.input.length !== 1
+      || secondFollowUpPayload.input[0].content !== "What was the temperature?") {
+      throw new Error("Expected second follow-up input to contain only the newest user message");
     }
     return "OK";
   });

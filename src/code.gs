@@ -600,7 +600,7 @@ const GenAIApp = (function () {
             last_conversation_id = responseMessage?.id ?? null;
             if (previous_conversation_provider === "openai" && responseMessage?.id) {
               previous_conversation_id = responseMessage.id;
-              messages = messages.filter(message => message.type !== "function_call_output");
+              messages = messages.filter(message => message.role === "system");
             }
           }
           else {
