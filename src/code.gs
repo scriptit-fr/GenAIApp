@@ -18,20 +18,36 @@
  */
 
 const GenAIApp = (function () {
-  let openAIKey = "";
-  let geminiKey = "";
-  let gcpProjectId = "";
-  let region = "";
+  const providerConfig = {
+    openai: {
+      apiKey: "",
+      baseUrl: ""
+    },
+    gemini: {
+      apiKey: "",
+      projectId: "",
+      region: ""
+    }
+  };
 
   let restrictSearch;
 
   let verbose = true;
 
   const apiBaseUrl = "https://api.openai.com";
-  let privateInstanceBaseUrl;
-
   const globalMetadata = {};
-  const addedVectorStores = {};
+
+  function _normalizeProviderName(providerName) {
+    const normalizedProviderName = String(providerName || "").toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(providerConfig, normalizedProviderName)) {
+      throw new Error(`[GenAIApp] - Unsupported provider: ${providerName}. Expected "openai" or "gemini".`);
+    }
+    return normalizedProviderName;
+  }
+
+  function _getProviderForModel(modelName) {
+    return String(modelName || "").toLowerCase().includes("gemini") ? "gemini" : "openai";
+  }
 
   const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB in bytes
 
@@ -45,11 +61,11 @@ const GenAIApp = (function () {
       let contents = []; // contents for Gemini API
       const tools = [];
       const mcpConnectors = [];
+      const addedVectorStores = {};
       let model = "gpt-6-sol"; // default
       let max_tokens = 10000;
       let browsing = false;
-      let reasoning_effort = "medium"; // OpenAI reasoning models: none, low, medium, high, xhigh, or max
-      let thinking_level = null; // Gemini models; null lets Google select the default
+      let reasoning_level = null;
       let knowledgeLink = [];
       this._codeInterpreterEnabled = false;
       this._codeInterpreterContainerId = null;
@@ -60,11 +76,9 @@ const GenAIApp = (function () {
       let compaction_threshold = 10000;
       let tool_combination_enabled = false;
 
-      let previous_response_id;
-      let last_response_id = null;
-      let previous_interaction_id;
-      let last_gemini_interaction_id = null;
-      let last_gemini_thought_signature = null;
+      let previous_conversation_id;
+      let previous_conversation_provider = null;
+      let last_conversation_id = null;
       let last_gemini_content_count = 0;
 
       let maxNumOfChunks = 10;
@@ -366,32 +380,20 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Sets the thinking level used by Gemini models.
-       * @param {string} thinkingLevel - Gemini thinking level. Supported values depend on the selected model.
+       * Sets the provider-independent reasoning level.
+       * @param {string} reasoningLevel - Reasoning level supported by the selected model.
        * @returns {Chat} - The current Chat instance.
        */
-      this.setThinkingLevel = function (thinkingLevel) {
-        thinking_level = thinkingLevel;
+      this.setReasoningLevel = function (reasoningLevel) {
+        reasoning_level = reasoningLevel;
         return this;
       };
 
       /**
-       * Returns the response Id currently set for the class.
+       * Returns the latest provider conversation ID.
        */
-      this.retrieveLastResponseId = function () {
-        return last_response_id;
-      };
-
-      /**
-       * Returns the last Gemini Interactions API interaction Id for this chat.
-       */
-      this.retrieveLastInteractionId = function () {
-        return last_gemini_interaction_id;
-      };
-
-      /** Returns the most recent opaque thought signature supplied by Gemini. */
-      this.retrieveLastThoughtSignature = function () {
-        return last_gemini_thought_signature;
+      this.getLastConversationId = function () {
+        return last_conversation_id;
       };
 
       /**
@@ -408,21 +410,13 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Sets the previous response Id attribute for the chat (used by Open AI to keep track of conversations)
-       * @param {string} previousResponseId - The id of the previous Chat GPT response.
+       * Sets the provider conversation ID used to continue a conversation.
+       * @param {string} previousConversationId - Provider response/interaction ID.
        */
-      this.setPreviousResponseId = function (previousResponseId) {
-        previous_response_id = previousResponseId;
-        return this;
-      };
-
-      /**
-       * Sets the previous Gemini Interactions API interaction Id used to continue a conversation.
-       * @param {string} previousInteractionId - The id of the previous Gemini interaction.
-       */
-      this.setPreviousInteractionId = function (previousInteractionId) {
-        previous_interaction_id = previousInteractionId;
-        last_gemini_interaction_id = previousInteractionId || last_gemini_interaction_id;
+      this.setPreviousConversationId = function (previousConversationId) {
+        previous_conversation_id = previousConversationId;
+        previous_conversation_provider = null;
+        last_conversation_id = previousConversationId || last_conversation_id;
         return this;
       };
 
@@ -477,14 +471,13 @@ const GenAIApp = (function () {
           tools: tools,
           model: model,
           max_tokens: max_tokens,
-          thinking_level: thinking_level,
+          reasoning_level: reasoning_level,
           browsing: browsing,
           compaction_enabled: compaction_enabled,
           compaction_threshold: compaction_threshold,
           maximumAPICalls: maximumAPICalls,
           numberOfAPICalls: numberOfAPICalls,
-          last_gemini_interaction_id: last_gemini_interaction_id,
-          last_gemini_thought_signature: last_gemini_thought_signature
+          last_conversation_id: last_conversation_id
         };
       };
 
@@ -493,34 +486,37 @@ const GenAIApp = (function () {
        * Sends all your messages and eventual function to chat GPT.
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
-       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_effort, thinking_level, max_tokens, function_call}
+       * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_level, max_tokens, function_call}
        * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
-       * @param {"none" | "low" | "medium" | "high" | "xhigh" | "max"} [advancedParametersObject.reasoning_effort] For OpenAI reasoning models, defaults to medium
-       * @param {string} [advancedParametersObject.thinking_level] For Gemini models; supported values depend on the selected model. Omit to use Google's default.
+       * @param {string} [advancedParametersObject.reasoning_level] Reasoning level supported by the selected model.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
        * @returns {object} - the last message of the chat
        */
       this.run = function (advancedParametersObject) {
         this._lastUsage = null;
-        last_response_id = null;
         this._generatedFiles = [];
         this._lastContainerId = null;
         this._lastGeneratedDriveFileUrl = null;
 
         model = advancedParametersObject?.model ?? model;
         max_tokens = advancedParametersObject?.max_tokens ?? max_tokens;
-        reasoning_effort = advancedParametersObject?.reasoning_effort ?? reasoning_effort;
-        thinking_level = advancedParametersObject?.thinking_level ?? thinking_level;
+        reasoning_level = advancedParametersObject?.reasoning_level ?? reasoning_level;
 
-        if (model.includes("gemini")) {
-          if (!geminiKey && !gcpProjectId) {
-            throw Error("[GenAIApp] - Please set your Gemini API key or GCP project auth using GenAIApp.setGeminiAPIKey(YOUR_GEMINI_API_KEY) or GenAIApp.setGeminiAuth(YOUR_PROJECT_ID, REGION)");
+        const providerName = _getProviderForModel(model);
+        const config = providerConfig[providerName];
+        if (previous_conversation_id && previous_conversation_provider === null) {
+          previous_conversation_provider = providerName;
+        }
+
+        if (providerName === "gemini") {
+          if (!config.apiKey && !config.projectId) {
+            throw Error('[GenAIApp] - Configure Gemini using GenAIApp.configureProvider("gemini", { apiKey }) or { projectId, region }.');
           }
         }
         else {
-          if (!openAIKey) {
-            throw Error("[GenAIApp] - Please set your OpenAI API key using GenAIApp.setOpenAIAPIKey(yourAPIKey)");
+          if (!config.apiKey) {
+            throw Error('[GenAIApp] - Configure OpenAI using GenAIApp.configureProvider("openai", { apiKey }).');
           }
         }
 
@@ -547,7 +543,7 @@ const GenAIApp = (function () {
         }
 
         let payload;
-        if (model.includes("gemini")) {
+        if (providerName === "gemini") {
           payload = this._buildGeminiPayload(advancedParametersObject);
         }
         else {
@@ -557,11 +553,11 @@ const GenAIApp = (function () {
         let responseMessage;
         if (numberOfAPICalls <= maximumAPICalls) {
           let endpointUrl = apiBaseUrl + "/v1/responses";
-          if (privateInstanceBaseUrl) {
-            endpointUrl = privateInstanceBaseUrl + "/v1/responses?api-version=preview";
+          if (config.baseUrl) {
+            endpointUrl = config.baseUrl + "/v1/responses?api-version=preview";
           }
-          if (model.includes("gemini")) {
-            if (geminiKey) {
+          if (providerName === "gemini") {
+            if (config.apiKey) {
               // Public endpoint / Generative Language API
               // https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
               endpointUrl = `https://generativelanguage.googleapis.com/v1beta/interactions`;
@@ -570,11 +566,11 @@ const GenAIApp = (function () {
               // Enterprise endpoint / Vertex AI API
               // https://console.cloud.google.com/apis/api/aiplatform.googleapis.com
               // requires scope "https://www.googleapis.com/auth/cloud-platform.read-only" in access token
-              if (!region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
-                endpointUrl = `https://aiplatform.googleapis.com/v1beta/projects/${gcpProjectId}/locations/global/interactions`;
+              if (!config.region || model.includes("gemini-3")) { // Gemini 3 requires global endpoint when using Vertex AI API
+                endpointUrl = `https://aiplatform.googleapis.com/v1beta/projects/${config.projectId}/locations/global/interactions`;
               }
               else {
-                endpointUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${gcpProjectId}/locations/${region}/interactions`;
+                endpointUrl = `https://${config.region}-aiplatform.googleapis.com/v1beta1/projects/${config.projectId}/locations/${config.region}/interactions`;
               }
             }
           }
@@ -600,14 +596,10 @@ const GenAIApp = (function () {
           }
 
           // OpenAI Responses API and Gemini Interactions API return a top-level "id".
-          if (!model.includes("gemini")) {
-            last_response_id = responseMessage?.id ?? null;
+          if (providerName !== "gemini") {
+            last_conversation_id = responseMessage?.id ?? null;
           }
           else {
-            const thoughtSignature = _extractGeminiThoughtSignature(responseMessage);
-            if (thoughtSignature) {
-              last_gemini_thought_signature = thoughtSignature;
-            }
             const interactionStatus = String(responseMessage?.status || "").toLowerCase();
             const interactionCanContinue = interactionStatus !== "failed"
               && interactionStatus !== "cancelled"
@@ -615,8 +607,9 @@ const GenAIApp = (function () {
             // Failed/cancelled interaction IDs are not valid continuation handles. Keep the
             // last successful handle and its content boundary so the unsent delta is retried.
             if (interactionCanContinue && responseMessage?.id) {
-              last_gemini_interaction_id = responseMessage.id;
-              previous_interaction_id = responseMessage.id;
+              last_conversation_id = responseMessage.id;
+              previous_conversation_id = responseMessage.id;
+              previous_conversation_provider = providerName;
               last_gemini_content_count = contents.length;
             }
           }
@@ -648,9 +641,9 @@ const GenAIApp = (function () {
           }
         }
 
-        if (tools.length > 0 || model.includes("gemini")) {
+        if (tools.length > 0 || providerName === "gemini") {
           // Check if AI model wanted to call a function
-          if (model.includes("gemini")) {
+          if (providerName === "gemini") {
             const functionCalls = _extractGeminiFunctionCalls(responseMessage, tools);
             if (functionCalls.length > 0) {
               contents = _handleGeminiToolCalls(responseMessage, tools, contents);
@@ -695,7 +688,8 @@ const GenAIApp = (function () {
                 }
               }
 
-              previous_response_id = responseMessage.id;
+              previous_conversation_id = responseMessage.id;
+              previous_conversation_provider = providerName;
             }
             else {
               // if no function has been found, stop here
@@ -713,7 +707,7 @@ const GenAIApp = (function () {
           }
         }
         else {
-          if (model.includes("gemini")) {
+          if (providerName === "gemini") {
             return _extractGeminiResponseText(responseMessage);
           }
           else {
@@ -745,15 +739,15 @@ const GenAIApp = (function () {
         };
         if (model.startsWith("gpt-5") || model.startsWith("gpt-6")) {
           payload.reasoning = {
-            "effort": reasoning_effort
+            "effort": reasoning_level || "medium"
           }
         }
 
         // Use the previous_response_id parameter to pass reasoning items from previous responses
         // This allows the model to continue its reasoning process to produce better results in the most token-efficient manner.
         // https://platform.openai.com/docs/guides/reasoning#keeping-reasoning-items-in-context
-        if (previous_response_id) {
-          payload.previous_response_id = previous_response_id;
+        if (previous_conversation_id && previous_conversation_provider === "openai") {
+          payload.previous_response_id = previous_conversation_id;
         }
 
         let systemInstructions = "";
@@ -974,21 +968,25 @@ const GenAIApp = (function () {
           // Gemini reasoning state (including thought signatures) is retained by the
           // Interactions API and referenced by previous_interaction_id on later turns.
           store: true,
-          input: _geminiContentsToInteractionInput(previous_interaction_id ? contents.slice(last_gemini_content_count) : contents),
+          input: _geminiContentsToInteractionInput(
+            previous_conversation_id && previous_conversation_provider === "gemini"
+              ? contents.slice(last_gemini_content_count)
+              : contents
+          ),
           generation_config: {
             max_output_tokens: max_tokens
           },
           tools: []
         };
 
-        if (thinking_level !== null) {
-          payload.generation_config.thinking_level = thinking_level;
+        if (reasoning_level !== null) {
+          payload.generation_config.thinking_level = reasoning_level;
         }
 
         // Continue Gemini conversations using the Interactions API state handle instead of resending
         // the full previous contents array.
-        if (previous_interaction_id) {
-          payload.previous_interaction_id = previous_interaction_id;
+        if (previous_conversation_id && previous_conversation_provider === "gemini") {
+          payload.previous_interaction_id = previous_conversation_id;
         }
 
         if (tool_combination_enabled) {
@@ -1210,7 +1208,7 @@ const GenAIApp = (function () {
     }
 
     deleteStore() {
-      throw new Error("[GenAIApp] - Deleting a Gemini File Search Store is not implemented in GenAIApp yet. Use deleteDocument/deleteFile to remove documents from the store.");
+      throw new Error("[GenAIApp] - Deleting a Gemini File Search Store is not implemented in GenAIApp yet. Use deleteFile() to remove documents from the store.");
     }
   }
 
@@ -1228,7 +1226,8 @@ const GenAIApp = (function () {
         chunk_overlap: 400,
         embeddingModel: ""
       };
-      const provider = providerName === "gemini"
+      const normalizedProviderName = _normalizeProviderName(providerName);
+      const provider = normalizedProviderName === "gemini"
         ? new GeminiFileSearchStoreProvider(state)
         : new OpenAIVectorStoreProvider(state);
 
@@ -1292,14 +1291,6 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Creates a Gemini File Search Store. Alias for createVectorStore().
-       * @returns {VectorStoreObject}
-       */
-      this.createFileSearchStore = function () {
-        return this.createVectorStore();
-      };
-
-      /**
        * Initializes a vector store object from an existing provider store id/resource name.
        * @param {string} vectorStoreId - The provider store id or resource name.
        * @returns {VectorStoreObject}
@@ -1339,7 +1330,7 @@ const GenAIApp = (function () {
        * @param {Object} attributes - Metadata attributes to store on the item.
        * @returns {Object}
        */
-      this.uploadAndAttachFile = function (blob, attributes = {}) {
+      this.uploadFile = function (blob, attributes = {}) {
         if (!state.id) throw new Error("[GenAIApp] - Please create or initialize your Vector Store object before attaching files.");
         try {
           return provider.upload(blob, attributes);
@@ -1351,16 +1342,6 @@ const GenAIApp = (function () {
           });
           throw e;
         }
-      };
-
-      /**
-       * Uploads and imports a document into the vector store. Alias for uploadAndAttachFile().
-       * @param {Blob} blob - File to upload.
-       * @param {Object} attributes - Metadata attributes to store on the item.
-       * @returns {Object}
-       */
-      this.uploadAndImportDocument = function (blob, attributes = {}) {
-        return this.uploadAndAttachFile(blob, attributes);
       };
 
       /**
@@ -1382,14 +1363,6 @@ const GenAIApp = (function () {
       };
 
       /**
-       * Lists vector store documents. Alias for listFiles().
-       * @returns {Array}
-       */
-      this.listDocuments = function () {
-        return this.listFiles();
-      };
-
-      /**
        * Deletes a file/document from the vector store.
        * @param {string} itemId - The provider item id/resource name to delete.
        * @returns {Object}
@@ -1408,15 +1381,6 @@ const GenAIApp = (function () {
           });
           throw e;
         }
-      };
-
-      /**
-       * Deletes a document from the vector store. Alias for deleteFile().
-       * @param {string} documentId - The provider document id/resource name to delete.
-       * @returns {Object}
-       */
-      this.deleteDocument = function (documentId) {
-        return this.deleteFile(documentId);
       };
 
       /**
@@ -1803,9 +1767,9 @@ const GenAIApp = (function () {
 * @throws {Error} If the API call fails after the maximum number of retries.
 */
   function _callGenAIApi(endpoint, payload, method = "post", returnRawResponse = false) {
-    let authMethod = 'Bearer ' + openAIKey;
+    let authMethod = 'Bearer ' + providerConfig.openai.apiKey;
     if (endpoint.includes("google")) {
-      if (geminiKey) {
+      if (providerConfig.gemini.apiKey) {
         // Header name different for Google API key
         authMethod = null;
       }
@@ -1827,9 +1791,9 @@ const GenAIApp = (function () {
       if (authMethod) {
         headers['Authorization'] = authMethod;
       }
-      else if (geminiKey) {
+      else if (providerConfig.gemini.apiKey) {
         // use an HTTP header instead of including the API key in the query parameters.
-        headers['x-goog-api-key'] = geminiKey;
+        headers['x-goog-api-key'] = providerConfig.gemini.apiKey;
       }
       const options = {
         method: method.toLowerCase(),
@@ -2191,16 +2155,6 @@ const GenAIApp = (function () {
     return actionableCalls.filter(call =>
       String(call.name || "").startsWith("google:") || registeredNames.has(call.name)
     );
-  }
-
-  /**
-   * Finds the opaque signature on a Gemini Interactions API thought step.
-   * @param {Object} responseMessage - Gemini response payload.
-   * @returns {string|null} The last signature in the response.
-   */
-  function _extractGeminiThoughtSignature(responseMessage) {
-    const thoughtSteps = (responseMessage?.steps || []).filter(step => step?.type === "thought");
-    return thoughtSteps.length > 0 ? thoughtSteps[thoughtSteps.length - 1].signature || null : null;
   }
 
   /**
@@ -2614,7 +2568,7 @@ const GenAIApp = (function () {
     const uploadOptions = {
       'method': 'post',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey
       },
       'payload': formData,
       'muteHttpExceptions': true
@@ -2775,7 +2729,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'post',
       headers: {
-        'Authorization': 'Bearer ' + openAIKey,
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
         'Content-Type': 'application/json',
         'OpenAI-Beta': 'assistants=v2'
       },
@@ -2811,7 +2765,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'get',
       headers: {
-        'Authorization': 'Bearer ' + openAIKey,
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
         'Content-Type': 'application/json',
         'OpenAI-Beta': 'assistants=v2'
       }
@@ -2833,7 +2787,7 @@ const GenAIApp = (function () {
   function _uploadFileToOpenAIStorage(blob) {
     const url = apiBaseUrl + "/v1/files";
     const headers = {
-      'Authorization': 'Bearer ' + openAIKey
+      'Authorization': 'Bearer ' + providerConfig.openai.apiKey
     };
 
     const form = {
@@ -2899,7 +2853,7 @@ const GenAIApp = (function () {
       method: 'post',
       'contentType': 'application/json',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
         'OpenAI-Beta': 'assistants=v2'
       },
       'payload': JSON.stringify(payload)
@@ -2937,7 +2891,7 @@ const GenAIApp = (function () {
         const options = {
           'method': 'get',
           'headers': {
-            'Authorization': 'Bearer ' + openAIKey,
+            'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
             'OpenAI-Beta': 'assistants=v2'
           },
         };
@@ -2988,7 +2942,7 @@ const GenAIApp = (function () {
     const options = {
       'method': 'delete',
       'headers': {
-        'Authorization': 'Bearer ' + openAIKey,
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
         'OpenAI-Beta': 'assistants=v2'
       },
     };
@@ -3017,7 +2971,7 @@ const GenAIApp = (function () {
     const options = {
       method: 'delete',
       headers: {
-        'Authorization': 'Bearer ' + openAIKey,
+        'Authorization': 'Bearer ' + providerConfig.openai.apiKey,
         'OpenAI-Beta': 'assistants=v2'
       },
       muteHttpExceptions: true
@@ -3047,8 +3001,8 @@ const GenAIApp = (function () {
    */
   function _getGeminiRestHeaders(extraHeaders = {}) {
     const headers = Object.assign({}, extraHeaders);
-    if (geminiKey) {
-      headers['x-goog-api-key'] = geminiKey;
+    if (providerConfig.gemini.apiKey) {
+      headers['x-goog-api-key'] = providerConfig.gemini.apiKey;
     }
     else {
       headers['Authorization'] = 'Bearer ' + ScriptApp.getOAuthToken();
@@ -3318,38 +3272,39 @@ const GenAIApp = (function () {
     },
 
     /**
-     * Create a new Gemini File Search Store wrapper.
-     * @returns {VectorStoreObject} - A new Gemini File Search Store instance.
+     * Configure a supported model provider.
+     * @param {"openai"|"gemini"} providerName - Provider to configure.
+     * @param {Object} options - Provider options.
+     * @returns {Object} - GenAIApp public API.
      */
-    newGeminiFileSearchStore: function () {
-      return new VectorStoreObject("gemini");
-    },
-
-    /**
-     * Mandatory in order to use OpenAI models
-     * @param {string} apiKey - Your openAI API key.
-     */
-    setOpenAIAPIKey: function (apiKey) {
-      openAIKey = apiKey;
-    },
-
-    /**
-     * To use Gemini models with an API key
-     * @param {string} apiKey - Your Gemmini API key.
-     */
-    setGeminiAPIKey: function (apiKey) {
-      geminiKey = apiKey;
-    },
-
-    /**
-     * To use Gemini models without an API key
-     * Requires Vertex AI enabled on a GCP project linked to your Google Apps Script project
-     * @param {string} gcp_project_id - Your GCP project ID
-     * @param {string} [gcp_project_region] - Your GCP project region (ex: us-central1, leave empty for global)
-     */
-    setGeminiAuth: function (gcp_project_id, gcp_project_region) {
-      gcpProjectId = gcp_project_id;
-      region = gcp_project_region;
+    configureProvider: function (providerName, options = {}) {
+      const normalizedProviderName = _normalizeProviderName(providerName);
+      if (!options || typeof options !== "object" || Array.isArray(options)) {
+        throw new TypeError("[GenAIApp] - Provider configuration options must be an object.");
+      }
+      const config = providerConfig[normalizedProviderName];
+      const supportedOptions = normalizedProviderName === "openai"
+        ? ["apiKey", "baseUrl"]
+        : ["apiKey", "projectId", "region"];
+      const unknownOptions = Object.keys(options).filter(key => !supportedOptions.includes(key));
+      if (unknownOptions.length > 0) {
+        throw new Error(`[GenAIApp] - Unsupported ${normalizedProviderName} configuration option(s): ${unknownOptions.join(", ")}.`);
+      }
+      supportedOptions.forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(options, key)) {
+          config[key] = options[key] || "";
+        }
+      });
+      if (normalizedProviderName === "gemini") {
+        if (Object.prototype.hasOwnProperty.call(options, "apiKey") && options.apiKey) {
+          config.projectId = "";
+          config.region = "";
+        }
+        else if (Object.prototype.hasOwnProperty.call(options, "projectId") && options.projectId) {
+          config.apiKey = "";
+        }
+      }
+      return this;
     },
 
     /**
@@ -3359,14 +3314,6 @@ const GenAIApp = (function () {
      */
     setGlobalMetadata: function (globalMetadataKey, globalMetadataValue) {
       globalMetadata[globalMetadataKey] = globalMetadataValue;
-    },
-
-    /**
-     * To set a specific API URL like Azure or Google Cloud for using Open AI models.
-     * @param {string} baseUrl - The base url to be used for the API calls.
-     */
-    setPrivateInstanceBaseUrl: function (baseUrl) {
-      privateInstanceBaseUrl = baseUrl;
     }
   }
 })();

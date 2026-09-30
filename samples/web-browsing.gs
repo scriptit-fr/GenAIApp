@@ -5,7 +5,7 @@
  * Expected output: Logs a brief answer grounded in content found under developers.google.com.
  */
 function webBrowsingSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const chat = GenAIApp.newChat()
     .enableBrowsing(true, 'https://developers.google.com')

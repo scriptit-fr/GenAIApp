@@ -59,11 +59,11 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 
 | Sample | Description | Demonstrates |
 | --- | --- | --- |
-| [`simple-chat.gs`](samples/simple-chat.gs) | Smallest possible GenAIApp chat request for a hello-world smoke test. | `setOpenAIAPIKey()`, `newChat()`, `addMessage()`, `run()` |
+| [`simple-chat.gs`](samples/simple-chat.gs) | Smallest possible GenAIApp chat request for a hello-world smoke test. | `configureProvider()`, `newChat()`, `addMessage()`, `run()` |
 | [`system-prompts.gs`](samples/system-prompts.gs) | Sets assistant role, tone, and response format with a system message. | System messages with `addMessage(message, true)`, prompt shaping |
 | [`configuration-options.gs`](samples/configuration-options.gs) | Shows common configuration and guardrail settings for production scripts. | `disableLogs()`, `warnIfResponseTokenUsageAbove()`, `enableCompaction()`, `setMaximumAPICalls()` |
-| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Reuses the same prompt across OpenAI and Gemini model names for comparison. | `setOpenAIAPIKey()`, `setGeminiAPIKey()`, model selection in `run()` |
-| [`vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) | Authenticates Gemini through a linked Google Cloud project instead of an API key. | `setGeminiAuth()`, Vertex AI configuration, Gemini model execution |
+| [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Reuses the same prompt across OpenAI and Gemini model names for comparison. | `configureProvider()`, model selection in `run()` |
+| [`vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) | Authenticates Gemini through a linked Google Cloud project instead of an API key. | `configureProvider()`, Vertex AI configuration, Gemini model execution |
 
 ### Content Analysis
 
@@ -73,9 +73,9 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 | [`document-analysis.gs`](samples/document-analysis.gs) | Summarizes PDFs or exported Google Workspace files from Drive and Blob inputs. | `addFile()`, Drive file IDs, Blob file analysis |
 | [`knowledge-links.gs`](samples/knowledge-links.gs) | Injects a known web page as direct context without broad web search. | `addKnowledgeLink()`, page-grounded answers |
 | [`web-browsing.gs`](samples/web-browsing.gs) | Allows real-time browsing with an optional trusted-domain restriction. | `enableBrowsing(true, url)`, current-information prompts |
-| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Creates a full OpenAI vector store, uploads source content, queries it, and returns chunks. | `newVectorStore()`, `uploadAndAttachFile()`, `addVectorStores()`, `onlyReturnChunks()` |
-| [`openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) | Minimal OpenAI vector-store retrieval example. | `newVectorStore('openai')`, `uploadAndAttachFile()`, OpenAI file search |
-| [`google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) | Minimal Gemini File Search Store retrieval example. | `newGeminiFileSearchStore()`, `createFileSearchStore()`, `uploadAndImportDocument()` |
+| [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Creates a full OpenAI vector store, uploads source content, queries it, and returns chunks. | `newVectorStore()`, `uploadFile()`, `addVectorStores()`, `onlyReturnChunks()` |
+| [`openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs) | Minimal OpenAI vector-store retrieval example. | `newVectorStore('openai')`, `uploadFile()`, OpenAI file search |
+| [`google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs) | Minimal Gemini File Search Store retrieval example. | `newVectorStore('gemini')`, `createVectorStore()`, `uploadFile()` |
 
 ### Function Calling
 
@@ -88,7 +88,7 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 
 | Sample | Description | Demonstrates |
 | --- | --- | --- |
-| [`conversation-continuation.gs`](samples/conversation-continuation.gs) | Continues OpenAI Responses API and Gemini Interactions API conversations without resending the full transcript. | `retrieveLastResponseId()`, `setPreviousResponseId()`, `retrieveLastInteractionId()`, `setPreviousInteractionId()` |
+| [`conversation-continuation.gs`](samples/conversation-continuation.gs) | Continues OpenAI Responses API and Gemini Interactions API conversations without resending the full transcript. | `getLastConversationId()`, `setPreviousConversationId()` |
 | [`configuration-options.gs`](samples/configuration-options.gs) | Configures operational controls for long-running or budget-sensitive automations. | Token warnings, API call limits, compaction thresholds, logging controls |
 | [`multi-model-usage.gs`](samples/multi-model-usage.gs) | Compares outputs from OpenAI and Gemini model names with one prompt. | Model IDs, provider switching |
 | [`vector-store-rag.gs`](samples/vector-store-rag.gs) | Builds retrieval-augmented generation on OpenAI vector stores. | Vector-store lifecycle, chunking, attributes, retrieval responses |
@@ -107,9 +107,9 @@ Try [`samples/simple-chat.gs`](samples/simple-chat.gs) first. It is the recommen
 
 Choose the credentials that match the models you plan to use:
 
-1. **OpenAI models:** Store an OpenAI API key for `GenAIApp.setOpenAIAPIKey()`.
-2. **Gemini with an API key:** Store a Gemini API key for `GenAIApp.setGeminiAPIKey()`.
-3. **Gemini through Vertex AI:** Link your Apps Script project to a Google Cloud project with Vertex AI enabled, then use `GenAIApp.setGeminiAuth(projectId, region)`.
+1. **OpenAI models:** Store an OpenAI API key and pass it to `GenAIApp.configureProvider('openai', { apiKey })`.
+2. **Gemini with an API key:** Store a Gemini API key and pass it to `GenAIApp.configureProvider('gemini', { apiKey })`.
+3. **Gemini through Vertex AI:** Link your Apps Script project to a Google Cloud project with Vertex AI enabled, then use `GenAIApp.configureProvider('gemini', { projectId, region })`.
 
 For Vertex AI or Google Workspace MCP connectors, include the required OAuth scopes in your Apps Script manifest. Start with:
 
@@ -133,20 +133,24 @@ Setup is intentionally lightweight: drag and drop the **GenAIApp** library files
 You need to set your API keys before starting any chat. See [`samples/simple-chat.gs`](samples/simple-chat.gs), [`samples/multi-model-usage.gs`](samples/multi-model-usage.gs), and [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs) for complete setup examples.
 
 ```js
-// Set Gemini API Key
-GenAIApp.setGeminiAPIKey('your-gemini-api-key');
+// Gemini API key
+GenAIApp.configureProvider('gemini', { apiKey: 'your-gemini-api-key' });
 
-// Set Gemini Auth if using Google Cloud
-GenAIApp.setGeminiAuth('your-gcp-project-id', 'your-region');
+// Gemini through Vertex AI
+GenAIApp.configureProvider('gemini', {
+  projectId: 'your-gcp-project-id',
+  region: 'your-region'
+});
 
-// Set OpenAI API Key if using OpenAI
-GenAIApp.setOpenAIAPIKey('your-openai-api-key');
+// OpenAI API key and optional compatible endpoint
+GenAIApp.configureProvider('openai', {
+  apiKey: 'your-openai-api-key',
+  baseUrl: 'https://your-endpoint.example.com'
+});
 
 // Set global metadata passed with each request (optional)
 GenAIApp.setGlobalMetadata('app', 'demo');
 
-// Use a custom OpenAI-compatible endpoint (optional)
-GenAIApp.setPrivateInstanceBaseUrl('https://your-endpoint.example.com');
 ```
 
 ### Creating a New Chat
@@ -306,7 +310,7 @@ console.log(response);
 
 GenAIApp defaults to [`gpt-6-sol`](https://developers.openai.com/api/docs/models/gpt-6-sol) and supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
 
-⚠️ **Warning:** The `reasoning_effort` parameter is for reasoning-capable OpenAI models, while `thinking_level` is its Gemini equivalent.
+Use `reasoning_level` for either provider. GenAIApp translates it to OpenAI `reasoning.effort` or Gemini `generation_config.thinking_level`.
 
 ### FunctionObject Class
 
@@ -349,7 +353,7 @@ openAiChat.addVectorStores(openAiStore.getId());
 
 // Google Gemini: pass the File Search Store resource name returned by getId(),
 // for example: fileSearchStores/abc123.
-const geminiStore = GenAIApp.newGeminiFileSearchStore()
+const geminiStore = GenAIApp.newVectorStore('gemini')
   .initializeFromId('fileSearchStores/your-google-store-name');
 
 const geminiChat = GenAIApp.newChat();
@@ -368,12 +372,8 @@ To find out more, see the [OpenAI vector store search API](https://platform.open
 - `newFunction()`: Create a new `FunctionObject`. See [`samples/function-calling-basics.gs`](samples/function-calling-basics.gs).
 - `newConnector()`: Create a new `ConnectorObject` for MCP integrations. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
 - `newVectorStore([providerName])`: Create a new `VectorStoreObject`; omit `providerName` or pass `'openai'` for OpenAI, or pass `'gemini'` for Google Gemini File Search Stores. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
-- `newGeminiFileSearchStore()`: Convenience factory for a Gemini File Search Store-backed `VectorStoreObject`. See [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
-- `setOpenAIAPIKey(apiKey)`: Set the OpenAI API key.
-- `setGeminiAPIKey(apiKey)`: Set the Gemini API key.
-- `setGeminiAuth(projectId, region)`: Use Vertex AI authentication. See [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs).
+- `configureProvider(providerName, options)`: Configure OpenAI with `{ apiKey, baseUrl }`, or Gemini with `{ apiKey }` or `{ projectId, region }`. See [`samples/multi-model-usage.gs`](samples/multi-model-usage.gs) and [`samples/vertex-ai-setup.gs`](samples/vertex-ai-setup.gs).
 - `setGlobalMetadata(key, value)`: Attach a key/value pair to every request.
-- `setPrivateInstanceBaseUrl(baseUrl)`: Use a custom OpenAI-compatible endpoint.
 
 ### Chat
 
@@ -396,15 +396,12 @@ A `Chat` represents a conversation with the model.
 - `addKnowledgeLink(url)`: Inject the content of a web page into the conversation. See [`samples/knowledge-links.gs`](samples/knowledge-links.gs).
 - `addMCP(connectorObject)`: Attach one or more MCP connectors to the chat request. See [`samples/mcp-connectors.gs`](samples/mcp-connectors.gs).
 - `setMaximumAPICalls(maxAPICalls)`: Limit the number of API calls in a run. See [`samples/configuration-options.gs`](samples/configuration-options.gs).
-- `setThinkingLevel(thinkingLevel)`: Set the Gemini thinking level. Valid values depend on the selected model. When omitted, Google selects the default.
-- `retrieveLastResponseId()`: Get the last OpenAI response ID returned by `run()`. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
-- `setPreviousResponseId(id)`: Reuse a previous OpenAI response ID to continue a conversation. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
-- `retrieveLastInteractionId()`: Get the last Gemini Interactions API interaction ID returned by `run()`. Gemini requests use stateful Interactions API mode (`store: true`), and the same `Chat` automatically passes this ID on its next turn. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
-- `retrieveLastThoughtSignature()`: Get the latest opaque Gemini thought-step signature. With `store: true`, Gemini retains thought state server-side; continuations send `previous_interaction_id` and do not copy the signature onto function results.
-- `setPreviousInteractionId(id)`: Reuse a previous Gemini interaction ID to continue a stateful conversation in a different `Chat`. This avoids resending model reasoning without its thought signature. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `setReasoningLevel(reasoningLevel)`: Set provider-independent reasoning level. Supported values depend on selected model.
+- `getLastConversationId()`: Get latest OpenAI response ID or Gemini interaction ID. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
+- `setPreviousConversationId(id)`: Continue OpenAI or Gemini conversation using provider-native state. See [`samples/conversation-continuation.gs`](samples/conversation-continuation.gs).
 - `warnIfResponseTokenUsageAbove(input_token_threshold)`: Log a warning if input tokens exceed the threshold. It is off by default.
 - `addVectorStores(vectorStoreIds)`: Attach OpenAI vector store IDs or Gemini File Search Store resource names for retrieval. See [`samples/vector-store-rag.gs`](samples/vector-store-rag.gs), [`samples/openai-vector-store-quickstart.gs`](samples/openai-vector-store-quickstart.gs), and [`samples/google-file-search-store-quickstart.gs`](samples/google-file-search-store-quickstart.gs).
-- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `reasoning_effort` (OpenAI), `thinking_level` (Gemini; valid values depend on the selected model), `max_tokens`, and `function_call` parameters.
+- `run([advancedParametersObject])`: Execute the chat and return the response. Supports `model`, `reasoning_level`, `max_tokens`, and `function_call` parameters.
 
 ### Function Object
 
@@ -418,23 +415,19 @@ A `FunctionObject` represents a function that can be called by the chat.
 
 ### Vector Store Object
 
-A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File Search Store. OpenAI is the default provider; use `GenAIApp.newVectorStore('gemini')` or `GenAIApp.newGeminiFileSearchStore()` for Google.
+A `VectorStoreObject` represents an OpenAI vector store or a Google Gemini File Search Store. OpenAI is the default provider; use `GenAIApp.newVectorStore('gemini')` for Google.
 
 - `setName(newName)`: Set the OpenAI vector store name or Gemini display name.
 - `setDescription(newDesc)`: Set the description stored on the wrapper.
 - `setChunkingStrategy(maxChunkSize, chunkOverlap)`: Configure OpenAI chunking before uploads.
 - `setEmbeddingModel(embeddingModel)`: Set the Gemini File Search Store embedding model resource name before creation.
 - `createVectorStore()`: Create the provider-backed store.
-- `createFileSearchStore()`: Alias for `createVectorStore()` when using Gemini.
 - `initializeFromId(vectorStoreId)`: Initialize from an OpenAI vector store ID or a Gemini File Search Store resource name.
 - `getId()`: Get the OpenAI vector store ID or Gemini File Search Store resource name.
 - `getName()`: Get the local name/display name.
-- `uploadAndAttachFile(blob, attributes)`: Upload a file to OpenAI or upload/import a document into Gemini.
-- `uploadAndImportDocument(blob, attributes)`: Alias for `uploadAndAttachFile()` for Gemini-style naming.
+- `uploadFile(blob, attributes)`: Upload a file to OpenAI or upload/import a document into Gemini.
 - `listFiles()`: List OpenAI files or Gemini documents.
-- `listDocuments()`: Alias for `listFiles()`.
 - `deleteFile(fileId)`: Delete an OpenAI file or Gemini document.
-- `deleteDocument(documentId)`: Alias for `deleteFile()`.
 - `deleteVectorStore()`: Delete the store when supported. OpenAI stores can be deleted; Gemini store deletion is not implemented, so delete individual documents instead.
 
 ### Connector Object

@@ -5,7 +5,7 @@
  * Expected output: Logs a JSON object containing ticket fields because onlyReturnArguments(true) ends before execution.
  */
 function functionCallingAdvancedSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const extractTicket = GenAIApp.newFunction()
     .setName('extractSupportTicket')

@@ -3,7 +3,7 @@
  * Required config: Store a Gemini API key in Script Properties as GEMINI_API_KEY.
  */
 function googleFileSearchStoreQuickstartSample() {
-  GenAIApp.setGeminiAPIKey(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'));
+  GenAIApp.configureProvider('gemini', { apiKey: PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') });
 
   const blob = Utilities.newBlob(
     'Handbook note: team demos happen every Friday at 10 AM.',
@@ -11,11 +11,11 @@ function googleFileSearchStoreQuickstartSample() {
     'handbook-note.txt'
   );
 
-  const store = GenAIApp.newGeminiFileSearchStore()
+  const store = GenAIApp.newVectorStore('gemini')
     .setName('Google Quickstart Store')
-    .createFileSearchStore();
+    .createVectorStore();
 
-  store.uploadAndImportDocument(blob, { source: 'google quickstart' });
+  store.uploadFile(blob, { source: 'google quickstart' });
 
   const answer = GenAIApp.newChat()
     .addVectorStores(store.getId())

@@ -6,8 +6,8 @@
  */
 function multiModelUsageSample() {
   const scriptProperties = PropertiesService.getScriptProperties();
-  GenAIApp.setOpenAIAPIKey(scriptProperties.getProperty('OPENAI_API_KEY'));
-  GenAIApp.setGeminiAPIKey(scriptProperties.getProperty('GEMINI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: scriptProperties.getProperty('OPENAI_API_KEY') });
+  GenAIApp.configureProvider('gemini', { apiKey: scriptProperties.getProperty('GEMINI_API_KEY') });
 
   const models = ['openai-model', 'gemini-model'];
   models.forEach(function (model) {

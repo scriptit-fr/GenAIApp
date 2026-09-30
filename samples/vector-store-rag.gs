@@ -5,7 +5,7 @@
  * Expected output: Logs the answer from file search, then logs raw chunks from onlyReturnChunks(true).
  */
 function vectorStoreRagSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const policyBlob = Utilities.newBlob(
     'Refund policy: refunds are available within 30 days with a receipt.',
@@ -19,7 +19,7 @@ function vectorStoreRagSample() {
     .setChunkingStrategy(800, 200)
     .createVectorStore();
 
-  vectorStore.uploadAndAttachFile(policyBlob, { topic: 'refunds', source: 'sample' });
+  vectorStore.uploadFile(policyBlob, { topic: 'refunds', source: 'sample' });
 
   const answer = GenAIApp.newChat()
     .addVectorStores(vectorStore.getId())

@@ -5,7 +5,7 @@
  * Expected output: Logs a short comparison of the URL image and generated Blob image.
  */
 function imageAnalysisSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const imageUrl = 'https://www.gstatic.com/images/branding/product/2x/apps_script_48dp.png';
   const imageBlob = UrlFetchApp.fetch(imageUrl).getBlob().setName('apps-script-logo.png');

@@ -6,7 +6,7 @@
  */
 function documentAnalysisSample() {
   const scriptProperties = PropertiesService.getScriptProperties();
-  GenAIApp.setOpenAIAPIKey(scriptProperties.getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: scriptProperties.getProperty('OPENAI_API_KEY') });
 
   const textBlob = Utilities.newBlob(`Ah no! young blade! That was a trifle short! 
     You might have said at least a hundred things 
