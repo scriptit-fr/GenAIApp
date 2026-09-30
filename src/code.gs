@@ -62,7 +62,7 @@ const GenAIApp = (function () {
       const tools = [];
       const mcpConnectors = [];
       const addedVectorStores = {};
-      let model = "gpt-6-sol"; // default
+      let model = "gpt-6.1-sol"; // default
       let max_tokens = 10000;
       let browsing = false;
       let reasoning_level = null;
@@ -487,7 +487,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_level, max_tokens, function_call}
-       * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
+       * @param {"gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gpt-6.1-sol" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"} [advancedParametersObject.model]
        * @param {string} [advancedParametersObject.reasoning_level] Reasoning level supported by the selected model.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]

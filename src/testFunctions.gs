@@ -1,4 +1,4 @@
-const OPENAI_MODEL = "gpt-5.6-terra";
+const OPENAI_MODEL = "gpt-6.1-sol";
 const GEMINI_MODEL = "gemini-3.5-flash";
 const TEST_CODE_INTERPRETER_XLSX_DRIVE_FILE_ID = "";
 const TEST_CODE_INTERPRETER_PDF_DRIVE_FILE_ID = "";

@@ -308,7 +308,7 @@ const response = chat.run({
 console.log(response);
 ```
 
-GenAIApp defaults to [`gpt-6-sol`](https://developers.openai.com/api/docs/models/gpt-6-sol) and supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
+GenAIApp defaults to [`gpt-6.1-sol`](https://developers.openai.com/api/docs/models/gpt-6.1-sol) and supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
 
 Use `reasoning_level` for either provider. GenAIApp translates it to OpenAI `reasoning.effort` or Gemini `generation_config.thinking_level`.
 
