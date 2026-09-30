@@ -162,6 +162,7 @@ function testOpenAIToolContinuationState() {
     const responses = [
       {
         id: "response-tool-call",
+        status: "completed",
         output: [{
           type: "function_call",
           name: "getWeather",
@@ -171,6 +172,7 @@ function testOpenAIToolContinuationState() {
       },
       {
         id: "response-final",
+        status: "completed",
         output: [{
           type: "message",
           status: "final_answer",
@@ -178,7 +180,14 @@ function testOpenAIToolContinuationState() {
         }]
       },
       {
+        id: "response-incomplete",
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: []
+      },
+      {
         id: "response-follow-up",
+        status: "completed",
         output: [{
           type: "message",
           status: "final_answer",
@@ -187,6 +196,7 @@ function testOpenAIToolContinuationState() {
       },
       {
         id: "response-second-follow-up",
+        status: "completed",
         output: [{
           type: "message",
           status: "final_answer",
@@ -209,6 +219,10 @@ function testOpenAIToolContinuationState() {
     chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
     chat.addMessage("Which city did we discuss?");
     chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
+    if (chat.getLastConversationId() !== "response-final") {
+      throw new Error("Incomplete response advanced the last conversation ID");
+    }
+    chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
     chat.addMessage("What was the temperature?");
     chat.run({ model: OPENAI_MODEL, max_tokens: TEST_MAX_TOKENS });
 
@@ -220,7 +234,16 @@ function testOpenAIToolContinuationState() {
       throw new Error("Consumed function output leaked into follow-up input");
     }
 
-    const secondFollowUpPayload = requests[3].payload;
+    const retryPayload = requests[3].payload;
+    if (retryPayload.previous_response_id !== "response-final") {
+      throw new Error("Expected retry to continue from the last completed response");
+    }
+    if (retryPayload.input.length !== 1
+      || retryPayload.input[0].content !== "Which city did we discuss?") {
+      throw new Error("Expected retry to preserve pending user input");
+    }
+
+    const secondFollowUpPayload = requests[4].payload;
     if (secondFollowUpPayload.previous_response_id !== "response-follow-up") {
       throw new Error("Expected second follow-up to continue from the previous response");
     }
