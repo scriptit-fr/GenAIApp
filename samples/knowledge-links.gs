@@ -5,7 +5,7 @@
  * Expected output: Logs a concise answer based on the Apps Script libraries guide.
  */
 function knowledgeLinksSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const chat = GenAIApp.newChat()
     .addKnowledgeLink('https://developers.google.com/apps-script/guides/libraries')

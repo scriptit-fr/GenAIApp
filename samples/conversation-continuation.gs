@@ -6,18 +6,18 @@
  */
 function conversationContinuationSample() {
   const scriptProperties = PropertiesService.getScriptProperties();
-  GenAIApp.setOpenAIAPIKey(scriptProperties.getProperty('OPENAI_API_KEY'));
-  GenAIApp.setGeminiAPIKey(scriptProperties.getProperty('GEMINI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: scriptProperties.getProperty('OPENAI_API_KEY') });
+  GenAIApp.configureProvider('gemini', { apiKey: scriptProperties.getProperty('GEMINI_API_KEY') });
 
   const firstOpenAiChat = GenAIApp.newChat()
     .addMessage('Remember this preference: my dashboard accent color is teal.');
   Logger.log(firstOpenAiChat.run());
 
-  const previousResponseId = firstOpenAiChat.retrieveLastResponseId();
+  const previousResponseId = firstOpenAiChat.getLastConversationId();
   Logger.log('Previous OpenAI response ID: ' + previousResponseId);
 
   const secondOpenAiChat = GenAIApp.newChat()
-    .setPreviousResponseId(previousResponseId)
+    .setPreviousConversationId(previousResponseId)
     .addMessage('What accent color did I choose?');
   Logger.log(secondOpenAiChat.run());
 
@@ -25,11 +25,11 @@ function conversationContinuationSample() {
     .addMessage('Remember this preference: my report accent color is amber.');
   Logger.log(firstGeminiChat.run({ model: 'gemini-model' }));
 
-  const previousInteractionId = firstGeminiChat.retrieveLastInteractionId();
+  const previousInteractionId = firstGeminiChat.getLastConversationId();
   Logger.log('Previous Gemini interaction ID: ' + previousInteractionId);
 
   const secondGeminiChat = GenAIApp.newChat()
-    .setPreviousInteractionId(previousInteractionId)
+    .setPreviousConversationId(previousInteractionId)
     .addMessage('What report accent color did I choose?');
   Logger.log(secondGeminiChat.run({ model: 'gemini-model' }));
 }

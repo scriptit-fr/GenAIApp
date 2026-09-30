@@ -5,7 +5,7 @@
  * Expected output: Logs a concise Workspace summary after the model uses approved connectors.
  */
 function mcpConnectorsSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const gmail = GenAIApp.newConnector()
     .setLabel('gmail')

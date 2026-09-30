@@ -5,7 +5,7 @@
  * Expected output: Logs a short greeting or one-sentence introduction from the model.
  */
 function simpleChatSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const chat = GenAIApp.newChat();
   chat.addMessage('Say hello in one friendly sentence.');

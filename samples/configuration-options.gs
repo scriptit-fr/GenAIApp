@@ -5,7 +5,7 @@
  * Expected output: Logs a compact project-summary response while enforcing the configured limits.
  */
 function configurationOptionsSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const chat = GenAIApp.newChat()
     .setMaximumAPICalls(3)

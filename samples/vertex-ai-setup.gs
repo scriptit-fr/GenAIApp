@@ -6,10 +6,10 @@
  */
 function vertexAiSetupSample() {
   const scriptProperties = PropertiesService.getScriptProperties();
-  GenAIApp.setGeminiAuth(
-    scriptProperties.getProperty('GCP_PROJECT_ID'),
-    scriptProperties.getProperty('GCP_REGION') || 'us-central1'
-  );
+  GenAIApp.configureProvider('gemini', {
+    projectId: scriptProperties.getProperty('GCP_PROJECT_ID'),
+    region: scriptProperties.getProperty('GCP_REGION') || 'us-central1'
+  });
 
   const chat = GenAIApp.newChat()
     .addMessage('Explain Vertex AI authentication for Apps Script in one sentence.');

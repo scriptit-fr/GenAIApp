@@ -3,7 +3,7 @@
  * Required config: Store an OpenAI API key in Script Properties as OPENAI_API_KEY.
  */
 function openAiVectorStoreQuickstartSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const blob = Utilities.newBlob(
     'Support note: paid plans include priority support during business hours.',
@@ -15,7 +15,7 @@ function openAiVectorStoreQuickstartSample() {
     .setName('OpenAI Quickstart Store')
     .createVectorStore();
 
-  store.uploadAndAttachFile(blob, { source: 'openai quickstart' });
+  store.uploadFile(blob, { source: 'openai quickstart' });
 
   const answer = GenAIApp.newChat()
     .addVectorStores(store.getId())

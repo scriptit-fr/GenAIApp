@@ -5,7 +5,7 @@
  * Expected output: Writes an AI summary into cell A1 of a new sheet named AI Summary.
  */
 function sheetsAiAssistantSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = spreadsheet.getActiveSheet();

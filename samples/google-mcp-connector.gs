@@ -5,7 +5,7 @@
  * Expected output: Logs a concise summary after the model uses the authorized Gmail MCP connector.
  */
 function googleMcpConnectorSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const chat = GenAIApp.newChat()
     .addMessage('Summarize my latest unread Gmail message in three bullets.');

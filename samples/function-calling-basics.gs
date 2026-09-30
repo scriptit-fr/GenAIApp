@@ -5,7 +5,7 @@
  * Expected output: Logs a weather-style answer based on the sampleGetWeather stub result.
  */
 function functionCallingBasicsSample() {
-  GenAIApp.setOpenAIAPIKey(PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY'));
+  GenAIApp.configureProvider('openai', { apiKey: PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') });
 
   const weatherFunction = GenAIApp.newFunction()
     .setName('sampleGetWeather')
