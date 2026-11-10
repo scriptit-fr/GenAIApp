@@ -160,7 +160,8 @@ const GenAIApp = (function () {
             role: "user",
             content: [{
               type: "input_image",
-              image_url: imageInput
+              image_url: imageInput,
+              detail: "high"
             }]
           });
         }
@@ -2515,7 +2516,8 @@ const GenAIApp = (function () {
   // OpenAI-only helper: creates a Responses API input_image content object.
   const createOpenAIInputImageContent = (mimeType, base64Data) => ({
     type: "input_image",
-    image_url: `data:${mimeType};base64,${base64Data}`
+    image_url: `data:${mimeType};base64,${base64Data}`,
+    detail: "high"
   });
 
   // OpenAI-only helper for Blob-like values returned by function calling.
