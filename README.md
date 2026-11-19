@@ -139,7 +139,7 @@ GenAIApp.configureProvider('gemini', { apiKey: 'your-gemini-api-key' });
 // Gemini through Vertex AI
 GenAIApp.configureProvider('gemini', {
   projectId: 'your-gcp-project-id',
-  region: 'your-region'
+  region: '' // Use the global endpoint
 });
 
 // OpenAI API key and optional compatible endpoint
@@ -301,14 +301,25 @@ Once you have set up the chat and added the necessary components, start the conv
 
 ```js
 const response = chat.run({
-  model: 'your-model-name', // Optional: set the model to use
+  model: 'gpt-6.2-sol', // Optional model override
   function_call: 'getWeather' // Optional: force the first API response to call a function
 });
 
 console.log(response);
 ```
 
-GenAIApp defaults to [`gpt-6.1-sol`](https://developers.openai.com/api/docs/models/gpt-6.1-sol) and supports compatible Gemini and OpenAI chat models. Model availability changes over time, so check your provider's current documentation before setting a model override.
+Set `model` to an API model ID to select a specific model. Availability depends on your provider configuration.
+
+| Provider | Model | API model ID |
+| --- | --- | --- |
+| OpenAI | [GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra) | `gpt-6.2-astra` |
+| OpenAI | [GPT-6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) | `gpt-6.2-sol` |
+| Google | [Gemini 3.5 Flash-Lite](https://aistudio.google.com/docs/models/gemini-3.5-flash-lite) | `gemini-3.5-flash-lite` |
+| Google | [Gemini 4 Hydrogen](https://aistudio.google.com/docs/models/gemini-4-hydrogen) | `gemini-4-hydrogen` |
+| Google | [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon) | `gemini-4-carbon` |
+| Google | [Gemini 4 Neon](https://aistudio.google.com/docs/models/gemini-4-neon) | `gemini-4-neon` |
+
+For Gemini 4 on Vertex AI, set `region: ''` to use the global endpoint. If you use the Vertex AI sample, leave `GCP_REGION` unset for the same behavior. See the [Google Cloud Gemini 4 quickstart](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start/get-started-with-gemini-4) for model availability by location.
 
 Use `reasoning_level` for either provider. GenAIApp translates it to OpenAI `reasoning.effort` or Gemini `generation_config.thinking_level`.
 
