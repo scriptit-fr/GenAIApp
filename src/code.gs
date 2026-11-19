@@ -488,7 +488,7 @@ const GenAIApp = (function () {
        * Will return the last chat answer.
        * If a function calling model is used, will call several functions until the chat decides that nothing is left to do.
        * @param {Object} [advancedParametersObject] OPTIONAL - For more advanced settings and specific usage only. {model, reasoning_level, max_tokens, function_call}
-       * @param {"gpt-6.2-astra" | "gpt-6.2-sol" | "gemini-3.5-flash-lite" | "gemini-4-hydrogen" | "gemini-4-carbon" | "gemini-4-neon"} [advancedParametersObject.model]
+       * @param {string} [advancedParametersObject.model] Provider-compatible API model ID. See the README for model examples.
        * @param {string} [advancedParametersObject.reasoning_level] Reasoning level supported by the selected model.
        * @param {number} [advancedParametersObject.max_tokens]
        * @param {string} [advancedParametersObject.function_call]
