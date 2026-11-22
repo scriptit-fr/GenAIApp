@@ -451,6 +451,7 @@ A `ConnectorObject` represents a remote or tunneled MCP server connection. Remot
 - `setTunnelId(tunnelId)`: Use a local or private MCP server connected through OpenAI Secure MCP Tunnel.
 - `setAuthorization(token)`: Set the MCP server authorization token, for example `Bearer ...`. Connections are unauthenticated unless this method is called explicitly.
 - `setRequireApproval('never' | 'domain' | 'always')`: Control whether an OpenAI connector requires user approval before execution.
+- `setDeferLoading(enabled = true)`: Load this connector's tool definitions on demand. Useful for optional connectors, such as fallback mailboxes. Leave frequently used connectors loaded up front. GenAIApp adds `tool_search` automatically when at least one connector opts in. Requires a [Tool Search-compatible OpenAI model](https://developers.openai.com/api/docs/guides/tools-tool-search) or a [Tool Retrieval-compatible Gemini model](https://aistudio.google.com/docs/tool-retrieval) on the Gemini Interactions API.
 
 ## Contributing
 

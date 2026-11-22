@@ -799,6 +799,9 @@ const GenAIApp = (function () {
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toJson());
           });
+          if (payload.tools.some(tool => tool.defer_loading === true)) {
+            payload.tools.push({ type: "tool_search" });
+          }
         }
 
         if (compaction_enabled) {
@@ -1041,6 +1044,9 @@ const GenAIApp = (function () {
           mcpConnectors.forEach(connector => {
             payload.tools.push(connector._toGeminiJson());
           });
+          if (payload.tools.some(tool => tool.defer_loading === true)) {
+            payload.tools.push({ type: "tool_search" });
+          }
         }
 
         if (Object.keys(addedVectorStores).length > 0) {
@@ -1440,6 +1446,7 @@ const GenAIApp = (function () {
       let allowedTools = null;
       let authorization = null;
       let requireApproval = "never";
+      let deferLoading = false;
 
       /**
        * Sets the label used to identify the connector.
@@ -1561,6 +1568,24 @@ const GenAIApp = (function () {
       };
 
       /**
+       * Loads this MCP server's tool definitions on demand. Enable this for optional
+       * connectors, such as fallback mailboxes, when the model may not need them.
+       * Keep frequently used connectors loaded up front to avoid a discovery step.
+       * Requires a model supporting Tool Search (OpenAI Responses) or Tool Retrieval
+       * (Gemini Interactions).
+       *
+       * @param {boolean} [enabled=true] - Whether to defer this connector's tools.
+       * @returns {ConnectorObject}
+       */
+      this.setDeferLoading = function (enabled = true) {
+        if (typeof enabled !== "boolean") {
+          throw Error("[GenAIApp] - deferLoading must be a boolean.");
+        }
+        deferLoading = enabled;
+        return this;
+      };
+
+      /**
        * Returns the JSON representation for the connector.
        * @returns {Object}
        */
@@ -1593,6 +1618,10 @@ const GenAIApp = (function () {
 
         if (authorization) {
           connector.authorization = authorization;
+        }
+
+        if (deferLoading) {
+          connector.defer_loading = true;
         }
 
         return connector;
@@ -1632,6 +1661,10 @@ const GenAIApp = (function () {
               ? authorization
               : `Bearer ${authorization}`
           };
+        }
+
+        if (deferLoading) {
+          connector.defer_loading = true;
         }
 
         return connector;
