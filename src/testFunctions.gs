@@ -57,6 +57,7 @@ function _runSingleTest(testName, modelLabel, testFunction) {
 // Run all tests
 function testAll() {
   testMCPConnectorPayloads();
+  testDeferredMCPConnectorPayloads();
   testReasoningLevelPayloads();
   testVectorStoreStateIsolation();
   testOpenAIToolContinuationState();
@@ -114,6 +115,53 @@ function testMCPConnectorPayloads() {
     }
     if (!tunnelRejectedByGemini) {
       throw new Error("Expected Gemini payload builder to reject tunnel_id");
+    }
+    return "OK";
+  });
+}
+
+function testDeferredMCPConnectorPayloads() {
+  _runSingleTest("Deferred MCP connector payloads", "local", () => {
+    const primary = GenAIApp.newConnector()
+      .setLabel("primary")
+      .setServerUrl("https://primary.example.com/mcp");
+    const fallback = GenAIApp.newConnector()
+      .setLabel("fallback")
+      .setServerUrl("https://fallback.example.com/mcp")
+      .setAllowedTools(["search_threads"])
+      .setAuthorization("mock-gmail-token")
+      .setDeferLoading();
+    const archive = GenAIApp.newConnector()
+      .setLabel("archive")
+      .setServerUrl("https://archive.example.com/mcp")
+      .setDeferLoading(true);
+    const chat = GenAIApp.newChat().addMCP(primary).addMCP(fallback).addMCP(archive);
+
+    const openAI = chat._buildOpenAIPayload();
+    const gemini = chat._buildGeminiPayload();
+    for (const payload of [openAI, gemini]) {
+      if ("defer_loading" in payload.tools[0]
+        || payload.tools[1].defer_loading !== true
+        || payload.tools[2].defer_loading !== true
+        || payload.tools.filter(tool => tool.type === "tool_search").length !== 1) {
+        throw new Error("Expected only the optional connectors to be deferred with a single tool_search");
+      }
+    }
+    const openAIFallback = openAI.tools[1];
+    const geminiFallback = gemini.tools[1];
+    if (openAIFallback.type !== "mcp" || openAIFallback.allowed_tools?.[0] !== "search_threads"
+      || openAIFallback.authorization !== "mock-gmail-token"
+      || geminiFallback.type !== "mcp_server" || geminiFallback.allowed_tools?.tools?.[0] !== "search_threads"
+      || geminiFallback.headers?.Authorization !== "Bearer mock-gmail-token") {
+      throw new Error("Expected deferral to preserve each provider's MCP allowlist and authentication");
+    }
+
+    fallback.setDeferLoading(false);
+    archive.setDeferLoading(false);
+    for (const payload of [chat._buildOpenAIPayload(), chat._buildGeminiPayload()]) {
+      if (payload.tools.some(tool => "defer_loading" in tool || tool.type === "tool_search")) {
+        throw new Error("Expected normal loading when no connector opts in");
+      }
     }
     return "OK";
   });
